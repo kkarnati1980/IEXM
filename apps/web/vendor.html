@@ -1,0 +1,1081 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Vendor Inbox</title>
+    <style>
+      :root {
+        --bg: #08111c;
+        --panel: #0f1a2a;
+        --panel-2: #142235;
+        --border: rgba(255,255,255,0.08);
+        --text: #eef4fc;
+        --muted: #8ca0b7;
+        --accent: #8be9c1;
+        --accent-2: #6ec5ff;
+        --warning: #ffca85;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", sans-serif;
+        background:
+          radial-gradient(circle at top right, rgba(139, 233, 193, 0.12), transparent 24%),
+          linear-gradient(160deg, var(--bg), #03070d 65%);
+        color: var(--text);
+      }
+      .shell {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 18px 24px 0;
+      }
+      .shell-bar {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+      .shell-title {
+        display: grid;
+        gap: 6px;
+      }
+      .shell-title strong {
+        font-size: 1.1rem;
+      }
+      .shell-nav {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .shell-nav a,
+      .mini-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        text-decoration: none;
+        color: var(--text);
+        padding: 10px 13px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.04);
+      }
+      .shell-nav a.active {
+        background: rgba(139, 233, 193, 0.16);
+        color: var(--accent);
+        border-color: rgba(139, 233, 193, 0.24);
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 24px;
+        display: grid;
+        grid-template-columns: 1.2fr 0.95fr;
+        gap: 18px;
+        min-height: 100vh;
+      }
+      .panel {
+        border-radius: 20px;
+        padding: 20px;
+        background: linear-gradient(180deg, var(--panel), var(--panel-2));
+        border: 1px solid var(--border);
+      }
+      .eyebrow {
+        display: inline-block;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(110, 197, 255, 0.14);
+        color: var(--accent-2);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+      }
+      .muted { color: var(--muted); }
+      .intro-grid {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 14px;
+        margin-bottom: 18px;
+      }
+      .context-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .context-chip {
+        border-radius: 16px;
+        padding: 12px;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid var(--border);
+      }
+      .context-chip strong {
+        display: block;
+        margin-top: 6px;
+      }
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+      .metric-card {
+        border-radius: 16px;
+        padding: 12px;
+        background: rgba(139, 233, 193, 0.08);
+        border: 1px solid rgba(139, 233, 193, 0.16);
+      }
+      .metric-card strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 1.4rem;
+      }
+      .link-stack {
+        display: grid;
+        gap: 10px;
+      }
+      .toolbar {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(140px, 1fr)) auto;
+        gap: 12px;
+        align-items: end;
+        margin-bottom: 12px;
+      }
+      .table-scroll {
+        overflow-x: auto;
+      }
+      .pager {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
+      .pager-actions {
+        display: flex;
+        gap: 8px;
+      }
+      input, select, textarea, button {
+        font: inherit;
+      }
+      input, select, textarea {
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(255,255,255,0.04);
+        color: var(--text);
+        padding: 11px 12px;
+      }
+      textarea {
+        min-height: 110px;
+        resize: vertical;
+      }
+      button {
+        border: 0;
+        border-radius: 12px;
+        padding: 11px 14px;
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        color: #072013;
+      }
+      button.secondary {
+        background: rgba(255,255,255,0.1);
+        color: var(--text);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 12px;
+      }
+      th, td {
+        padding: 12px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        vertical-align: top;
+      }
+      tbody tr {
+        cursor: pointer;
+      }
+      tbody tr.active {
+        background: rgba(110, 197, 255, 0.08);
+      }
+      .masked { color: var(--warning); }
+      .pill {
+        display: inline-block;
+        padding: 4px 9px;
+        border-radius: 999px;
+        font-size: 12px;
+        background: rgba(255,255,255,0.08);
+      }
+      .detail-grid {
+        display: grid;
+        gap: 12px;
+      }
+      .meta {
+        display: grid;
+        gap: 10px;
+      }
+      .meta-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--border);
+      }
+      .meta-row span:first-child {
+        color: var(--muted);
+      }
+      .notes {
+        display: grid;
+        gap: 10px;
+      }
+      .note {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 12px;
+        background: rgba(255,255,255,0.03);
+      }
+      .status {
+        padding: 12px 14px;
+        border-radius: 14px;
+        margin-bottom: 14px;
+        font-size: 14px;
+      }
+      .status.ok {
+        background: rgba(139, 233, 193, 0.16);
+        color: var(--accent);
+      }
+      .status.error {
+        background: rgba(255, 117, 117, 0.12);
+        color: #ff9a9a;
+      }
+      @media (max-width: 980px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+        .intro-grid,
+        .context-strip,
+        .metric-grid,
+        .filter-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <div class="eyebrow">Pilot Workspace</div>
+          <strong>Phase 3 vendor workflow shell</strong>
+          <span class="muted">Move between attendee, vendor, and organizer views without rebuilding the context by hand.</span>
+        </div>
+        <nav class="shell-nav" aria-label="Pilot shell">
+          <a id="nav-home" href="./index.html">Launchpad</a>
+          <a id="nav-attendee" href="./attendee.html">Attendee</a>
+          <a class="active" id="nav-vendor" href="./vendor.html">Vendor</a>
+          <a id="nav-organizer" href="./organizer.html">Organizer</a>
+        </nav>
+      </div>
+    </div>
+    <main>
+      <section class="panel">
+        <div class="eyebrow">Vendor Workflow</div>
+        <h1>Lead inbox</h1>
+        <p class="muted">
+          This shell uses the real lead list, detail, classification, and note APIs. Pass `auth`,
+          `stallId`, and optional `apiBase` in the query string for live demo use.
+        </p>
+        <div class="intro-grid">
+          <div class="context-strip">
+            <div class="context-chip">
+              <span class="muted">Current stall</span>
+              <strong id="context-stall">Not selected</strong>
+            </div>
+            <div class="context-chip">
+              <span class="muted">Lead focus</span>
+              <strong id="context-lead">Inbox only</strong>
+            </div>
+            <div class="context-chip">
+              <span class="muted">Event context</span>
+              <strong id="context-event">event-demo</strong>
+            </div>
+          </div>
+          <div class="link-stack">
+            <a id="open-organizer-link" class="mini-link" href="./organizer.html">Open organizer view with this context</a>
+            <a id="open-launchpad-link" class="mini-link" href="./index.html">Return to pilot launchpad</a>
+          </div>
+        </div>
+        <div id="message" class="status ok" hidden></div>
+        <div class="toolbar">
+          <div style="min-width:220px; flex:1 1 220px;">
+            <label class="muted" for="stall-id">Stall ID</label>
+            <input id="stall-id" type="text">
+          </div>
+          <div id="auth-token-group" style="min-width:220px; flex:1 1 220px;">
+            <label class="muted" for="auth-token">Auth token</label>
+            <input id="auth-token" type="text">
+          </div>
+          <div id="browser-auth-group" style="min-width:320px; flex:1 1 320px;" hidden>
+            <label class="muted">SSO session</label>
+            <div class="toolbar" style="margin-bottom:0;">
+              <div id="browser-auth-status" class="muted" style="min-width:220px;">Sign in with SSO to continue.</div>
+              <button id="browser-auth-login" class="secondary" type="button">Sign in with SSO</button>
+              <button id="browser-auth-logout" class="secondary" type="button">Sign out</button>
+            </div>
+          </div>
+          <div style="align-self:end;">
+            <button id="refresh-leads" class="secondary" type="button">Refresh inbox</button>
+          </div>
+        </div>
+        <div class="metric-grid" aria-label="Vendor dashboard metrics">
+          <div class="metric-card">
+            <span class="muted">Total taps</span>
+            <strong id="metric-total-taps">-</strong>
+          </div>
+          <div class="metric-card">
+            <span class="muted">Consented leads</span>
+            <strong id="metric-consented">-</strong>
+          </div>
+          <div class="metric-card">
+            <span class="muted">CRM pushed</span>
+            <strong id="metric-crm-pushed">-</strong>
+          </div>
+          <div class="metric-card">
+            <span class="muted">Response rate</span>
+            <strong id="metric-response-rate">-</strong>
+          </div>
+        </div>
+        <div class="filter-grid" aria-label="Lead inbox filters">
+          <div>
+            <label class="muted" for="filter-classification">Score</label>
+            <select id="filter-classification">
+              <option value="">All scores</option>
+              <option value="hot">Hot</option>
+              <option value="warm">Warm</option>
+              <option value="cold">Cold</option>
+            </select>
+          </div>
+          <div>
+            <label class="muted" for="filter-consent">Consent</label>
+            <select id="filter-consent">
+              <option value="">All consent states</option>
+              <option value="pending">Pending</option>
+              <option value="vendor_only">Vendor only</option>
+              <option value="vendor_and_sponsor">Vendor and sponsor</option>
+              <option value="declined">Declined</option>
+            </select>
+          </div>
+          <div>
+            <label class="muted" for="filter-crm">CRM eligibility</label>
+            <select id="filter-crm">
+              <option value="">All CRM states</option>
+              <option value="eligible">Eligible</option>
+              <option value="blocked_by_policy">Blocked by policy</option>
+              <option value="blocked_by_consent">Blocked by consent</option>
+            </select>
+          </div>
+          <div>
+            <label class="muted" for="page-size">Page size</label>
+            <select id="page-size">
+              <option value="10">10 leads</option>
+              <option value="25" selected>25 leads</option>
+              <option value="50">50 leads</option>
+            </select>
+          </div>
+          <button id="apply-filters" class="secondary" type="button">Apply filters</button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Attendee</th>
+                <th>Company</th>
+                <th>Title</th>
+                <th>Score</th>
+                <th>Consent</th>
+                <th>Next action</th>
+                <th>CRM state</th>
+              </tr>
+            </thead>
+            <tbody id="lead-rows">
+              <tr><td colspan="8" class="muted">Load a stall to view leads.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <span id="lead-page-summary" class="muted">No page loaded yet.</span>
+          <div class="pager-actions">
+            <button id="prev-page" class="secondary" type="button" disabled>Previous</button>
+            <button id="next-page" class="secondary" type="button" disabled>Next</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="eyebrow">Lead Detail</div>
+        <h2 id="detail-title">Select a lead</h2>
+        <p class="muted" id="detail-subtitle">The selected lead will show consent-aware detail, classification, and notes.</p>
+
+        <div id="detail-body" class="detail-grid" hidden>
+          <section>
+            <div class="meta" id="detail-meta"></div>
+          </section>
+
+          <section>
+            <h3>Qualification</h3>
+            <div class="toolbar">
+              <div style="min-width:180px; flex:1 1 180px;">
+                <select id="classification">
+                  <option value="cold">Cold</option>
+                  <option value="warm">Warm</option>
+                  <option value="hot">Hot</option>
+                </select>
+              </div>
+              <button id="save-classification" class="primary" type="button">Save classification</button>
+            </div>
+            <div style="margin-top:12px;">
+              <button id="sync-crm" class="secondary" type="button">Sync to pilot CRM</button>
+            </div>
+          </section>
+
+          <section>
+            <h3>Score history</h3>
+            <div class="notes" id="score-history-list">
+              <div class="muted">No score changes yet.</div>
+            </div>
+          </section>
+
+          <section>
+            <h3>Notes</h3>
+            <div class="notes" id="note-list">
+              <div class="muted">No notes yet.</div>
+            </div>
+            <div style="margin-top:12px;">
+              <textarea id="new-note" placeholder="Add context for follow-up, meeting signals, or CRM prep."></textarea>
+            </div>
+            <div style="margin-top:12px;">
+              <button id="add-note" class="secondary" type="button">Add note</button>
+            </div>
+          </section>
+
+          <section>
+            <h3>Follow-up messaging</h3>
+            <div class="notes" id="followup-list">
+              <div class="muted">No follow-ups yet.</div>
+            </div>
+            <div class="toolbar" style="margin-top:12px;">
+              <div style="min-width:150px; flex:1 1 150px;">
+                <select id="followup-channel">
+                  <option value="email">Email</option>
+                  <option value="sms">SMS</option>
+                  <option value="whatsapp">WhatsApp</option>
+                </select>
+              </div>
+              <input id="followup-subject" type="text" placeholder="Subject (email only)">
+            </div>
+            <div style="margin-top:12px;">
+              <textarea id="followup-body" placeholder="Write a short, human-reviewed follow-up."></textarea>
+            </div>
+            <label class="muted" style="display:flex; gap:8px; align-items:center; margin-top:10px;">
+              <input id="followup-approved" type="checkbox">
+              I reviewed and approve this follow-up for queueing.
+            </label>
+            <div class="toolbar" style="margin-top:12px;">
+              <button id="save-followup-draft" class="secondary" type="button">Save follow-up draft</button>
+              <button id="queue-followup" class="primary" type="button">Queue approved follow-up</button>
+            </div>
+          </section>
+        </div>
+      </aside>
+    </main>
+
+    <script type="module">
+      import {
+        completeBrowserAuthCallback,
+        createBrowserAuthSlot
+      } from "./browser-auth.js";
+
+      const params = new URLSearchParams(window.location.search);
+      const apiBase =
+        params.get("apiBase") ||
+        (window.location.protocol === "file:" ? "http://127.0.0.1:3000" : window.location.origin);
+      const stallIdInput = document.getElementById("stall-id");
+      const authTokenInput = document.getElementById("auth-token");
+      const authTokenGroup = document.getElementById("auth-token-group");
+      const browserAuthGroup = document.getElementById("browser-auth-group");
+      const browserAuthStatus = document.getElementById("browser-auth-status");
+      const browserAuthLogin = document.getElementById("browser-auth-login");
+      const browserAuthLogout = document.getElementById("browser-auth-logout");
+      const leadRows = document.getElementById("lead-rows");
+      const message = document.getElementById("message");
+      const contextStall = document.getElementById("context-stall");
+      const contextLead = document.getElementById("context-lead");
+      const contextEvent = document.getElementById("context-event");
+      const detailBody = document.getElementById("detail-body");
+      const detailTitle = document.getElementById("detail-title");
+      const detailSubtitle = document.getElementById("detail-subtitle");
+      const detailMeta = document.getElementById("detail-meta");
+      const classification = document.getElementById("classification");
+      const scoreHistoryList = document.getElementById("score-history-list");
+      const noteList = document.getElementById("note-list");
+      const newNote = document.getElementById("new-note");
+      const followupList = document.getElementById("followup-list");
+      const followupChannel = document.getElementById("followup-channel");
+      const followupSubject = document.getElementById("followup-subject");
+      const followupBody = document.getElementById("followup-body");
+      const followupApproved = document.getElementById("followup-approved");
+      const syncCrmButton = document.getElementById("sync-crm");
+      const openOrganizerLink = document.getElementById("open-organizer-link");
+      const navAttendee = document.getElementById("nav-attendee");
+      const navVendor = document.getElementById("nav-vendor");
+      const navOrganizer = document.getElementById("nav-organizer");
+      const filterClassification = document.getElementById("filter-classification");
+      const filterConsent = document.getElementById("filter-consent");
+      const filterCrm = document.getElementById("filter-crm");
+      const pageSize = document.getElementById("page-size");
+      const leadPageSummary = document.getElementById("lead-page-summary");
+      const prevPageButton = document.getElementById("prev-page");
+      const nextPageButton = document.getElementById("next-page");
+      const metricTotalTaps = document.getElementById("metric-total-taps");
+      const metricConsented = document.getElementById("metric-consented");
+      const metricCrmPushed = document.getElementById("metric-crm-pushed");
+      const metricResponseRate = document.getElementById("metric-response-rate");
+      let authSession = null;
+
+      stallIdInput.value = params.get("stallId") || "stall-a1";
+      authTokenInput.value = params.get("auth") || "vendor-token";
+      const eventId = params.get("eventId") || "event-demo";
+      let requestedInteractionId = params.get("interactionId");
+
+      let selectedLead = null;
+      let leadItems = [];
+      let leadPagination = {
+        limit: Number(pageSize.value),
+        offset: 0,
+        total: 0,
+        has_more: false,
+        next_offset: null
+      };
+
+      document.getElementById("refresh-leads").addEventListener("click", () => loadLeads({ announce: true }));
+      document.getElementById("apply-filters").addEventListener("click", () => {
+        leadPagination.offset = 0;
+        requestedInteractionId = null;
+        loadLeads({ announce: true });
+      });
+      prevPageButton.addEventListener("click", () => {
+        leadPagination.offset = Math.max(0, leadPagination.offset - leadPagination.limit);
+        requestedInteractionId = null;
+        loadLeads({ announce: true });
+      });
+      nextPageButton.addEventListener("click", () => {
+        leadPagination.offset = leadPagination.next_offset ?? leadPagination.offset + leadPagination.limit;
+        requestedInteractionId = null;
+        loadLeads({ announce: true });
+      });
+      pageSize.addEventListener("change", () => {
+        leadPagination.limit = Number(pageSize.value);
+        leadPagination.offset = 0;
+        requestedInteractionId = null;
+        loadLeads({ announce: true });
+      });
+      document.getElementById("save-classification").addEventListener("click", saveClassification);
+      document.getElementById("add-note").addEventListener("click", addNote);
+      document.getElementById("save-followup-draft").addEventListener("click", () => createFollowup({ queue: false }));
+      document.getElementById("queue-followup").addEventListener("click", () => createFollowup({ queue: true }));
+      syncCrmButton.addEventListener("click", syncSelectedLeadToCrm);
+      stallIdInput.addEventListener("change", () => {
+        requestedInteractionId = null;
+        syncQueryState();
+        refreshShellLinks();
+      });
+      authTokenInput.addEventListener("change", () => {
+        syncQueryState();
+        refreshShellLinks();
+      });
+
+      await completeBrowserAuthCallback({ apiBase });
+      authSession = await createBrowserAuthSlot({
+        apiBase,
+        slot: "primary",
+        defaultToken: "vendor-token",
+        tokenInput: authTokenInput,
+        tokenGroup: authTokenGroup,
+        browserGroup: browserAuthGroup,
+        statusEl: browserAuthStatus,
+        signInButton: browserAuthLogin,
+        signOutButton: browserAuthLogout
+      });
+      contextEvent.textContent = eventId;
+      refreshShellLinks();
+      loadLeads({ announce: true });
+
+      async function loadLeads({ announce = false } = {}) {
+        try {
+          const metrics = await api(`/stalls/${encodeURIComponent(stallIdInput.value.trim())}/dashboard-metrics`);
+          renderMetrics(metrics);
+          const payload = await api(buildLeadInboxPath());
+          leadItems = payload.items;
+          leadPagination = payload.pagination || leadPagination;
+          renderLeads();
+          renderPagination();
+          contextStall.textContent = stallIdInput.value.trim() || "Not selected";
+          const preferredLead = requestedInteractionId
+            ? leadItems.find((item) => item.interaction_id === requestedInteractionId)
+            : null;
+          if (preferredLead) {
+            await selectLead(preferredLead.interaction_id);
+          } else if (leadItems[0]) {
+            await selectLead(leadItems[0].interaction_id);
+          } else {
+            clearDetail("No leads yet", "New taps and consents will appear here.");
+          }
+          if (announce) {
+            showMessage(`Loaded ${leadItems.length} lead${leadItems.length === 1 ? "" : "s"}.`, "ok");
+          }
+        } catch (error) {
+          showMessage(error.message, "error");
+          leadRows.innerHTML = `<tr><td colspan="8" class="muted">${error.message}</td></tr>`;
+          leadPageSummary.textContent = "Unable to load page.";
+          clearDetail("Unable to load lead detail", "Fix the inbox request and try again.");
+        }
+      }
+
+      function renderMetrics(metrics) {
+        metricTotalTaps.textContent = String(metrics.total_taps ?? 0);
+        metricConsented.textContent = String(metrics.vendor_consented_leads ?? 0);
+        metricCrmPushed.textContent = String(metrics.crm_pushed_leads ?? 0);
+        metricResponseRate.textContent = `${Math.round((metrics.response_rate ?? 0) * 100)}%`;
+      }
+
+      function renderLeads() {
+        leadRows.innerHTML = "";
+        if (!leadItems.length) {
+          leadRows.innerHTML = `<tr><td colspan="8" class="muted">No leads match this stall and filter set.</td></tr>`;
+          return;
+        }
+
+        for (const item of leadItems) {
+          const row = document.createElement("tr");
+          row.className = selectedLead?.interaction_id === item.interaction_id ? "active" : "";
+          row.innerHTML = `
+            <td>${formatDate(item.created_at)}</td>
+            <td class="${item.masked ? "masked" : ""}">${escapeHtml(item.full_name || "Unknown")}</td>
+            <td class="${item.masked ? "masked" : ""}">${escapeHtml(item.company_name || "Unknown")}</td>
+            <td class="${item.masked ? "masked" : ""}">${escapeHtml(item.title || "Unknown")}</td>
+            <td><span class="pill">${capitalize(item.classification)}</span></td>
+            <td>${humanizeConsent(item.consent_status)}</td>
+            <td>${escapeHtml(item.next_action || "Review lead")}</td>
+            <td>${humanizeCrmSyncStatus(item.crm_sync_status)} / ${humanizeCrm(item.crm_eligibility)}</td>
+          `;
+          row.addEventListener("click", () => selectLead(item.interaction_id));
+          leadRows.appendChild(row);
+        }
+      }
+
+      function renderPagination() {
+        const total = leadPagination.total ?? leadItems.length;
+        const offset = leadPagination.offset ?? 0;
+        const limit = leadPagination.limit ?? Number(pageSize.value);
+        if (!total) {
+          leadPageSummary.textContent = "Showing 0 leads.";
+        } else {
+          const start = offset + 1;
+          const end = Math.min(offset + leadItems.length, total);
+          leadPageSummary.textContent = `Showing ${start}-${end} of ${total} leads.`;
+        }
+        prevPageButton.disabled = offset <= 0;
+        nextPageButton.disabled = !leadPagination.has_more;
+        leadPagination.limit = limit;
+      }
+
+      async function selectLead(interactionId) {
+        try {
+          const [detail, notes] = await Promise.all([
+            api(`/interactions/${encodeURIComponent(interactionId)}/detail`),
+            api(`/interactions/${encodeURIComponent(interactionId)}/notes`)
+          ]);
+          selectedLead = detail.item;
+          requestedInteractionId = detail.item.interaction_id;
+          selectedLead.notes = notes.items;
+          syncQueryState();
+          refreshShellLinks();
+          renderLeads();
+          renderDetail();
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      function renderDetail() {
+        detailBody.hidden = false;
+        detailTitle.textContent = selectedLead.full_name || "Masked lead";
+        detailSubtitle.textContent = selectedLead.masked
+          ? "Consent has not been granted for vendor-visible PII yet."
+          : `${selectedLead.company_name || "Unknown company"} | ${humanizeConsent(selectedLead.consent_status)}`;
+        contextLead.textContent = selectedLead.full_name || "Masked lead";
+        classification.value = selectedLead.classification || "cold";
+
+        detailMeta.innerHTML = "";
+        addMetaRow("Company", selectedLead.company_name || "Masked");
+        addMetaRow("Email", selectedLead.email || "Not visible");
+        addMetaRow("Phone", selectedLead.phone || "Not visible");
+        addMetaRow("Consent", humanizeConsent(selectedLead.consent_status));
+        addMetaRow("CRM eligibility", humanizeCrm(selectedLead.crm_eligibility));
+        addMetaRow("CRM sync", humanizeCrmSync(selectedLead.crm_sync));
+        addMetaRow("Status", capitalize(selectedLead.status || "active"));
+        addMetaRow("Notes", String(selectedLead.notes_count || selectedLead.notes.length || 0));
+        addMetaRow("Score changes", String(selectedLead.score_history_count || 0));
+        addMetaRow("Wallet passes", summarizeWalletPasses(selectedLead.wallet_passes || []));
+        addMetaRow("Communication suppressions", summarizeSuppressions(selectedLead.communication_suppressions || []));
+        addMetaRow("Email follow-up consent", humanizeChannelConsent("email"));
+        addMetaRow("SMS follow-up consent", humanizeChannelConsent("sms"));
+        addMetaRow("WhatsApp follow-up consent", humanizeChannelConsent("whatsapp"));
+        syncCrmButton.disabled = selectedLead.crm_eligibility !== "eligible";
+
+        scoreHistoryList.innerHTML = "";
+        if (!selectedLead.score_history?.length) {
+          scoreHistoryList.innerHTML = `<div class="muted">No score changes yet for this interaction.</div>`;
+        } else {
+          for (const score of selectedLead.score_history) {
+            const item = document.createElement("article");
+            item.className = "note";
+            item.innerHTML = `
+              <strong>${capitalize(score.previous_score || "none")} -> ${capitalize(score.score)}</strong>
+              <p>${escapeHtml(score.reason || "Manual vendor score update")}</p>
+              <p class="muted">${escapeHtml(score.scored_by_user_id || "Vendor")} | ${formatDate(score.created_at)}</p>
+            `;
+            scoreHistoryList.appendChild(item);
+          }
+        }
+
+        noteList.innerHTML = "";
+        if (!selectedLead.notes.length) {
+          noteList.innerHTML = `<div class="muted">No notes yet for this interaction.</div>`;
+        } else {
+          for (const note of selectedLead.notes) {
+            const item = document.createElement("article");
+            item.className = "note";
+            item.innerHTML = `
+              <strong>${escapeHtml(note.author_user_id || "Vendor")}</strong>
+              <p>${escapeHtml(note.note)}</p>
+              <p class="muted">${formatDate(note.created_at)}</p>
+            `;
+            noteList.appendChild(item);
+          }
+        }
+
+        renderFollowups();
+      }
+
+      function renderFollowups() {
+        followupList.innerHTML = "";
+        if (!selectedLead.followups?.length) {
+          followupList.innerHTML = `<div class="muted">No follow-ups yet for this interaction.</div>`;
+          return;
+        }
+        for (const followup of selectedLead.followups) {
+          const item = document.createElement("article");
+          item.className = "note";
+          item.innerHTML = `
+            <strong>${capitalize(followup.channel)} follow-up: ${capitalize(followup.status)}</strong>
+            <p>${escapeHtml(followup.subject || followup.body || "No message preview")}</p>
+            <p class="muted">Notification: ${escapeHtml(followup.notification_id || "Not queued")} | Updated ${formatDate(followup.updated_at)}</p>
+          `;
+          followupList.appendChild(item);
+        }
+      }
+
+      function humanizeChannelConsent(channel) {
+        const record = selectedLead.communication_channel_consents?.find((entry) => entry.channel === channel);
+        if (!record) {
+          return "Not captured";
+        }
+        return record.allowed ? "Allowed" : "Not allowed";
+      }
+
+      function summarizeWalletPasses(walletPasses) {
+        if (!walletPasses.length) {
+          return "No requests yet";
+        }
+        const latest = walletPasses[0];
+        return `${capitalize(latest.status)} (${latest.pass_type})`;
+      }
+
+      function summarizeSuppressions(suppressions) {
+        const active = suppressions.filter((entry) => entry.status === "active");
+        if (!active.length) {
+          return "None active";
+        }
+        return active.map((entry) => `${entry.channel}: ${entry.reason || "suppressed"}`).join(", ");
+      }
+
+      async function saveClassification() {
+        if (!selectedLead) {
+          return;
+        }
+        try {
+          await api(`/interactions/${encodeURIComponent(selectedLead.interaction_id)}/classify`, {
+            method: "POST",
+            body: {
+              classification: classification.value
+            }
+          });
+          showMessage(`Classification updated to ${classification.value}.`, "ok");
+          await loadLeads({ announce: false });
+          await selectLead(selectedLead.interaction_id);
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      async function addNote() {
+        if (!selectedLead || !newNote.value.trim()) {
+          return;
+        }
+        try {
+          await api(`/interactions/${encodeURIComponent(selectedLead.interaction_id)}/note`, {
+            method: "POST",
+            body: {
+              note: newNote.value.trim()
+            }
+          });
+          newNote.value = "";
+          showMessage("Note added.", "ok");
+          await selectLead(selectedLead.interaction_id);
+          await loadLeads({ announce: false });
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      async function createFollowup({ queue }) {
+        if (!selectedLead || !followupBody.value.trim()) {
+          return;
+        }
+        try {
+          const response = await api(`/interactions/${encodeURIComponent(selectedLead.interaction_id)}/followups`, {
+            method: "POST",
+            body: {
+              channel: followupChannel.value,
+              subject: followupSubject.value.trim() || null,
+              body: followupBody.value.trim(),
+              status: queue ? "queued" : "draft",
+              human_approved: queue ? followupApproved.checked : false
+            }
+          });
+          const status = response.followup?.status || response.status || "draft";
+          showMessage(queue ? `Follow-up ${status}.` : "Follow-up draft saved.", "ok");
+          followupSubject.value = "";
+          followupBody.value = "";
+          followupApproved.checked = false;
+          await selectLead(selectedLead.interaction_id);
+          await loadLeads({ announce: false });
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      async function syncSelectedLeadToCrm() {
+        if (!selectedLead) {
+          return;
+        }
+        try {
+          const response = await api(`/interactions/${encodeURIComponent(selectedLead.interaction_id)}/crm-sync`, {
+            method: "POST",
+            body: {}
+          });
+          showMessage(`Lead synced to CRM (${response.external_record_id}).`, "ok");
+          await selectLead(selectedLead.interaction_id);
+          await loadLeads({ announce: false });
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      function clearDetail(title, subtitle) {
+        selectedLead = null;
+        requestedInteractionId = null;
+        detailBody.hidden = true;
+        detailTitle.textContent = title;
+        detailSubtitle.textContent = subtitle;
+        contextLead.textContent = "Inbox only";
+        syncCrmButton.disabled = true;
+        syncQueryState();
+        refreshShellLinks();
+      }
+
+      function addMetaRow(label, value) {
+        const row = document.createElement("div");
+        row.className = "meta-row";
+        row.innerHTML = `<span>${label}</span><strong>${escapeHtml(value)}</strong>`;
+        detailMeta.appendChild(row);
+      }
+
+      function showMessage(text, type) {
+        message.hidden = !text;
+        message.textContent = text || "";
+        message.className = `status ${type}`;
+      }
+
+      function refreshShellLinks() {
+        const shared = baseShellParams();
+        navAttendee.href = buildUrl("./attendee.html", shared);
+        navVendor.href = buildUrl("./vendor.html", {
+          ...shared,
+          stallId: stallIdInput.value.trim() || null,
+          interactionId: requestedInteractionId || null
+        });
+        navOrganizer.href = buildUrl("./organizer.html", {
+          ...shared,
+          eventId,
+          stallId: stallIdInput.value.trim() || null,
+          interactionId: requestedInteractionId || null
+        });
+        openOrganizerLink.href = navOrganizer.href;
+      }
+
+      function syncQueryState() {
+        const next = new URL(window.location.href);
+        writeParam(next.searchParams, "apiBase", apiBase === window.location.origin ? null : apiBase);
+        writeParam(next.searchParams, "stallId", stallIdInput.value.trim() || null);
+        writeParam(next.searchParams, "auth", authSession?.isSecureMode ? null : authTokenInput.value.trim() || null);
+        writeParam(next.searchParams, "eventId", eventId || null);
+        writeParam(next.searchParams, "interactionId", requestedInteractionId || null);
+        window.history.replaceState({}, "", next);
+      }
+
+      function baseShellParams() {
+        return {
+          apiBase: apiBase === window.location.origin ? null : apiBase
+        };
+      }
+
+      function buildUrl(path, entries) {
+        const url = new URL(path, window.location.href);
+        for (const [key, value] of Object.entries(entries)) {
+          writeParam(url.searchParams, key, value);
+        }
+        return url.pathname + url.search;
+      }
+
+      function writeParam(searchParams, key, value) {
+        if (value === null || value === undefined || value === "") {
+          searchParams.delete(key);
+          return;
+        }
+        searchParams.set(key, value);
+      }
+
+      function humanizeConsent(value) {
+        return {
+          pending: "Pending",
+          vendor_only: "Vendor only",
+          vendor_and_sponsor: "Vendor and sponsor",
+          declined: "Declined"
+        }[value] || value || "Unknown";
+      }
+
+      function humanizeCrm(value) {
+        return {
+          eligible: "Eligible",
+          blocked_by_policy: "Blocked by policy",
+          blocked_by_consent: "Blocked by consent"
+        }[value] || value || "Unknown";
+      }
+
+      function humanizeCrmSync(sync) {
+        if (!sync) {
+          return "Not yet synced";
+        }
+        if (sync.status === "synced") {
+          return `Synced (${formatDate(sync.synced_at || sync.updated_at)})`;
+        }
+        if (sync.status === "delete_pending") {
+          return "Delete pending";
+        }
+        if (sync.status === "deleted") {
+          return `Deleted (${formatDate(sync.deleted_at || sync.updated_at)})`;
+        }
+        return capitalize(sync.status || "unknown");
+      }
+
+      function humanizeCrmSyncStatus(value) {
+        return {
+          not_synced: "Not synced",
+          synced: "Synced",
+          failed: "Failed",
+          delete_pending: "Delete pending",
+          deleted: "Deleted"
+        }[value] || capitalize(value || "unknown");
+      }
+
+      function buildLeadInboxPath() {
+        const query = new URLSearchParams();
+        query.set("limit", String(Number(pageSize.value)));
+        query.set("offset", String(leadPagination.offset || 0));
+        setQueryFilter(query, "classification", filterClassification.value);
+        setQueryFilter(query, "consent_status", filterConsent.value);
+        setQueryFilter(query, "crm_eligibility", filterCrm.value);
+        return `/stalls/${encodeURIComponent(stallIdInput.value.trim())}/leads?${query.toString()}`;
+      }
+
+      function setQueryFilter(query, key, value) {
+        if (value) {
+          query.set(key, value);
+        }
+      }
+
+      function capitalize(value) {
+        return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
+      }
+
+      function formatDate(value) {
+        return value ? new Date(value).toLocaleString() : "Not available";
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+      }
+
+      async function api(path, options = {}) {
+        const bearerToken = authSession?.getBearerToken?.() || authTokenInput.value.trim();
+        if (!bearerToken) {
+          throw new Error("Sign in with SSO to continue.");
+        }
+        const response = await fetch(`${apiBase}${path}`, {
+          cache: "no-store",
+          method: options.method || "GET",
+          headers: {
+            authorization: `Bearer ${bearerToken}`,
+            "content-type": "application/json",
+            ...(options.headers || {})
+          },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || "Request failed");
+        }
+        return payload;
+      }
+    </script>
+  </body>
+</html>

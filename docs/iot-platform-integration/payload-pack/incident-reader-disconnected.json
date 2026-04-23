@@ -1,0 +1,27 @@
+{
+  "contract_version": "2026-04-17.1",
+  "environment": "staging",
+  "build_version": "iot-2026.04.17.3",
+  "next_cursor": "incident-cursor-3002",
+  "items": [
+    {
+      "stream_cursor": "incident-cursor-3001",
+      "tenant_id": "tenant-demo",
+      "device_id": "device-01",
+      "event_id": "event-demo",
+      "stall_id": "stall-a1",
+      "assignment_checksum": "35c70991fa13d0f72cfb1d1d721e46f582c32f78f181f47ebad2dc1f0f779545",
+      "severity": "P1",
+      "code": "READER_DISCONNECTED",
+      "message": "USB NFC reader disconnected while device remained assigned",
+      "status": "open",
+      "metadata": {
+        "reader_model": "ACR122U",
+        "last_seen_connected_at": "2026-04-17T10:11:45.000Z"
+      },
+      "occurred_at": "2026-04-17T10:12:00.000Z",
+      "resolved_at": null
+    }
+  ]
+}
+

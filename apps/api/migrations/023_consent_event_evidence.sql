@@ -1,0 +1,4 @@
+ALTER TABLE consent_events
+  ADD COLUMN IF NOT EXISTS locale TEXT,
+  ADD COLUMN IF NOT EXISTS ip_address TEXT,
+  ADD COLUMN IF NOT EXISTS user_agent TEXT;

@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Attendee Session</title>
+    <style>
+      :root {
+        --bg: #f4f6fb;
+        --card: #ffffff;
+        --text: #162033;
+        --muted: #63738a;
+        --border: #d9e2ef;
+        --accent: #1f7a59;
+        --accent-soft: #dff4ea;
+        --danger: #a63d40;
+        --danger-soft: #fbe7e7;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(31, 122, 89, 0.08), transparent 28%),
+          var(--bg);
+        color: var(--text);
+      }
+      .shell {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 18px 18px 0;
+      }
+      .shell-bar {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+      .shell-title {
+        display: grid;
+        gap: 6px;
+      }
+      .shell-title strong {
+        font-size: 1.1rem;
+      }
+      .shell-nav {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .shell-nav a,
+      .mini-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        text-decoration: none;
+        color: var(--text);
+        padding: 10px 13px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.72);
+      }
+      .shell-nav a.active {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 28px 18px 56px;
+      }
+      .intro-grid {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 18px;
+        margin-bottom: 18px;
+      }
+      .context-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .context-chip {
+        border-radius: 16px;
+        padding: 12px;
+        background: #fbfcfe;
+        border: 1px solid var(--border);
+      }
+      .context-chip strong {
+        display: block;
+        margin-top: 6px;
+      }
+      .link-stack {
+        display: grid;
+        gap: 10px;
+      }
+      .hero {
+        display: grid;
+        grid-template-columns: 1.3fr 0.9fr;
+        gap: 18px;
+      }
+      .card {
+        background: var(--card);
+        border-radius: 22px;
+        padding: 22px;
+        border: 1px solid var(--border);
+        box-shadow: 0 18px 40px rgba(13, 27, 45, 0.08);
+      }
+      .stack {
+        display: grid;
+        gap: 18px;
+        margin-top: 18px;
+      }
+      h1, h2, h3, p {
+        margin-top: 0;
+      }
+      .eyebrow {
+        display: inline-block;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+      }
+      .status {
+        padding: 12px 14px;
+        border-radius: 14px;
+        font-size: 14px;
+        margin-bottom: 16px;
+      }
+      .status.ok {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+      .status.error {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+      label {
+        display: grid;
+        gap: 8px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      input[type="text"],
+      input[type="email"],
+      input[type="tel"] {
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        padding: 12px 14px;
+        font: inherit;
+        color: var(--text);
+        background: #fbfcfe;
+      }
+      .checks {
+        display: grid;
+        gap: 14px;
+        margin: 18px 0;
+      }
+      .check {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 14px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: #fbfcfe;
+      }
+      .check input {
+        margin-top: 3px;
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      button {
+        border: 0;
+        border-radius: 12px;
+        padding: 12px 16px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        color: white;
+      }
+      button.secondary {
+        background: #eaf0f7;
+        color: var(--text);
+      }
+      button.danger {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+      .meta {
+        display: grid;
+        gap: 12px;
+      }
+      .meta-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .meta-row span:first-child {
+        color: var(--muted);
+      }
+      .control-panel {
+        display: grid;
+        gap: 14px;
+      }
+      .control-item {
+        display: grid;
+        gap: 8px;
+        padding: 14px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: #fbfcfe;
+      }
+      .control-item h3 {
+        margin: 0;
+        font-size: 1rem;
+      }
+      .request-log {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+      }
+      .request-log .entry {
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        padding: 12px;
+        background: #fbfcfe;
+      }
+      .connections {
+        display: grid;
+        gap: 12px;
+      }
+      .connection {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 14px;
+        background: #fbfcfe;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .empty {
+        color: var(--muted);
+        font-style: italic;
+      }
+      @media (max-width: 860px) {
+        .intro-grid,
+        .context-strip,
+        .hero, .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <div class="eyebrow">Pilot Workspace</div>
+          <strong>Phase 3 attendee privacy shell</strong>
+          <span class="muted">Signed attendee session, consent management, and a clearer bridge back into the pilot workspace.</span>
+        </div>
+        <nav class="shell-nav" aria-label="Pilot shell">
+          <a id="nav-home" href="./index.html">Launchpad</a>
+          <a id="nav-attendee" class="active" href="./attendee.html">Attendee</a>
+          <a id="nav-vendor" href="./vendor.html">Vendor</a>
+          <a id="nav-organizer" href="./organizer.html">Organizer</a>
+        </nav>
+      </div>
+    </div>
+    <main>
+      <section class="intro-grid">
+        <article class="card">
+          <div class="eyebrow">Session Context</div>
+          <div class="context-strip">
+            <div class="context-chip">
+              <span class="muted">Interaction</span>
+              <strong id="context-interaction">Waiting for session</strong>
+            </div>
+            <div class="context-chip">
+              <span class="muted">Sharing state</span>
+              <strong id="context-consent">Pending</strong>
+            </div>
+            <div class="context-chip">
+              <span class="muted">API mode</span>
+              <strong id="context-api">Local shell</strong>
+            </div>
+          </div>
+        </article>
+        <article class="card">
+          <div class="eyebrow">Quick Navigation</div>
+          <div class="link-stack">
+            <a id="open-vendor-link" class="mini-link" href="./vendor.html">Open vendor workspace</a>
+            <a id="open-organizer-link" class="mini-link" href="./organizer.html">Open organizer workspace</a>
+            <a id="open-launchpad-link" class="mini-link" href="./index.html">Return to pilot launchpad</a>
+          </div>
+        </article>
+      </section>
+      <div id="message" class="status ok" hidden></div>
+      <section class="hero">
+        <article class="card">
+          <div class="eyebrow">Attendee Session</div>
+          <h1>Review what you shared</h1>
+          <p class="muted">
+            This view is powered by the signed attendee session token. Update your contact details,
+            adjust vendor and sponsor consent, or revoke sharing entirely.
+          </p>
+          <form id="consent-form" hidden>
+            <div class="grid">
+              <label>
+                Full name
+                <input id="full-name" type="text" autocomplete="name">
+              </label>
+              <label>
+                Company
+                <input id="company-name" type="text" autocomplete="organization">
+              </label>
+              <label>
+                Email
+                <input id="email" type="email" autocomplete="email">
+              </label>
+              <label>
+                Phone
+                <input id="phone" type="tel" autocomplete="tel">
+              </label>
+            </div>
+            <div class="checks">
+              <label class="check">
+                <input id="vendor-consent" type="checkbox">
+                <span>
+                  <strong>Share my details with this vendor</strong><br>
+                  <span class="muted">Required before the vendor can see your name and contact information.</span>
+                </span>
+              </label>
+              <label class="check">
+                <input id="sponsor-consent" type="checkbox">
+                <span>
+                  <strong>Allow sponsor follow-up</strong><br>
+                  <span class="muted">Never prechecked. Only available when vendor sharing is enabled.</span>
+                </span>
+              </label>
+            </div>
+            <div class="actions">
+              <button id="save-button" class="primary" type="submit">Save consent and profile</button>
+              <button id="sponsor-opt-out-button" class="secondary" type="button">Opt out from sponsor only</button>
+              <button id="revoke-button" class="danger" type="button">Revoke all sharing</button>
+            </div>
+          </form>
+          <div id="missing-session" class="empty">
+            Provide `interactionId` and `token` in the URL query string to load an attendee session.
+          </div>
+        </article>
+        <aside class="card">
+          <div class="eyebrow">Current Connection</div>
+          <h2 id="stall-title">Waiting for session</h2>
+          <div class="meta" id="current-meta"></div>
+        </aside>
+      </section>
+
+      <section class="stack">
+        <article class="card">
+          <div class="eyebrow">Privacy</div>
+          <h2>Event policy snapshot</h2>
+          <div class="meta" id="privacy-meta"></div>
+        </article>
+
+        <article class="card">
+          <div class="eyebrow">Privacy Controls</div>
+          <h2>Request, export, or delete your data</h2>
+          <p class="muted">
+            These actions use your signed attendee session and create organizer-visible privacy requests.
+          </p>
+          <div class="control-panel">
+            <div class="control-item">
+              <h3>Request my data</h3>
+              <p class="muted">Creates an access request so organizers can prepare your stored connection package.</p>
+              <button id="request-access-button" class="secondary" type="button" disabled>Request my data/export</button>
+            </div>
+            <div class="control-item">
+              <h3>Request deletion</h3>
+              <p class="muted">Creates a delete request for organizer review and downstream deletion handling.</p>
+              <button id="request-delete-button" class="danger" type="button" disabled>Request deletion</button>
+            </div>
+            <div class="control-item">
+              <h3>Add event pass to wallet</h3>
+              <p class="muted">Requests a safe wallet pass. If wallet support is disabled, your consent and connection flow still continues normally.</p>
+              <button id="request-wallet-pass-button" class="secondary" type="button" disabled>Request wallet pass</button>
+            </div>
+          </div>
+          <div id="request-log" class="request-log">
+            <div class="empty">No privacy requests submitted in this browser session yet.</div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="eyebrow">Connections</div>
+          <h2>Your event connections</h2>
+          <div id="connections" class="connections">
+            <div class="empty">No connections loaded yet.</div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const apiBase =
+        params.get("apiBase") ||
+        (window.location.protocol === "file:" ? "http://127.0.0.1:3000" : window.location.origin);
+      const interactionId = params.get("interactionId");
+      const sessionToken = params.get("token");
+
+      const message = document.getElementById("message");
+      const form = document.getElementById("consent-form");
+      const missingSession = document.getElementById("missing-session");
+      const contextInteraction = document.getElementById("context-interaction");
+      const contextConsent = document.getElementById("context-consent");
+      const contextApi = document.getElementById("context-api");
+      const fullName = document.getElementById("full-name");
+      const companyName = document.getElementById("company-name");
+      const email = document.getElementById("email");
+      const phone = document.getElementById("phone");
+      const vendorConsent = document.getElementById("vendor-consent");
+      const sponsorConsent = document.getElementById("sponsor-consent");
+      const sponsorOptOutButton = document.getElementById("sponsor-opt-out-button");
+      const requestAccessButton = document.getElementById("request-access-button");
+      const requestDeleteButton = document.getElementById("request-delete-button");
+      const requestWalletPassButton = document.getElementById("request-wallet-pass-button");
+      const requestLog = document.getElementById("request-log");
+      const stallTitle = document.getElementById("stall-title");
+      const currentMeta = document.getElementById("current-meta");
+      const privacyMeta = document.getElementById("privacy-meta");
+      const connections = document.getElementById("connections");
+      const navAttendee = document.getElementById("nav-attendee");
+      const navVendor = document.getElementById("nav-vendor");
+      const navOrganizer = document.getElementById("nav-organizer");
+      const openVendorLink = document.getElementById("open-vendor-link");
+      const openOrganizerLink = document.getElementById("open-organizer-link");
+
+      let currentSession = null;
+      contextApi.textContent = apiBase === window.location.origin ? "Browser origin" : apiBase;
+      refreshShellLinks();
+
+      if (interactionId && sessionToken) {
+        missingSession.hidden = true;
+        form.hidden = false;
+        loadSession({ announce: true });
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await saveConsent();
+      });
+
+      sponsorConsent.addEventListener("change", () => {
+        if (sponsorConsent.checked) {
+          vendorConsent.checked = true;
+        }
+      });
+
+      vendorConsent.addEventListener("change", () => {
+        if (!vendorConsent.checked) {
+          sponsorConsent.checked = false;
+        }
+      });
+
+      document.getElementById("revoke-button").addEventListener("click", async () => {
+        try {
+          const response = await api("/consents/revoke", {
+            method: "POST",
+            body: {
+              session_token: sessionToken
+            }
+          });
+          showMessage(`Consent revoked. Current status: ${response.consent_status}.`, "ok");
+          await loadSession({ announce: false });
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      });
+
+      sponsorOptOutButton.addEventListener("click", async () => {
+        try {
+          const response = await api("/consents/revoke", {
+            method: "POST",
+            body: {
+              session_token: sessionToken,
+              revoke_vendor_release: false,
+              revoke_sponsor_release: true,
+              locale: navigator.language || null
+            }
+          });
+          showMessage(`Sponsor follow-up disabled. Current status: ${response.consent_status}.`, "ok");
+          await loadSession({ announce: false });
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      });
+
+      requestAccessButton.addEventListener("click", () => submitDsrRequest("access"));
+      requestDeleteButton.addEventListener("click", () => submitDsrRequest("delete"));
+      requestWalletPassButton.addEventListener("click", requestWalletPass);
+
+      async function loadSession({ announce = false } = {}) {
+        try {
+          const session = await api(`/attendee/session/${encodeURIComponent(interactionId)}?token=${encodeURIComponent(sessionToken)}`);
+          currentSession = session;
+          renderSession(session);
+          if (announce) {
+            showMessage("Attendee session loaded.", "ok");
+          }
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      async function saveConsent() {
+        try {
+          const payload = {
+            session_token: sessionToken,
+            vendor_release_allowed: vendorConsent.checked,
+            sponsor_release_allowed: sponsorConsent.checked,
+            locale: navigator.language || null,
+            attendee_profile: {
+              full_name: fullName.value.trim() || null,
+              company_name: companyName.value.trim() || null,
+              email: email.value.trim() || null,
+              phone: phone.value.trim() || null
+            }
+          };
+          const response = await api("/consents/capture", {
+            method: "POST",
+            body: payload
+          });
+          showMessage(`Saved. Consent status is now ${response.consent_status}.`, "ok");
+          await loadSession({ announce: false });
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      async function submitDsrRequest(requestType) {
+        const isAccess = requestType === "access";
+        try {
+          const response = await api(`/attendee/session/${encodeURIComponent(interactionId)}/dsr`, {
+            method: "POST",
+            body: {
+              session_token: sessionToken,
+              request_type: requestType,
+              request_reason: isAccess
+                ? "Attendee requested a data export from the privacy screen."
+                : "Attendee requested deletion from the privacy screen."
+            }
+          });
+          recordPrivacyRequest(response);
+          showMessage(`${isAccess ? "Data/export" : "Deletion"} request submitted. Status: ${response.status}.`, "ok");
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      function renderSession(session) {
+        stallTitle.textContent = `${session.current_connection.stall_name} (${session.current_connection.stall_code})`;
+        contextInteraction.textContent = session.interaction_id;
+        contextConsent.textContent = humanizeConsent(session.current_connection.consent_status);
+        fullName.value = session.attendee_profile?.full_name || "";
+        companyName.value = session.attendee_profile?.company_name || "";
+        email.value = session.attendee_profile?.email || "";
+        phone.value = session.attendee_profile?.phone || "";
+        vendorConsent.checked = Boolean(session.consent.vendor_release_allowed);
+        sponsorConsent.checked = Boolean(session.consent.sponsor_release_allowed);
+        sponsorOptOutButton.disabled = !session.consent.sponsor_release_allowed;
+        requestAccessButton.disabled = false;
+        requestDeleteButton.disabled = false;
+        requestWalletPassButton.disabled = false;
+        refreshShellLinks();
+
+        currentMeta.innerHTML = "";
+        addMetaRow(currentMeta, "Status", session.current_connection.status);
+        addMetaRow(currentMeta, "Consent", humanizeConsent(session.current_connection.consent_status));
+        addMetaRow(currentMeta, "Connected at", formatDate(session.current_connection.created_at));
+        addMetaRow(currentMeta, "Interaction", session.interaction_id);
+
+        privacyMeta.innerHTML = "";
+        addMetaRow(privacyMeta, "Vendor exports", yesNo(session.privacy.vendor_exports_enabled));
+        addMetaRow(privacyMeta, "Sponsor PII enabled", yesNo(session.privacy.sponsor_pii_enabled));
+        addMetaRow(privacyMeta, "CRM push allowed", yesNo(session.privacy.allow_crm_push));
+        addMetaRow(privacyMeta, "Wallet passes", summarizeWalletPasses(session.wallet_passes || []));
+        renderConsentEvidence(session);
+
+        connections.innerHTML = "";
+        if (!session.connections.length) {
+          connections.innerHTML = '<div class="empty">No event connections found for this attendee yet.</div>';
+          return;
+        }
+
+        for (const item of session.connections) {
+          const card = document.createElement("article");
+          card.className = "connection";
+          card.innerHTML = `
+            <strong>${item.stall_name} (${item.stall_code})</strong>
+            <p class="muted">Consent: ${humanizeConsent(item.consent_status)} | Status: ${item.status}</p>
+            <p class="muted">Connected at ${formatDate(item.created_at)}</p>
+          `;
+          connections.appendChild(card);
+        }
+      }
+
+      function renderConsentEvidence(session) {
+        const events = session.consent_events || [];
+        const latest = events[events.length - 1];
+        addMetaRow(privacyMeta, "Consent evidence records", events.length);
+        if (!latest) {
+          addMetaRow(privacyMeta, "Latest evidence", "Not recorded yet");
+          return;
+        }
+        addMetaRow(privacyMeta, "Latest evidence", `${humanizeConsentAction(latest.action)} at ${formatDate(latest.created_at)}`);
+        addMetaRow(privacyMeta, "Evidence locale", latest.locale || "Not available");
+        addMetaRow(privacyMeta, "Evidence IP", latest.ip_address || "Not available");
+        addMetaRow(privacyMeta, "Evidence browser", latest.user_agent || "Not available");
+      }
+
+      function recordPrivacyRequest(response) {
+        requestLog.querySelector(".empty")?.remove();
+        const entry = document.createElement("div");
+        entry.className = "entry";
+        const title = document.createElement("strong");
+        title.textContent = `${humanizeDsrType(response.request_type)} request`;
+        const status = document.createElement("p");
+        status.className = "muted";
+        status.textContent = `Status: ${response.status || "submitted"} | Request ID: ${response.id}`;
+        const submitted = document.createElement("p");
+        submitted.className = "muted";
+        submitted.textContent = `Submitted at ${formatDate(response.created_at || new Date().toISOString())}`;
+        entry.append(title, status, submitted);
+        if (response.short_link_url) {
+          const link = document.createElement("a");
+          link.className = "mini-link";
+          link.href = response.short_link_url;
+          link.textContent = "Open generated wallet pass link";
+          entry.appendChild(link);
+        }
+        requestLog.prepend(entry);
+      }
+
+      async function requestWalletPass() {
+        try {
+          const response = await api(`/attendee/session/${encodeURIComponent(interactionId)}/wallet-pass`, {
+            method: "POST",
+            body: {
+              session_token: sessionToken,
+              pass_type: "generic"
+            }
+          });
+          const walletPass = response.wallet_pass;
+          recordPrivacyRequest({
+            id: walletPass.id,
+            request_type: "wallet_pass",
+            status: walletPass.status,
+            created_at: walletPass.created_at,
+            short_link_url: response.short_link?.short_link_url || null
+          });
+          showMessage(
+            response.short_link?.short_link_url
+              ? `Wallet pass generated. Link: ${response.short_link.short_link_url}`
+              : `Wallet pass request recorded. Status: ${humanizeWalletStatus(walletPass.status)}.`,
+            "ok"
+          );
+          await loadSession({ announce: false });
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      function addMetaRow(container, label, value) {
+        const row = document.createElement("div");
+        row.className = "meta-row";
+        const labelNode = document.createElement("span");
+        labelNode.textContent = label;
+        const valueNode = document.createElement("strong");
+        valueNode.textContent = value ?? "Not set";
+        row.append(labelNode, valueNode);
+        container.appendChild(row);
+      }
+
+      function showMessage(text, type) {
+        message.hidden = !text;
+        message.textContent = text || "";
+        message.className = `status ${type}`;
+      }
+
+      function refreshShellLinks() {
+        const shared = {
+          apiBase: apiBase === window.location.origin ? null : apiBase
+        };
+        navAttendee.href = buildUrl("./attendee.html", {
+          ...shared,
+          interactionId,
+          token: sessionToken
+        });
+        navVendor.href = buildUrl("./vendor.html", {
+          ...shared,
+          auth: "vendor-token",
+          stallId: currentSession?.current_connection?.stall_id || null,
+          eventId: currentSession?.event?.id || "event-demo"
+        });
+        navOrganizer.href = buildUrl("./organizer.html", {
+          ...shared,
+          auth: "organizer-token",
+          eventId: currentSession?.event?.id || "event-demo",
+          stallId: currentSession?.current_connection?.stall_id || null
+        });
+        openVendorLink.href = navVendor.href;
+        openOrganizerLink.href = navOrganizer.href;
+      }
+
+      function buildUrl(path, entries) {
+        const url = new URL(path, window.location.href);
+        for (const [key, value] of Object.entries(entries)) {
+          if (value === null || value === undefined || value === "") {
+            url.searchParams.delete(key);
+          } else {
+            url.searchParams.set(key, value);
+          }
+        }
+        return url.pathname + url.search;
+      }
+
+      function humanizeConsent(value) {
+        return {
+          pending: "Pending",
+          vendor_only: "Vendor only",
+          vendor_and_sponsor: "Vendor and sponsor",
+          declined: "Declined"
+        }[value] || value || "Unknown";
+      }
+
+      function humanizeConsentAction(value) {
+        return {
+          capture: "Captured",
+          revoke: "Revoked",
+          sponsor_opt_out: "Sponsor opt-out"
+        }[value] || humanizeConsent(value);
+      }
+
+      function humanizeDsrType(value) {
+        return {
+          access: "Data/export",
+          delete: "Deletion",
+          wallet_pass: "Wallet pass"
+        }[value] || value || "Privacy";
+      }
+
+      function humanizeWalletStatus(value) {
+        return {
+          disabled: "Safely disabled",
+          generated: "Generated",
+          delivered: "Delivered",
+          failed: "Failed",
+          cancelled: "Cancelled"
+        }[value] || value || "Unknown";
+      }
+
+      function summarizeWalletPasses(walletPasses) {
+        if (!walletPasses.length) {
+          return "No requests yet";
+        }
+        return walletPasses
+          .map((pass) => `${humanizeWalletStatus(pass.status)} (${pass.pass_type})`)
+          .join(", ");
+      }
+
+      function yesNo(value) {
+        return value ? "Enabled" : "Disabled";
+      }
+
+      function formatDate(value) {
+        return value ? new Date(value).toLocaleString() : "Not available";
+      }
+
+      async function api(path, options = {}) {
+        const response = await fetch(`${apiBase}${path}`, {
+          cache: "no-store",
+          method: options.method || "GET",
+          headers: {
+            "content-type": "application/json",
+            ...(options.headers || {})
+          },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || "Request failed");
+        }
+        return payload;
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "@pilot/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node src/server.mjs",
+    "iot:mock": "node src/iot/mock-server.mjs",
+    "iot:sync-taps": "node src/scripts/sync-iot-taps.mjs",
+    "iot:sync-heartbeats": "node src/scripts/sync-iot-heartbeats.mjs",
+    "iot:sync-incidents": "node src/scripts/sync-iot-incidents.mjs",
+    "iot:sync-device-ops": "node src/scripts/sync-iot-device-ops.mjs",
+    "iot:certify-contract": "node src/scripts/run-iot-contract-certification.mjs",
+    "iot:orchestrate": "node src/scripts/run-iot-integration-orchestrator.mjs",
+    "iot:health-check": "node src/scripts/run-iot-certification-health.mjs",
+    "migrate": "node src/scripts/migrate.mjs",
+    "seed": "node src/scripts/seed-demo.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}

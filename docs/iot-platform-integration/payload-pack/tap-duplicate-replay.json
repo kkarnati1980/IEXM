@@ -1,0 +1,24 @@
+{
+  "contract_version": "2026-04-17.1",
+  "environment": "staging",
+  "build_version": "iot-2026.04.17.3",
+  "next_cursor": "tap-cursor-1013",
+  "items": [
+    {
+      "stream_cursor": "tap-cursor-1012",
+      "tenant_id": "tenant-demo",
+      "device_id": "device-01",
+      "event_id": "event-demo",
+      "stall_id": "stall-a1",
+      "assignment_checksum": "35c70991fa13d0f72cfb1d1d721e46f582c32f78f181f47ebad2dc1f0f779545",
+      "local_event_id": "local-1010",
+      "queue_sequence_number": 201,
+      "tap_type": "phone_ndef",
+      "reader_uid": null,
+      "ndef_payload": "ndef://attendee/bootstrap/alpha",
+      "delivery_mode": "offline_replay",
+      "occurred_at": "2026-04-17T09:41:00.000Z",
+      "cloud_received_at": "2026-04-17T10:05:02.000Z"
+    }
+  ]
+}

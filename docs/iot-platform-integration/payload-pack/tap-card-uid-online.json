@@ -1,0 +1,25 @@
+{
+  "contract_version": "2026-04-17.1",
+  "environment": "staging",
+  "build_version": "iot-2026.04.17.3",
+  "next_cursor": "tap-cursor-1002",
+  "items": [
+    {
+      "stream_cursor": "tap-cursor-1001",
+      "tenant_id": "tenant-demo",
+      "device_id": "device-01",
+      "event_id": "event-demo",
+      "stall_id": "stall-a1",
+      "assignment_checksum": "35c70991fa13d0f72cfb1d1d721e46f582c32f78f181f47ebad2dc1f0f779545",
+      "local_event_id": "local-1001",
+      "queue_sequence_number": 1001,
+      "tap_type": "card_uid",
+      "reader_uid": "04aabbccdd11",
+      "ndef_payload": null,
+      "delivery_mode": "online_single",
+      "occurred_at": "2026-04-17T10:01:02.123Z",
+      "cloud_received_at": "2026-04-17T10:01:02.540Z"
+    }
+  ]
+}
+

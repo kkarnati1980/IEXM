@@ -1,0 +1,16 @@
+{
+  "contract_version": "2026-04-17.1",
+  "environment": "staging",
+  "build_version": "iot-2026.04.17.3",
+  "error": {
+    "code": "ASSIGNMENT_SCOPE_VIOLATION",
+    "message": "Assignment checksum does not match active assignment",
+    "retryable": false,
+    "details": {
+      "device_id": "device-01",
+      "expected_assignment_checksum": "35c70991fa13d0f72cfb1d1d721e46f582c32f78f181f47ebad2dc1f0f779545",
+      "received_assignment_checksum": "9d9b640f4a459e5cae2d12dbdd1a1cda4a69de8458c2f3d4a7d94c56d4b2e112"
+    }
+  }
+}
+

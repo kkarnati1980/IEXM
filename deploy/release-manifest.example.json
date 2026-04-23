@@ -1,0 +1,17 @@
+{
+  "release_id": "pilot-2026-04-18",
+  "approved": false,
+  "platform_owner_handle": "PLATFORM_RELEASE_OWNER",
+  "iot_owner_handle": "IOT_RELEASE_OWNER",
+  "notes": "Mark approved=true only after staging certification, parity, and pilot rehearsal signoff.",
+  "iot_platform": {
+    "staging": {
+      "contract_version": "2026-04-17.1",
+      "build_version": "iot-staging-2026.04.17.1"
+    },
+    "production": {
+      "contract_version": "2026-04-17.1",
+      "build_version": "iot-prod-2026.04.17.1"
+    }
+  }
+}

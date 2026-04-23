@@ -1,0 +1,1322 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Platform IAM Admin</title>
+    <style>
+      :root {
+        --bg: #101117;
+        --panel: #1a1c25;
+        --panel-2: #14161d;
+        --border: rgba(255,255,255,0.08);
+        --text: #f4f1ea;
+        --muted: #b2ac9f;
+        --accent: #f3c97d;
+        --accent-2: #9fd3c7;
+        --good: #9fd3c7;
+        --warn: #f3c97d;
+        --bad: #ff9f9f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(243, 201, 125, 0.16), transparent 28%),
+          linear-gradient(160deg, var(--bg), #090a0e 66%);
+      }
+      .shell {
+        max-width: 1440px;
+        margin: 0 auto;
+        padding: 18px 24px 0;
+      }
+      .shell-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+      .shell-title {
+        display: grid;
+        gap: 6px;
+      }
+      .shell-title strong {
+        font-size: 1.1rem;
+      }
+      .shell-nav {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .shell-nav a,
+      .mini-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 13px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.04);
+        color: var(--text);
+        text-decoration: none;
+      }
+      .shell-nav a.active {
+        background: rgba(243, 201, 125, 0.18);
+        color: var(--accent);
+      }
+      main {
+        max-width: 1440px;
+        margin: 0 auto;
+        padding: 24px;
+        display: grid;
+        grid-template-columns: 1.2fr 0.95fr;
+        gap: 18px;
+        min-height: 100vh;
+      }
+      .column {
+        display: grid;
+        gap: 18px;
+      }
+      .card {
+        border-radius: 22px;
+        padding: 18px;
+        background: linear-gradient(180deg, var(--panel), var(--panel-2));
+        border: 1px solid var(--border);
+      }
+      .eyebrow {
+        display: inline-block;
+        margin-bottom: 12px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        background: rgba(159, 211, 199, 0.12);
+        color: var(--accent-2);
+      }
+      .muted { color: var(--muted); }
+      .intro-grid {
+        display: grid;
+        grid-template-columns: 1.12fr 0.88fr;
+        gap: 14px;
+        margin-bottom: 18px;
+      }
+      .context-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .context-chip,
+      .metric,
+      .item {
+        border-radius: 16px;
+        padding: 12px;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid var(--border);
+      }
+      .context-chip strong,
+      .metric strong {
+        display: block;
+        margin-top: 6px;
+      }
+      .metric strong {
+        font-size: 1.55rem;
+      }
+      .metric-grid,
+      .subgrid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .link-stack,
+      .list {
+        display: grid;
+        gap: 10px;
+      }
+      .toolbar {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: end;
+      }
+      input, select, textarea, button {
+        font: inherit;
+      }
+      input, select, textarea {
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(255,255,255,0.04);
+        color: var(--text);
+        padding: 11px 12px;
+      }
+      textarea {
+        min-height: 88px;
+        resize: vertical;
+      }
+      button {
+        border: 0;
+        border-radius: 12px;
+        padding: 11px 14px;
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        color: #211503;
+      }
+      button.secondary {
+        background: rgba(255,255,255,0.1);
+        color: var(--text);
+      }
+      button.warn {
+        background: rgba(243, 201, 125, 0.16);
+        color: var(--warn);
+      }
+      button.bad {
+        background: rgba(255, 159, 159, 0.14);
+        color: var(--bad);
+      }
+      .status {
+        margin-bottom: 14px;
+        padding: 12px 14px;
+        border-radius: 14px;
+        font-size: 14px;
+      }
+      .status.ok {
+        background: rgba(159, 211, 199, 0.16);
+        color: var(--good);
+      }
+      .status.error {
+        background: rgba(255, 159, 159, 0.12);
+        color: var(--bad);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th, td {
+        padding: 11px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        vertical-align: top;
+      }
+      tbody tr {
+        cursor: pointer;
+      }
+      tbody tr.active {
+        background: rgba(243, 201, 125, 0.08);
+      }
+      .pill,
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 5px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        font-size: 12px;
+        letter-spacing: 0.04em;
+      }
+      .status-pill.pending_invite { color: var(--warn); }
+      .status-pill.active { color: var(--good); }
+      .status-pill.disabled,
+      .status-pill.suspended,
+      .status-pill.deleted { color: var(--bad); }
+      .detail-block {
+        display: grid;
+        gap: 12px;
+      }
+      .detail-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .scope-list .item,
+      .audit-list .item {
+        display: grid;
+        gap: 6px;
+      }
+      .empty {
+        color: var(--muted);
+      }
+      @media (max-width: 1080px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+        .intro-grid,
+        .context-strip,
+        .metric-grid,
+        .subgrid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <div class="eyebrow">Pilot Workspace</div>
+          <strong>Phase 4 platform-admin IAM shell</strong>
+          <span class="muted">Platform-admin user lifecycle, role alignment, scoped access, and IAM audit review.</span>
+        </div>
+        <nav class="shell-nav" aria-label="Pilot shell">
+          <a id="nav-home" href="./index.html">Launchpad</a>
+          <a id="nav-organizer" href="./organizer.html">Organizer</a>
+          <a id="nav-admin" class="active" href="./admin.html">Admin</a>
+        </nav>
+      </div>
+    </div>
+    <main>
+      <section class="column">
+        <article class="card">
+          <div class="eyebrow">IAM Control</div>
+          <h1>Platform-admin user and access management</h1>
+          <p class="muted">
+            This shell uses the Sprint 3 admin APIs for user lifecycle, role and organization alignment,
+            scoped event access, and filtered IAM audit review.
+          </p>
+          <div class="intro-grid">
+            <div class="context-strip">
+              <div class="context-chip">
+                <span class="muted">Tenant users</span>
+                <strong id="metric-total-users">-</strong>
+              </div>
+              <div class="context-chip">
+                <span class="muted">Pending invites</span>
+                <strong id="metric-pending-users">-</strong>
+              </div>
+              <div class="context-chip">
+                <span class="muted">Scoped users</span>
+                <strong id="metric-scoped-users">-</strong>
+              </div>
+            </div>
+            <div class="link-stack">
+              <a id="open-launchpad-link" class="mini-link" href="./index.html">Return to pilot launchpad</a>
+              <a id="open-organizer-link" class="mini-link" href="./organizer.html">Open organizer operations shell</a>
+            </div>
+          </div>
+          <div id="message" class="status ok" hidden></div>
+          <div class="toolbar">
+            <div id="auth-token-group" style="min-width:240px; flex:1 1 240px;">
+              <label class="muted" for="auth-token">Platform admin token</label>
+              <input id="auth-token" type="text">
+            </div>
+            <div id="browser-auth-group" style="min-width:320px; flex:1 1 320px;" hidden>
+              <label class="muted">Platform SSO session</label>
+              <div class="toolbar" style="margin-bottom:0;">
+                <div id="browser-auth-status" class="muted" style="min-width:220px;">Sign in with SSO to continue.</div>
+                <button id="browser-auth-login" class="secondary" type="button">Sign in with SSO</button>
+                <button id="browser-auth-logout" class="secondary" type="button">Sign out</button>
+              </div>
+            </div>
+            <div>
+              <button id="refresh-page" class="secondary" type="button">Refresh IAM admin</button>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="eyebrow">Create User</div>
+          <h2>Create or invite a managed user</h2>
+          <div class="toolbar">
+            <div style="min-width:220px; flex:1 1 220px;">
+              <label class="muted" for="create-email">Email</label>
+              <input id="create-email" type="email" placeholder="new.user@example.com">
+            </div>
+            <div style="min-width:220px; flex:1 1 220px;">
+              <label class="muted" for="create-display-name">Display name</label>
+              <input id="create-display-name" type="text" placeholder="Display name">
+            </div>
+          </div>
+          <div class="toolbar" style="margin-top:12px;">
+            <div style="min-width:220px; flex:1 1 220px;">
+              <label class="muted" for="create-role">Role</label>
+              <select id="create-role"></select>
+            </div>
+            <div style="min-width:220px; flex:1 1 220px;">
+              <label class="muted" for="create-organization">Organization</label>
+              <select id="create-organization"></select>
+            </div>
+            <div style="min-width:180px; flex:1 1 180px;">
+              <label class="muted" for="create-status">Starting status</label>
+              <select id="create-status">
+                <option value="pending_invite">Pending invite</option>
+                <option value="active">Active</option>
+              </select>
+            </div>
+          </div>
+          <div class="toolbar" style="margin-top:12px;">
+            <div style="min-width:220px; flex:1 1 220px;">
+              <label class="muted" for="create-provider">External identity provider</label>
+              <input id="create-provider" type="text" placeholder="https://issuer.example.com">
+            </div>
+            <div style="min-width:220px; flex:1 1 220px;">
+              <label class="muted" for="create-subject">External subject</label>
+              <input id="create-subject" type="text" placeholder="oidc-subject">
+            </div>
+            <label class="muted" style="display:flex; align-items:center; gap:8px; margin-top:22px;">
+              <input id="create-mfa-required" type="checkbox">
+              Require MFA flag
+            </label>
+          </div>
+          <div class="detail-actions" style="margin-top:14px;">
+            <button id="create-user" class="primary" type="button">Create user</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="eyebrow">Directory</div>
+          <h2>Managed users</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Scopes</th>
+              </tr>
+            </thead>
+            <tbody id="directory-rows">
+              <tr><td colspan="4" class="empty">Load IAM admin data to inspect managed users.</td></tr>
+            </tbody>
+          </table>
+        </article>
+      </section>
+
+      <aside class="column">
+        <article class="card">
+          <div class="eyebrow">User Detail</div>
+          <h2 id="detail-title">Select a user</h2>
+          <div id="detail-summary" class="list">
+            <div class="item empty">Lifecycle state, identity status, and scope summary will appear here.</div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="eyebrow">Update User</div>
+          <h2>Profile and identity mapping</h2>
+          <div class="detail-block">
+            <div class="toolbar">
+              <div style="min-width:220px; flex:1 1 220px;">
+                <label class="muted" for="update-email">Email</label>
+                <input id="update-email" type="email">
+              </div>
+              <div style="min-width:220px; flex:1 1 220px;">
+                <label class="muted" for="update-display-name">Display name</label>
+                <input id="update-display-name" type="text">
+              </div>
+            </div>
+            <div class="toolbar">
+              <div style="min-width:220px; flex:1 1 220px;">
+                <label class="muted" for="update-role">Role</label>
+                <select id="update-role"></select>
+              </div>
+              <div style="min-width:220px; flex:1 1 220px;">
+                <label class="muted" for="update-organization">Organization</label>
+                <select id="update-organization"></select>
+              </div>
+            </div>
+            <div class="toolbar">
+              <div style="min-width:220px; flex:1 1 220px;">
+                <label class="muted" for="update-provider">External identity provider</label>
+                <input id="update-provider" type="text">
+              </div>
+              <div style="min-width:220px; flex:1 1 220px;">
+                <label class="muted" for="update-subject">External subject</label>
+                <input id="update-subject" type="text">
+              </div>
+              <label class="muted" style="display:flex; align-items:center; gap:8px; margin-top:22px;">
+                <input id="update-mfa-required" type="checkbox">
+                Require MFA flag
+              </label>
+            </div>
+            <div class="detail-actions">
+              <button id="save-user" class="primary" type="button">Save user changes</button>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="eyebrow">Lifecycle Actions</div>
+          <h2>Status controls</h2>
+          <label class="muted" for="action-reason">Admin reason</label>
+          <textarea id="action-reason" placeholder="Capture why the lifecycle action is being applied."></textarea>
+          <div class="detail-actions" style="margin-top:14px;">
+            <button id="activate-user" class="primary" type="button">Activate user</button>
+            <button id="disable-user" class="warn" type="button">Disable user</button>
+            <button id="suspend-user" class="secondary" type="button">Suspend user</button>
+            <button id="delete-user" class="bad" type="button">Delete user</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="eyebrow">Access Scopes</div>
+          <h2>Assign role-compatible scope</h2>
+          <div id="scope-help" class="item empty">Select a user to manage scoped access.</div>
+          <div class="toolbar" style="margin-top:14px;">
+            <div style="min-width:220px; flex:1 1 220px;">
+              <label class="muted" for="scope-event">Event</label>
+              <select id="scope-event"></select>
+            </div>
+            <div style="min-width:220px; flex:1 1 220px;">
+              <label class="muted" for="scope-stall">Stall</label>
+              <select id="scope-stall"></select>
+            </div>
+          </div>
+          <div class="toolbar" style="margin-top:12px;">
+            <div style="min-width:220px; flex:1 1 220px;">
+              <label class="muted" for="scope-sponsor-org">Sponsor organization</label>
+              <select id="scope-sponsor-org"></select>
+            </div>
+            <div>
+              <button id="assign-scope" class="primary" type="button">Assign scope</button>
+            </div>
+          </div>
+          <h3 style="margin-top:16px;">Current scopes</h3>
+          <div id="scope-list" class="scope-list list">
+            <div class="item empty">No scope assignments loaded.</div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="eyebrow">IAM Audit</div>
+          <h2>Recent admin activity</h2>
+          <div id="audit-list" class="audit-list list">
+            <div class="item empty">IAM audit entries will appear here.</div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="eyebrow">Security Hardening</div>
+          <h2>Alerts and pen-test readiness</h2>
+          <div id="security-summary" class="list">
+            <div class="item empty">Security posture, alerts, and readiness controls will appear here.</div>
+          </div>
+          <div class="detail-actions" style="margin-top:14px;">
+            <button id="download-pentest-pack" class="secondary" type="button">Export pen-test evidence pack</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="eyebrow">Final Go-Live</div>
+          <h2>Production launch control</h2>
+          <div id="final-launch-summary" class="list">
+            <div class="item empty">Final launch checklist, approvals, and blockers will appear here.</div>
+          </div>
+          <div class="detail-actions" style="margin-top:14px;">
+            <button id="download-final-launch-pack" class="primary" type="button">Export final launch package</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="eyebrow">Access Control</div>
+          <h2>Route permission matrix</h2>
+          <div id="access-control-summary" class="list">
+            <div class="item empty">Access-control matrix coverage will appear here.</div>
+          </div>
+        </article>
+      </aside>
+    </main>
+
+    <script type="module">
+      import {
+        completeBrowserAuthCallback,
+        createBrowserAuthSlot
+      } from "./browser-auth.js";
+
+      const params = new URLSearchParams(window.location.search);
+      const apiBase =
+        params.get("apiBase") ||
+        (window.location.protocol === "file:" ? "http://127.0.0.1:3000" : window.location.origin);
+
+      const authTokenInput = document.getElementById("auth-token");
+      const authTokenGroup = document.getElementById("auth-token-group");
+      const browserAuthGroup = document.getElementById("browser-auth-group");
+      const browserAuthStatus = document.getElementById("browser-auth-status");
+      const browserAuthLogin = document.getElementById("browser-auth-login");
+      const browserAuthLogout = document.getElementById("browser-auth-logout");
+      const messageEl = document.getElementById("message");
+      const metricTotalUsers = document.getElementById("metric-total-users");
+      const metricPendingUsers = document.getElementById("metric-pending-users");
+      const metricScopedUsers = document.getElementById("metric-scoped-users");
+      const refreshPageButton = document.getElementById("refresh-page");
+      const directoryRows = document.getElementById("directory-rows");
+
+      const createEmailInput = document.getElementById("create-email");
+      const createDisplayNameInput = document.getElementById("create-display-name");
+      const createRoleInput = document.getElementById("create-role");
+      const createOrganizationInput = document.getElementById("create-organization");
+      const createStatusInput = document.getElementById("create-status");
+      const createProviderInput = document.getElementById("create-provider");
+      const createSubjectInput = document.getElementById("create-subject");
+      const createMfaRequiredInput = document.getElementById("create-mfa-required");
+      const createUserButton = document.getElementById("create-user");
+
+      const detailTitle = document.getElementById("detail-title");
+      const detailSummary = document.getElementById("detail-summary");
+      const updateEmailInput = document.getElementById("update-email");
+      const updateDisplayNameInput = document.getElementById("update-display-name");
+      const updateRoleInput = document.getElementById("update-role");
+      const updateOrganizationInput = document.getElementById("update-organization");
+      const updateProviderInput = document.getElementById("update-provider");
+      const updateSubjectInput = document.getElementById("update-subject");
+      const updateMfaRequiredInput = document.getElementById("update-mfa-required");
+      const saveUserButton = document.getElementById("save-user");
+
+      const actionReasonInput = document.getElementById("action-reason");
+      const activateUserButton = document.getElementById("activate-user");
+      const disableUserButton = document.getElementById("disable-user");
+      const suspendUserButton = document.getElementById("suspend-user");
+      const deleteUserButton = document.getElementById("delete-user");
+
+      const scopeHelp = document.getElementById("scope-help");
+      const scopeEventInput = document.getElementById("scope-event");
+      const scopeStallInput = document.getElementById("scope-stall");
+      const scopeSponsorOrgInput = document.getElementById("scope-sponsor-org");
+      const assignScopeButton = document.getElementById("assign-scope");
+      const scopeList = document.getElementById("scope-list");
+      const auditList = document.getElementById("audit-list");
+      const securitySummary = document.getElementById("security-summary");
+      const downloadPentestPackButton = document.getElementById("download-pentest-pack");
+      const finalLaunchSummary = document.getElementById("final-launch-summary");
+      const downloadFinalLaunchPackButton = document.getElementById("download-final-launch-pack");
+      const accessControlSummary = document.getElementById("access-control-summary");
+
+      const openOrganizerLink = document.getElementById("open-organizer-link");
+
+      authTokenInput.value = params.get("auth") || "platform-token";
+
+      let referenceData = null;
+      let managedUsers = [];
+      let auditLogs = [];
+      let accessControlItems = [];
+      let securityReadiness = null;
+      let securityAlerts = null;
+      let deploymentReadiness = null;
+      let pentestFindings = null;
+      let attackSurface = null;
+      let finalLaunch = null;
+      let selectedUserId = params.get("userId");
+      const selectedEventId = params.get("eventId") || "event-demo";
+      let selectedUser = null;
+      let authSession = null;
+
+      refreshPageButton.addEventListener("click", loadAdminPage);
+      createUserButton.addEventListener("click", createManagedUser);
+      saveUserButton.addEventListener("click", saveManagedUser);
+      activateUserButton.addEventListener("click", () => runLifecycleAction("activate"));
+      disableUserButton.addEventListener("click", () => runLifecycleAction("disable"));
+      suspendUserButton.addEventListener("click", () => runLifecycleAction("suspend"));
+      deleteUserButton.addEventListener("click", () => runLifecycleAction("delete"));
+      assignScopeButton.addEventListener("click", assignScope);
+      downloadPentestPackButton.addEventListener("click", downloadPentestPack);
+      downloadFinalLaunchPackButton.addEventListener("click", downloadFinalLaunchPack);
+      scopeEventInput.addEventListener("change", () => {
+        populateScopeStallOptions();
+        syncQueryState();
+      });
+      createRoleInput.addEventListener("change", () => populateOrganizationOptions(createOrganizationInput, createRoleInput.value, createOrganizationInput.value));
+      updateRoleInput.addEventListener("change", () => {
+        populateOrganizationOptions(updateOrganizationInput, updateRoleInput.value, updateOrganizationInput.value);
+        renderScopeControls();
+      });
+      authTokenInput.addEventListener("change", () => {
+        syncQueryState();
+        refreshShellLinks();
+      });
+
+      await completeBrowserAuthCallback({ apiBase });
+      authSession = await createBrowserAuthSlot({
+        apiBase,
+        slot: "primary",
+        defaultToken: "platform-token",
+        tokenInput: authTokenInput,
+        tokenGroup: authTokenGroup,
+        browserGroup: browserAuthGroup,
+        statusEl: browserAuthStatus,
+        signInButton: browserAuthLogin,
+        signOutButton: browserAuthLogout
+      });
+      refreshShellLinks();
+      loadAdminPage();
+
+      async function loadAdminPage() {
+        try {
+          const [
+            referenceResponse,
+            usersResponse,
+            auditResponse,
+            accessControlResponse,
+            securityReadinessResponse,
+            securityAlertsResponse,
+            deploymentReadinessResponse,
+            pentestFindingsResponse,
+            attackSurfaceResponse,
+            finalLaunchResponse
+          ] = await Promise.all([
+            api("/admin/reference-data"),
+            api("/admin/users"),
+            api("/audit/logs"),
+            api("/admin/access-control-matrix"),
+            api("/admin/security/readiness"),
+            api("/admin/security/alerts"),
+            api("/admin/deployment/readiness"),
+            api("/admin/security/pentest/findings"),
+            api("/admin/security/pentest/attack-surface"),
+            api(`/admin/events/${encodeURIComponent(selectedEventId)}/final-go-live`)
+          ]);
+
+          referenceData = referenceResponse;
+          managedUsers = usersResponse.items;
+          auditLogs = auditResponse.items.filter((entry) => entry.event_type.startsWith("admin."));
+          accessControlItems = accessControlResponse.items;
+          securityReadiness = securityReadinessResponse;
+          securityAlerts = securityAlertsResponse;
+          deploymentReadiness = deploymentReadinessResponse;
+          pentestFindings = pentestFindingsResponse;
+          attackSurface = attackSurfaceResponse;
+          finalLaunch = finalLaunchResponse.launch;
+
+          renderSummaryCards();
+          renderSecuritySummary();
+          renderFinalLaunchSummary();
+          renderAccessControlSummary();
+          populateRoleOptions(createRoleInput, createRoleInput.value || "vendor_manager");
+          populateRoleOptions(updateRoleInput, updateRoleInput.value || "vendor_manager");
+          populateOrganizationOptions(createOrganizationInput, createRoleInput.value || "vendor_manager", createOrganizationInput.value);
+          populateOrganizationOptions(updateOrganizationInput, updateRoleInput.value || "vendor_manager", updateOrganizationInput.value);
+          populateScopeEventOptions();
+          populateScopeSponsorOptions();
+          renderManagedUsers();
+
+          const preferredUser = selectedUserId
+            ? managedUsers.find((entry) => entry.id === selectedUserId)
+            : null;
+          if (preferredUser) {
+            await selectUser(preferredUser.id);
+          } else if (managedUsers[0]) {
+            await selectUser(managedUsers[0].id);
+          } else {
+            renderEmptyDetail();
+          }
+
+          showMessage("IAM admin refreshed.", "ok");
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      function renderSummaryCards() {
+        metricTotalUsers.textContent = managedUsers.length;
+        metricPendingUsers.textContent = managedUsers.filter((entry) => entry.status === "pending_invite").length;
+        metricScopedUsers.textContent = managedUsers.filter((entry) => entry.access_scope_count > 0).length;
+      }
+
+      function renderManagedUsers() {
+        if (!managedUsers.length) {
+          directoryRows.innerHTML = `<tr><td colspan="4" class="empty">No tenant users found.</td></tr>`;
+          return;
+        }
+
+        directoryRows.innerHTML = managedUsers
+          .map((user) => `
+            <tr data-user-id="${escapeHtml(user.id)}" class="${user.id === selectedUserId ? "active" : ""}">
+              <td>
+                <strong>${escapeHtml(user.display_name)}</strong>
+                <div class="muted">${escapeHtml(user.email)}</div>
+              </td>
+              <td>
+                <div>${escapeHtml(user.role)}</div>
+                <div class="muted">${escapeHtml(user.organization_name || "No organization")}</div>
+              </td>
+              <td><span class="status-pill ${escapeHtml(user.status)}">${escapeHtml(user.status.replaceAll("_", " "))}</span></td>
+              <td>${user.access_scope_count}</td>
+            </tr>
+          `)
+          .join("");
+
+        directoryRows.querySelectorAll("tr[data-user-id]").forEach((row) => {
+          row.addEventListener("click", () => selectUser(row.dataset.userId));
+        });
+      }
+
+      async function selectUser(userId) {
+        selectedUserId = userId;
+        syncQueryState();
+        renderManagedUsers();
+
+        try {
+          const detail = await api(`/admin/users/${encodeURIComponent(userId)}`);
+          selectedUser = detail.item;
+          renderSelectedUser();
+        } catch (error) {
+          selectedUser = null;
+          renderEmptyDetail(error.message);
+          showMessage(error.message, "error");
+        }
+      }
+
+      function renderSelectedUser() {
+        if (!selectedUser) {
+          renderEmptyDetail();
+          return;
+        }
+
+        detailTitle.textContent = `${selectedUser.display_name} (${selectedUser.role})`;
+        detailSummary.innerHTML = "";
+        addDetailSummaryItem(`Status: ${selectedUser.status.replaceAll("_", " ")}`);
+        addDetailSummaryItem(`Organization: ${selectedUser.organization_name || "No organization"} (${selectedUser.organization_type || "n/a"})`);
+        addDetailSummaryItem(`Identity linked: ${selectedUser.identity_linked ? "Yes" : "No"}`);
+        addDetailSummaryItem(`Last login: ${formatDate(selectedUser.last_login_at)}`);
+        addDetailSummaryItem(`Disabled reason: ${selectedUser.disabled_reason || "None"}`);
+        addDetailSummaryItem(`Access scopes: ${selectedUser.access_scope_count}`);
+
+        updateEmailInput.value = selectedUser.email;
+        updateDisplayNameInput.value = selectedUser.display_name;
+        populateRoleOptions(updateRoleInput, selectedUser.role);
+        populateOrganizationOptions(updateOrganizationInput, selectedUser.role, selectedUser.organization_id);
+        updateProviderInput.value = selectedUser.external_identity_provider || "";
+        updateSubjectInput.value = selectedUser.external_subject || "";
+        updateMfaRequiredInput.checked = Boolean(selectedUser.mfa_required);
+
+        actionReasonInput.value = "";
+        renderScopeControls();
+        renderScopeList();
+        renderAuditList();
+        refreshActionButtons();
+      }
+
+      function renderEmptyDetail(message = "Lifecycle state, identity status, and scope summary will appear here.") {
+        detailTitle.textContent = "Select a user";
+        detailSummary.innerHTML = `<div class="item empty">${escapeHtml(message)}</div>`;
+        updateEmailInput.value = "";
+        updateDisplayNameInput.value = "";
+        updateProviderInput.value = "";
+        updateSubjectInput.value = "";
+        updateMfaRequiredInput.checked = false;
+        scopeHelp.textContent = "Select a user to manage scoped access.";
+        scopeList.innerHTML = `<div class="item empty">No scope assignments loaded.</div>`;
+        auditList.innerHTML = `<div class="item empty">IAM audit entries will appear here.</div>`;
+        selectedUser = null;
+        refreshActionButtons();
+      }
+
+      function renderScopeControls() {
+        if (!selectedUser) {
+          populateScopeEventOptions();
+          populateScopeStallOptions();
+          populateScopeSponsorOptions();
+          scopeHelp.textContent = "Select a user to manage scoped access.";
+          return;
+        }
+
+        populateScopeEventOptions();
+        populateScopeStallOptions();
+        populateScopeSponsorOptions();
+
+        if (selectedUser.role === "platform_admin") {
+          scopeHelp.textContent = "Platform admins do not use scoped access assignments.";
+          scopeEventInput.disabled = true;
+          scopeStallInput.disabled = true;
+          scopeSponsorOrgInput.disabled = true;
+          assignScopeButton.disabled = true;
+          return;
+        }
+
+        if (selectedUser.status === "deleted") {
+          scopeHelp.textContent = "Deleted users cannot receive new access scopes.";
+          scopeEventInput.disabled = true;
+          scopeStallInput.disabled = true;
+          scopeSponsorOrgInput.disabled = true;
+          assignScopeButton.disabled = true;
+          return;
+        }
+
+        scopeEventInput.disabled = false;
+        scopeStallInput.disabled = false;
+        scopeSponsorOrgInput.disabled = false;
+        assignScopeButton.disabled = false;
+
+        const helpByRole = {
+          organizer_admin: "Organizer admins use event-only access scopes.",
+          vendor_manager: "Vendor managers require an event and a stall from their vendor organization.",
+          sponsor_user: "Sponsor users require an event and a sponsor organization scope.",
+          ops_user: "Ops users use event-only access scopes."
+        };
+        scopeHelp.textContent = helpByRole[selectedUser.role] || "Assign a compatible access scope.";
+
+        if (selectedUser.role === "vendor_manager") {
+          scopeStallInput.disabled = false;
+          scopeSponsorOrgInput.disabled = true;
+          scopeSponsorOrgInput.value = "";
+        } else if (selectedUser.role === "sponsor_user") {
+          scopeStallInput.disabled = true;
+          scopeStallInput.value = "";
+          scopeSponsorOrgInput.disabled = false;
+        } else {
+          scopeStallInput.disabled = true;
+          scopeStallInput.value = "";
+          scopeSponsorOrgInput.disabled = true;
+          scopeSponsorOrgInput.value = "";
+        }
+      }
+
+      function renderScopeList() {
+        if (!selectedUser?.access_scopes?.length) {
+          scopeList.innerHTML = `<div class="item empty">No scope assignments yet.</div>`;
+          return;
+        }
+
+        scopeList.innerHTML = selectedUser.access_scopes
+          .map((scope) => `
+            <div class="item">
+              <strong>${escapeHtml(scope.event_name || "No event")} ${scope.stall_name ? `• ${escapeHtml(scope.stall_name)}` : ""}${scope.sponsor_organization_name ? `• ${escapeHtml(scope.sponsor_organization_name)}` : ""}</strong>
+              <span class="muted">Created ${escapeHtml(formatDate(scope.created_at))}</span>
+              <div class="detail-actions">
+                <button class="secondary revoke-scope" data-scope-id="${escapeHtml(scope.id)}" type="button">Revoke scope</button>
+              </div>
+            </div>
+          `)
+          .join("");
+
+        scopeList.querySelectorAll(".revoke-scope").forEach((button) => {
+          button.addEventListener("click", () => revokeScope(button.dataset.scopeId));
+        });
+      }
+
+      function renderAuditList() {
+        const relevantUserIds = new Set(selectedUser ? [selectedUser.id] : []);
+        const relevantScopeIds = new Set(selectedUser?.access_scopes?.map((scope) => scope.id) || []);
+        const items = auditLogs
+          .filter((entry) => {
+            if (!selectedUser) {
+              return true;
+            }
+            return (
+              entry.target_id === selectedUser.id ||
+              entry.metadata?.user_id === selectedUser.id ||
+              relevantScopeIds.has(entry.target_id)
+            );
+          })
+          .slice(0, 10);
+
+        if (!items.length) {
+          auditList.innerHTML = `<div class="item empty">No IAM audit entries for the selected user yet.</div>`;
+          return;
+        }
+
+        auditList.innerHTML = items
+          .map((entry) => `
+            <div class="item">
+              <strong>${escapeHtml(entry.event_type)}</strong>
+              <span class="muted">Actor: ${escapeHtml(entry.actor_id)} • Target: ${escapeHtml(entry.target_id)}</span>
+              <span class="muted">${escapeHtml(formatDate(entry.created_at))}</span>
+            </div>
+          `)
+          .join("");
+      }
+
+      function renderAccessControlSummary() {
+        const sensitiveItems = accessControlItems
+          .filter((item) => ["security", "secret", "pii", "privacy"].includes(item.sensitivity))
+          .slice(0, 8);
+        accessControlSummary.innerHTML = `
+          <div class="item"><strong>${accessControlItems.length}</strong><span class="muted"> registered route permissions covered by the matrix.</span></div>
+          ${sensitiveItems
+            .map((item) => `
+              <div class="item">
+                <strong>${escapeHtml(item.permission)}</strong>
+                <span class="muted">${escapeHtml(item.route_id)} • ${escapeHtml(item.roles.join(", ") || "public")} • ${escapeHtml(item.sensitivity)}</span>
+              </div>
+            `)
+            .join("")}
+        `;
+      }
+
+      function renderSecuritySummary() {
+        const alertItems = (securityAlerts?.items || []).slice(0, 5);
+        const readiness = securityReadiness?.summary || {};
+        const deployment = deploymentReadiness?.summary || {};
+        const findings = pentestFindings?.summary || {};
+        securitySummary.innerHTML = `
+          <div class="item">
+            <strong>${escapeHtml(securityReadiness?.overall_status || "unknown")}</strong>
+            <span class="muted"> pen-test readiness status • ${readiness.pass || 0} passed • ${readiness.warning || 0} warnings • ${readiness.manual || 0} manual gates</span>
+          </div>
+          <div class="item">
+            <strong>${deploymentReadiness?.ready ? "deployment ready" : "deployment needs attention"}</strong>
+            <span class="muted"> environment configuration • ${deployment.pass || 0} passed • ${deployment.fail || 0} blockers • ${deployment.manual || 0} manual gates</span>
+          </div>
+          <div class="item">
+            <strong>${securityAlerts?.summary?.total || 0}</strong>
+            <span class="muted"> security alerts • critical ${securityAlerts?.summary?.critical || 0} • high ${securityAlerts?.summary?.high || 0}</span>
+          </div>
+          <div class="item">
+            <strong>${findings.blocking || 0}</strong>
+            <span class="muted"> blocking pen-test findings • ${findings.total || 0} total findings • ${attackSurface?.sensitive_route_count || 0} sensitive routes in authorized test surface</span>
+          </div>
+          ${alertItems.length
+            ? alertItems.map((item) => `
+              <div class="item">
+                <strong>${escapeHtml(item.title)}</strong>
+                <span class="muted">${escapeHtml(item.severity)} • ${escapeHtml(item.source)} • ${escapeHtml(formatDate(item.created_at))}</span>
+              </div>
+            `).join("")
+            : `<div class="item good">No active security alerts from recent audit and runtime posture.</div>`}
+        `;
+      }
+
+      async function downloadPentestPack() {
+        try {
+          const pack = await api("/admin/security/pentest-pack");
+          const blob = new Blob([JSON.stringify(pack, null, 2)], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `pentest-evidence-pack-${new Date().toISOString().slice(0, 10)}.json`;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(url);
+          showMessage("Pen-test evidence pack exported.", "ok");
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      function renderFinalLaunchSummary() {
+        if (!finalLaunch) {
+          finalLaunchSummary.innerHTML = `<div class="item empty">Final launch checklist, approvals, and blockers will appear here.</div>`;
+          return;
+        }
+        const approvalSummary = (finalLaunch.approvals || [])
+          .map((approval) => `${approval.approver_role}: ${approval.approval_status}`)
+          .join(" • ");
+        finalLaunchSummary.innerHTML = `
+          <div class="item">
+            <strong>${finalLaunch.ready ? "Final go-live ready" : "Final go-live blocked"}</strong>
+            <span class="muted">${finalLaunch.blockers?.length || 0} blockers • ${finalLaunch.warnings?.length || 0} warnings</span>
+          </div>
+          <div class="item">
+            <strong>Approvals</strong>
+            <span class="muted">${escapeHtml(approvalSummary || "No final approvals recorded")}</span>
+          </div>
+          ${(finalLaunch.blockers || []).slice(0, 5).map((blocker) => `
+            <div class="item warn">
+              <strong>Launch blocker</strong>
+              <span class="muted">${escapeHtml(blocker)}</span>
+            </div>
+          `).join("")}
+        `;
+      }
+
+      async function downloadFinalLaunchPack() {
+        try {
+          const pack = await api(`/admin/events/${encodeURIComponent(selectedEventId)}/final-go-live/export`, {
+            method: "POST",
+            body: {}
+          });
+          const blob = new Blob([JSON.stringify(pack.payload, null, 2)], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = pack.file_name || `final-go-live-package-${new Date().toISOString().slice(0, 10)}.json`;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(url);
+          showMessage("Final launch package exported.", "ok");
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      function populateRoleOptions(select, selectedValue) {
+        const roles = referenceData?.roles || [];
+        select.innerHTML = roles
+          .map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`)
+          .join("");
+        if (selectedValue && roles.includes(selectedValue)) {
+          select.value = selectedValue;
+        }
+      }
+
+      function populateOrganizationOptions(select, role, selectedValue = null) {
+        const orgs = (referenceData?.organizations || []).filter((organization) => organization.type === organizationTypeForRole(role));
+        select.innerHTML = orgs
+          .map((organization) => `<option value="${escapeHtml(organization.id)}">${escapeHtml(organization.name)}</option>`)
+          .join("");
+        if (selectedValue && orgs.some((organization) => organization.id === selectedValue)) {
+          select.value = selectedValue;
+        } else if (orgs[0]) {
+          select.value = orgs[0].id;
+        }
+      }
+
+      function populateScopeEventOptions() {
+        const events = referenceData?.events || [];
+        const current = scopeEventInput.value;
+        scopeEventInput.innerHTML = `<option value="">Select event</option>${events
+          .map((event) => `<option value="${escapeHtml(event.id)}">${escapeHtml(event.name)}</option>`)
+          .join("")}`;
+        if (current && events.some((event) => event.id === current)) {
+          scopeEventInput.value = current;
+        }
+      }
+
+      function populateScopeStallOptions() {
+        const selectedEventId = scopeEventInput.value;
+        const stalls = (referenceData?.stalls || []).filter((stall) => !selectedEventId || stall.event_id === selectedEventId);
+        const current = scopeStallInput.value;
+        scopeStallInput.innerHTML = `<option value="">Select stall</option>${stalls
+          .map((stall) => `<option value="${escapeHtml(stall.id)}">${escapeHtml(stall.code)} • ${escapeHtml(stall.name)}</option>`)
+          .join("")}`;
+        if (current && stalls.some((stall) => stall.id === current)) {
+          scopeStallInput.value = current;
+        }
+      }
+
+      function populateScopeSponsorOptions() {
+        const sponsorOrganizations = (referenceData?.organizations || []).filter((entry) => entry.type === "sponsor");
+        const current = scopeSponsorOrgInput.value;
+        scopeSponsorOrgInput.innerHTML = `<option value="">Select sponsor organization</option>${sponsorOrganizations
+          .map((organization) => `<option value="${escapeHtml(organization.id)}">${escapeHtml(organization.name)}</option>`)
+          .join("")}`;
+        if (current && sponsorOrganizations.some((organization) => organization.id === current)) {
+          scopeSponsorOrgInput.value = current;
+        }
+      }
+
+      function refreshActionButtons() {
+        const disabled = !selectedUser;
+        saveUserButton.disabled = disabled || selectedUser?.status === "deleted";
+        activateUserButton.disabled = disabled || selectedUser?.status === "active";
+        disableUserButton.disabled = disabled || ["disabled", "deleted"].includes(selectedUser?.status);
+        suspendUserButton.disabled = disabled || ["suspended", "deleted"].includes(selectedUser?.status);
+        deleteUserButton.disabled = disabled || selectedUser?.status === "deleted";
+      }
+
+      async function createManagedUser() {
+        try {
+          const response = await api("/admin/users", {
+            method: "POST",
+            body: {
+              email: createEmailInput.value.trim(),
+              display_name: createDisplayNameInput.value.trim(),
+              role: createRoleInput.value,
+              organization_id: createOrganizationInput.value,
+              status: createStatusInput.value,
+              external_identity_provider: createProviderInput.value.trim() || null,
+              external_subject: createSubjectInput.value.trim() || null,
+              mfa_required: createMfaRequiredInput.checked
+            }
+          });
+
+          createEmailInput.value = "";
+          createDisplayNameInput.value = "";
+          createProviderInput.value = "";
+          createSubjectInput.value = "";
+          createMfaRequiredInput.checked = false;
+          selectedUserId = response.id;
+          await loadAdminPage();
+          showMessage(`IAM user created: ${response.email}.`, "ok");
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      async function saveManagedUser() {
+        if (!selectedUser) {
+          showMessage("Select a user before saving changes.", "error");
+          return;
+        }
+
+        try {
+          await api(`/admin/users/${encodeURIComponent(selectedUser.id)}`, {
+            method: "PATCH",
+            body: {
+              email: updateEmailInput.value.trim(),
+              display_name: updateDisplayNameInput.value.trim(),
+              role: updateRoleInput.value,
+              organization_id: updateOrganizationInput.value,
+              external_identity_provider: updateProviderInput.value.trim() || null,
+              external_subject: updateSubjectInput.value.trim() || null,
+              mfa_required: updateMfaRequiredInput.checked
+            }
+          });
+
+          await loadAdminPage();
+          showMessage("IAM user changes saved.", "ok");
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      async function runLifecycleAction(action) {
+        if (!selectedUser) {
+          showMessage("Select a user before running a lifecycle action.", "error");
+          return;
+        }
+
+        const actionPathByType = {
+          activate: "activate",
+          disable: "disable",
+          suspend: "suspend",
+          delete: "delete"
+        };
+        const actionLabelByType = {
+          activate: "activated",
+          disable: "disabled",
+          suspend: "suspended",
+          delete: "deleted"
+        };
+
+        try {
+          const response = await api(`/admin/users/${encodeURIComponent(selectedUser.id)}/${actionPathByType[action]}`, {
+            method: "POST",
+            body: action === "activate" ? {} : { reason: actionReasonInput.value.trim() || null }
+          });
+
+          selectedUserId = response.id;
+          actionReasonInput.value = "";
+          await loadAdminPage();
+          showMessage(`User ${actionLabelByType[action]}.`, "ok");
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      async function assignScope() {
+        if (!selectedUser) {
+          showMessage("Select a user before assigning access.", "error");
+          return;
+        }
+
+        try {
+          await api(`/admin/users/${encodeURIComponent(selectedUser.id)}/access-scopes`, {
+            method: "POST",
+            body: {
+              event_id: scopeEventInput.value || null,
+              stall_id: scopeStallInput.disabled ? null : scopeStallInput.value || null,
+              sponsor_organization_id: scopeSponsorOrgInput.disabled ? null : scopeSponsorOrgInput.value || null
+            }
+          });
+
+          await loadAdminPage();
+          showMessage("Access scope assigned.", "ok");
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      async function revokeScope(scopeId) {
+        if (!selectedUser) {
+          return;
+        }
+
+        try {
+          await api(`/admin/users/${encodeURIComponent(selectedUser.id)}/access-scopes/${encodeURIComponent(scopeId)}`, {
+            method: "DELETE"
+          });
+          await loadAdminPage();
+          showMessage("Access scope revoked.", "ok");
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      async function api(path, options = {}) {
+        const bearerToken = authSession?.getBearerToken?.() || authTokenInput.value.trim();
+        if (!bearerToken) {
+          throw new Error("Sign in with SSO to continue.");
+        }
+        const response = await fetch(`${apiBase}${path}`, {
+          method: options.method || "GET",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${bearerToken}`
+          },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.error || `Request failed: ${response.status}`);
+        }
+        return payload;
+      }
+
+      function organizationTypeForRole(role) {
+        return {
+          platform_admin: "platform",
+          organizer_admin: "organizer",
+          vendor_manager: "vendor",
+          sponsor_user: "sponsor",
+          ops_user: "platform"
+        }[role] || "platform";
+      }
+
+      function addDetailSummaryItem(text) {
+        const row = document.createElement("div");
+        row.className = "item";
+        row.textContent = text;
+        detailSummary.appendChild(row);
+      }
+
+      function showMessage(text, type) {
+        messageEl.textContent = text;
+        messageEl.className = `status ${type}`;
+        messageEl.hidden = false;
+      }
+
+      function syncQueryState() {
+        const next = new URL(window.location.href);
+        writeParam(next.searchParams, "auth", authSession?.isSecureMode ? null : authTokenInput.value.trim() || null);
+        writeParam(next.searchParams, "userId", selectedUserId || null);
+        writeParam(next.searchParams, "apiBase", apiBase === window.location.origin ? null : apiBase);
+        window.history.replaceState({}, "", next);
+      }
+
+      function refreshShellLinks() {
+        const organizer = new URL("./organizer.html", window.location.href);
+        organizer.searchParams.set("eventId", "event-demo");
+        if (apiBase !== window.location.origin) {
+          organizer.searchParams.set("apiBase", apiBase);
+        }
+        openOrganizerLink.href = organizer.pathname + organizer.search;
+      }
+
+      function writeParam(searchParams, key, value) {
+        if (value == null || value === "") {
+          searchParams.delete(key);
+          return;
+        }
+        searchParams.set(key, value);
+      }
+
+      function formatDate(value) {
+        if (!value) {
+          return "Not recorded";
+        }
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+          return value;
+        }
+        return parsed.toLocaleString();
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Physical-World Interaction Platform</title>
+    <style>
+      :root {
+        --bg: #081122;
+        --panel: #10203a;
+        --panel-2: #183055;
+        --text: #edf4ff;
+        --muted: #a9bfd8;
+        --accent: #8be9c1;
+        --warning: #ffd36e;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(139, 233, 193, 0.18), transparent 28%),
+          linear-gradient(160deg, var(--bg), #050b16 58%, #0e1830);
+        min-height: 100vh;
+      }
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 48px 24px 64px;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: clamp(2rem, 4vw, 3.8rem);
+      }
+      p {
+        color: var(--muted);
+        max-width: 760px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 16px;
+        margin-top: 28px;
+      }
+      .subgrid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 16px;
+        margin-top: 18px;
+      }
+      a.card {
+        display: block;
+        text-decoration: none;
+        color: inherit;
+        background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+        border: 1px solid rgba(255,255,255,0.09);
+        border-radius: 18px;
+        padding: 18px;
+        min-height: 164px;
+      }
+      .label {
+        display: inline-block;
+        font-size: 12px;
+        color: var(--warning);
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .name {
+        font-size: 1.2rem;
+        margin-bottom: 8px;
+      }
+      .section {
+        margin-top: 34px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="label">Pilot Foundation</div>
+      <h1>Physical-World Interaction Platform</h1>
+      <p>
+        Seed interface surfaces for the pilot-first build. These static shells mirror the first
+        critical surfaces the backend foundation supports.
+      </p>
+      <section class="grid">
+        <a class="card" href="./kiosk.html">
+          <div class="label">Edge</div>
+          <div class="name">Kiosk Runtime Shell</div>
+          <p>Boot, idle, tap processing, active interaction, diagnostics, and QR fallback states.</p>
+        </a>
+        <a class="card" href="./attendee.html">
+          <div class="label">Attendee</div>
+          <div class="name">Consent and Privacy</div>
+          <p>Landing, consent capture, revoke flow, and minimal connection vault layout.</p>
+        </a>
+        <a class="card" href="./vendor.html">
+          <div class="label">Vendor</div>
+          <div class="name">Lead Inbox</div>
+          <p>Consent-aware lead list, masking treatment, CRM eligibility, notes, and qualification.</p>
+        </a>
+        <a class="card" href="./sponsor.html">
+          <div class="label">Sponsor</div>
+          <div class="name">Aggregate Analytics</div>
+          <p>Impressions, clicks, CTR, opted-in leads, trend summaries, and aggregate-first access.</p>
+        </a>
+        <a class="card" href="./organizer.html">
+          <div class="label">Organizer</div>
+          <div class="name">Event Control</div>
+          <p>Fleet visibility, data controls, export approvals, incident center, and audit review.</p>
+        </a>
+        <a class="card" href="./admin.html">
+          <div class="label">Platform Admin</div>
+          <div class="name">IAM Console</div>
+          <p>User lifecycle, role alignment, scoped access assignments, and IAM audit review.</p>
+        </a>
+      </section>
+
+      <section class="section">
+        <div class="label">Phase 3</div>
+        <h2 style="margin:0 0 10px;">Polished role-to-role navigation</h2>
+        <p>
+          The attendee, vendor, and organizer shells now preserve pilot context in the URL so you can move
+          between pages without rebuilding stall and event state by hand.
+        </p>
+        <div class="subgrid">
+          <a class="card" href="./vendor.html?stallId=stall-a1&eventId=event-demo">
+            <div class="label">Suggested Start</div>
+            <div class="name">Open Vendor Demo Flow</div>
+            <p>Jump straight into the vendor inbox with the default demo stall and token.</p>
+          </a>
+          <a class="card" href="./organizer.html?eventId=event-demo">
+            <div class="label">Suggested Start</div>
+            <div class="name">Open Organizer Demo Flow</div>
+            <p>Review go-live readiness, overview metrics, and read-only lead visibility.</p>
+          </a>
+          <a class="card" href="./admin.html">
+            <div class="label">Suggested Start</div>
+            <div class="name">Open Platform IAM Flow</div>
+            <p>Manage platform users, lifecycle state, and event-scoped access without touching the organizer shell.</p>
+          </a>
+        </div>
+      </section>
+    </main>
+  </body>
+  </html>

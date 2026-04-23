@@ -1,0 +1,1801 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kiosk</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+      :root {
+        --bg: #050d18;
+        --surface: #0b1828;
+        --surface2: #101f32;
+        --border: rgba(255,255,255,0.07);
+        --border2: rgba(255,255,255,0.12);
+        --text: #e8f2ff;
+        --muted: #6b8aaa;
+        --accent: #38e8a6;
+        --accent-dim: rgba(56,232,166,0.12);
+        --accent-glow: rgba(56,232,166,0.25);
+        --blue: #5aa8ff;
+        --blue-dim: rgba(90,168,255,0.12);
+        --warn: #ffb347;
+        --warn-dim: rgba(255,179,71,0.12);
+        --danger: #ff6b6b;
+        --danger-dim: rgba(255,107,107,0.12);
+        --gold: #ffd166;
+        --mono: 'DM Mono', monospace;
+        --sans: 'DM Sans', sans-serif;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        font-family: var(--sans);
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        overflow: hidden;
+        user-select: none;
+      }
+
+      /* ── SCREEN SYSTEM ─────────────────────────────── */
+      .screen {
+        position: absolute;
+        inset: 0;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      .screen.active { display: flex; }
+
+      /* ── STATE BADGE (top-left) ────────────────────── */
+      #state-badge {
+        position: fixed;
+        top: 20px;
+        left: 24px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid var(--border);
+        font-size: 11px;
+        font-family: var(--mono);
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        z-index: 100;
+      }
+      #state-badge .dot {
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        background: var(--muted);
+        flex-shrink: 0;
+      }
+      #state-badge.state-idle .dot      { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+      #state-badge.state-active .dot    { background: var(--blue); box-shadow: 0 0 6px var(--blue); }
+      #state-badge.state-warn .dot      { background: var(--warn); }
+      #state-badge.state-danger .dot    { background: var(--danger); }
+
+      /* ── CONNECTIVITY BADGE (top-right) ────────────── */
+      #conn-badge {
+        position: fixed;
+        top: 20px;
+        right: 24px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid var(--border);
+        font-size: 11px;
+        font-family: var(--mono);
+        color: var(--muted);
+        z-index: 100;
+      }
+      #conn-badge.online  { color: var(--accent); border-color: rgba(56,232,166,0.2); }
+      #conn-badge.offline { color: var(--warn);   border-color: rgba(255,179,71,0.2); }
+
+      /* ── HEARTBEAT TICKER (bottom-left) ────────────── */
+      #hb-ticker {
+        position: fixed;
+        bottom: 20px;
+        left: 24px;
+        font-size: 11px;
+        font-family: var(--mono);
+        color: rgba(255,255,255,0.2);
+        z-index: 100;
+      }
+
+      /* ── QUEUE COUNTER (bottom-right) ──────────────── */
+      #queue-counter {
+        position: fixed;
+        bottom: 20px;
+        right: 24px;
+        font-size: 11px;
+        font-family: var(--mono);
+        color: rgba(255,255,255,0.2);
+        z-index: 100;
+      }
+      #queue-counter.has-items { color: var(--warn); }
+
+      /* ── DIAGNOSTICS TRIGGER (hidden corner tap) ────── */
+      #diag-trigger {
+        position: fixed;
+        top: 0; right: 0;
+        width: 80px; height: 80px;
+        z-index: 200;
+        cursor: default;
+      }
+
+      /* ═══════════════════════════════════════════════
+         SCREEN 1 — BOOT
+      ═══════════════════════════════════════════════ */
+      #screen-boot {
+        background:
+          radial-gradient(ellipse at 30% 20%, rgba(56,232,166,0.06) 0%, transparent 50%),
+          var(--bg);
+      }
+      .boot-logo {
+        width: 56px; height: 56px;
+        border-radius: 16px;
+        background: var(--accent-dim);
+        border: 1px solid rgba(56,232,166,0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 24px;
+      }
+      .boot-logo svg { width: 28px; height: 28px; }
+      .boot-title {
+        font-size: 1.1rem;
+        font-weight: 500;
+        margin-bottom: 8px;
+        letter-spacing: -0.01em;
+      }
+      #boot-status {
+        font-size: 13px;
+        color: var(--muted);
+        font-family: var(--mono);
+        margin-bottom: 32px;
+        min-height: 20px;
+      }
+      .boot-progress {
+        width: 200px;
+        height: 2px;
+        background: var(--border);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .boot-bar {
+        height: 100%;
+        background: var(--accent);
+        border-radius: 2px;
+        width: 0;
+        transition: width 0.4s ease;
+      }
+
+      /* ═══════════════════════════════════════════════
+         SCREEN 2 — CONFIG ERROR
+      ═══════════════════════════════════════════════ */
+      #screen-config-error {
+        background:
+          radial-gradient(ellipse at center, rgba(255,107,107,0.05) 0%, transparent 60%),
+          var(--bg);
+      }
+      .error-icon {
+        width: 64px; height: 64px;
+        border-radius: 20px;
+        background: var(--danger-dim);
+        border: 1px solid rgba(255,107,107,0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 20px;
+      }
+      .error-icon svg { width: 30px; height: 30px; color: var(--danger); }
+      .error-title {
+        font-size: 1.25rem;
+        font-weight: 500;
+        margin-bottom: 10px;
+        text-align: center;
+      }
+      .error-body {
+        font-size: 14px;
+        color: var(--muted);
+        text-align: center;
+        max-width: 320px;
+        line-height: 1.6;
+        margin-bottom: 32px;
+      }
+      #retry-config-btn {
+        padding: 12px 28px;
+        border-radius: 12px;
+        background: var(--danger-dim);
+        border: 1px solid rgba(255,107,107,0.25);
+        color: var(--danger);
+        font: 14px/1 var(--sans);
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      #retry-config-btn:hover { background: rgba(255,107,107,0.2); }
+
+      /* ═══════════════════════════════════════════════
+         SCREEN 3 — IDLE
+      ═══════════════════════════════════════════════ */
+      #screen-idle {
+        padding: 0;
+        overflow: hidden;
+      }
+      .idle-bg {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(ellipse at 70% 30%, rgba(56,232,166,0.09) 0%, transparent 45%),
+          radial-gradient(ellipse at 20% 70%, rgba(90,168,255,0.07) 0%, transparent 40%),
+          var(--bg);
+      }
+      /* Sponsor creative band */
+      .idle-sponsor-band {
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 5px;
+        background: linear-gradient(90deg, var(--accent), var(--blue));
+        opacity: 0.6;
+      }
+      .idle-content {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: 60px 40px 120px;
+      }
+      .idle-event-name {
+        font-size: 11px;
+        font-family: var(--mono);
+        letter-spacing: 0.12em;
+        color: var(--muted);
+        text-transform: uppercase;
+        margin-bottom: 24px;
+      }
+      .idle-tap-ring {
+        width: 140px; height: 140px;
+        border-radius: 50%;
+        border: 1.5px solid rgba(56,232,166,0.25);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 32px;
+        position: relative;
+        animation: idle-pulse 3s ease-in-out infinite;
+      }
+      .idle-tap-ring::before {
+        content: '';
+        position: absolute;
+        inset: -12px;
+        border-radius: 50%;
+        border: 1px solid rgba(56,232,166,0.1);
+        animation: idle-pulse 3s ease-in-out infinite 0.4s;
+      }
+      .idle-tap-ring::after {
+        content: '';
+        position: absolute;
+        inset: -24px;
+        border-radius: 50%;
+        border: 1px solid rgba(56,232,166,0.05);
+        animation: idle-pulse 3s ease-in-out infinite 0.8s;
+      }
+      @keyframes idle-pulse {
+        0%, 100% { opacity: 0.5; transform: scale(1); }
+        50% { opacity: 1; transform: scale(1.04); }
+      }
+      .idle-nfc-icon { color: var(--accent); }
+      .idle-headline {
+        font-size: 2.2rem;
+        font-weight: 300;
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+        margin-bottom: 14px;
+      }
+      .idle-headline strong { font-weight: 600; }
+      .idle-sub {
+        font-size: 15px;
+        color: var(--muted);
+        max-width: 380px;
+        line-height: 1.6;
+      }
+      /* Sponsor creative area */
+      .idle-sponsor-strip {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        height: 100px;
+        background: linear-gradient(0deg, rgba(0,0,0,0.4) 0%, transparent 100%);
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        padding-bottom: 28px;
+        z-index: 2;
+      }
+      #idle-sponsor-name {
+        font-size: 12px;
+        font-family: var(--mono);
+        color: rgba(255,255,255,0.25);
+        letter-spacing: 0.08em;
+      }
+      /* QR fallback */
+      .idle-qr-corner {
+        position: absolute;
+        bottom: 28px;
+        right: 28px;
+        z-index: 3;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+      }
+      .qr-box {
+        width: 80px; height: 80px;
+        background: #fff;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .qr-box svg { width: 64px; height: 64px; }
+      .qr-label {
+        font-size: 10px;
+        font-family: var(--mono);
+        color: var(--muted);
+        letter-spacing: 0.06em;
+      }
+
+      /* ═══════════════════════════════════════════════
+         SCREEN 4 — TAP PROCESSING
+      ═══════════════════════════════════════════════ */
+      #screen-tap {
+        background:
+          radial-gradient(ellipse at center, rgba(56,232,166,0.1) 0%, transparent 60%),
+          var(--bg);
+      }
+      .tap-ring-outer {
+        width: 180px; height: 180px;
+        border-radius: 50%;
+        border: 2px solid rgba(56,232,166,0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 32px;
+        animation: tap-spin 1.2s linear infinite;
+      }
+      @keyframes tap-spin {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+      }
+      .tap-ring-inner {
+        width: 140px; height: 140px;
+        border-radius: 50%;
+        border: 2px solid rgba(56,232,166,0.15);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transform: rotate(0deg);
+        animation: tap-spin 2s linear infinite reverse;
+      }
+      .tap-center {
+        width: 80px; height: 80px;
+        border-radius: 50%;
+        background: var(--accent-dim);
+        border: 1.5px solid rgba(56,232,166,0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .tap-label {
+        font-size: 1.1rem;
+        font-weight: 500;
+        margin-bottom: 8px;
+      }
+      #tap-status {
+        font-size: 13px;
+        color: var(--muted);
+        font-family: var(--mono);
+        min-height: 20px;
+      }
+
+      /* ═══════════════════════════════════════════════
+         SCREEN 5 — ACTIVE INTERACTION
+      ═══════════════════════════════════════════════ */
+      #screen-active {
+        background:
+          radial-gradient(ellipse at 80% 20%, rgba(90,168,255,0.08) 0%, transparent 45%),
+          radial-gradient(ellipse at 20% 80%, rgba(56,232,166,0.06) 0%, transparent 40%),
+          var(--bg);
+        padding: 60px 40px 40px;
+        align-items: stretch;
+        justify-content: flex-start;
+      }
+      .active-layout {
+        display: grid;
+        grid-template-columns: 1fr 340px;
+        gap: 20px;
+        width: 100%;
+        max-width: 1100px;
+        margin: 0 auto;
+        height: calc(100vh - 100px);
+      }
+      .active-left {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .active-right {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 20px;
+      }
+      .panel-label {
+        font-size: 10px;
+        font-family: var(--mono);
+        letter-spacing: 0.1em;
+        color: var(--muted);
+        text-transform: uppercase;
+        margin-bottom: 14px;
+      }
+      /* Attendee preview */
+      .attendee-anonymous {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 14px;
+        background: var(--surface2);
+        border-radius: 14px;
+      }
+      .anon-avatar {
+        width: 52px; height: 52px;
+        border-radius: 14px;
+        background: var(--blue-dim);
+        border: 1px solid rgba(90,168,255,0.15);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .anon-lines { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+      .anon-line {
+        height: 10px;
+        border-radius: 6px;
+        background: rgba(255,255,255,0.08);
+        animation: shimmer 1.8s ease-in-out infinite;
+      }
+      @keyframes shimmer {
+        0%,100% { opacity: 0.4; }
+        50% { opacity: 0.8; }
+      }
+      .anon-line.short { width: 60%; }
+      /* Consent status */
+      .consent-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: var(--surface2);
+        font-size: 13px;
+      }
+      .consent-dot {
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .consent-dot.pending  { background: var(--muted); }
+      .consent-dot.granted  { background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
+      .consent-dot.declined { background: var(--danger); }
+      /* Short link display */
+      .link-display {
+        padding: 14px;
+        background: var(--surface2);
+        border-radius: 14px;
+        font-family: var(--mono);
+        font-size: 13px;
+        word-break: break-all;
+        color: var(--blue);
+        line-height: 1.5;
+      }
+      /* Sponsor panel */
+      .sponsor-panel-inner {
+        padding: 16px;
+        background: var(--surface2);
+        border-radius: 14px;
+        text-align: center;
+        flex: 1;
+      }
+      #active-sponsor-name {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--gold);
+        margin-bottom: 8px;
+      }
+      #active-sponsor-msg {
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      /* Staff controls */
+      .staff-controls {
+        display: flex;
+        gap: 10px;
+        margin-top: auto;
+      }
+      .staff-btn {
+        flex: 1;
+        padding: 11px 14px;
+        border-radius: 12px;
+        border: 0;
+        font: 13px/1 var(--sans);
+        font-weight: 500;
+        cursor: pointer;
+        transition: opacity 0.2s;
+      }
+      .staff-btn:hover { opacity: 0.85; }
+      .staff-btn.primary { background: var(--accent); color: #051a0f; }
+      .staff-btn.secondary { background: var(--surface2); color: var(--text); }
+      /* Auto-reset bar */
+      .reset-bar-wrap {
+        height: 3px;
+        background: var(--border);
+        border-radius: 3px;
+        overflow: hidden;
+        margin-top: 16px;
+      }
+      #reset-bar {
+        height: 100%;
+        background: linear-gradient(90deg, var(--accent), var(--blue));
+        border-radius: 3px;
+        width: 100%;
+        transform-origin: left;
+        transition: none;
+      }
+
+      /* ═══════════════════════════════════════════════
+         SCREEN 6 — INTERACTION EXCEPTION
+      ═══════════════════════════════════════════════ */
+      #screen-exception {
+        background:
+          radial-gradient(ellipse at center, rgba(255,179,71,0.06) 0%, transparent 55%),
+          var(--bg);
+      }
+      .exception-icon {
+        width: 72px; height: 72px;
+        border-radius: 20px;
+        background: var(--warn-dim);
+        border: 1px solid rgba(255,179,71,0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 20px;
+      }
+      #exception-title {
+        font-size: 1.25rem;
+        font-weight: 500;
+        margin-bottom: 10px;
+        text-align: center;
+        color: var(--warn);
+      }
+      #exception-body {
+        font-size: 14px;
+        color: var(--muted);
+        text-align: center;
+        max-width: 340px;
+        line-height: 1.6;
+        margin-bottom: 32px;
+      }
+      #exception-retry-btn {
+        padding: 12px 28px;
+        border-radius: 12px;
+        background: var(--warn-dim);
+        border: 1px solid rgba(255,179,71,0.25);
+        color: var(--warn);
+        font: 14px/1 var(--sans);
+        font-weight: 500;
+        cursor: pointer;
+      }
+
+      /* ═══════════════════════════════════════════════
+         SCREEN 7 — READER ERROR
+      ═══════════════════════════════════════════════ */
+      #screen-reader-error {
+        background:
+          radial-gradient(ellipse at center, rgba(255,107,107,0.05) 0%, transparent 55%),
+          var(--bg);
+      }
+
+      /* ═══════════════════════════════════════════════
+         SCREEN 8 — DIAGNOSTICS
+      ═══════════════════════════════════════════════ */
+      #screen-diagnostics {
+        background: var(--bg);
+        align-items: flex-start;
+        justify-content: flex-start;
+        padding: 60px 32px 32px;
+        overflow-y: auto;
+      }
+      .diag-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+        width: 100%;
+        max-width: 900px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      .diag-title {
+        font-size: 1rem;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .diag-badge {
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--danger-dim);
+        border: 1px solid rgba(255,107,107,0.2);
+        font-size: 10px;
+        font-family: var(--mono);
+        color: var(--danger);
+        letter-spacing: 0.08em;
+      }
+      .diag-close-btn {
+        padding: 8px 16px;
+        border-radius: 10px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font: 13px/1 var(--sans);
+        cursor: pointer;
+      }
+      .diag-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        width: 100%;
+        max-width: 900px;
+        margin: 0 auto;
+      }
+      .diag-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 16px;
+      }
+      .diag-card-title {
+        font-size: 10px;
+        font-family: var(--mono);
+        letter-spacing: 0.1em;
+        color: var(--muted);
+        text-transform: uppercase;
+        margin-bottom: 12px;
+      }
+      .diag-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+      }
+      .diag-row:last-child { border-bottom: none; }
+      .diag-row .key { color: var(--muted); flex-shrink: 0; }
+      .diag-row .val { font-family: var(--mono); font-size: 11px; text-align: right; word-break: break-all; }
+      .diag-row .val.ok     { color: var(--accent); }
+      .diag-row .val.warn   { color: var(--warn); }
+      .diag-row .val.danger { color: var(--danger); }
+      .diag-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 4px;
+      }
+      .diag-btn {
+        padding: 9px 14px;
+        border-radius: 10px;
+        border: 1px solid var(--border2);
+        background: var(--surface2);
+        color: var(--text);
+        font: 12px/1 var(--sans);
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .diag-btn:hover { background: rgba(255,255,255,0.08); }
+      .diag-btn.primary { background: var(--accent-dim); border-color: rgba(56,232,166,0.2); color: var(--accent); }
+      .diag-btn.danger  { background: var(--danger-dim); border-color: rgba(255,107,107,0.2); color: var(--danger); }
+      /* Queue items in diagnostics */
+      .queue-item {
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: var(--surface2);
+        margin-bottom: 6px;
+        font-family: var(--mono);
+        font-size: 11px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .queue-item .q-seq { color: var(--muted); }
+      .queue-item .q-status { font-size: 10px; padding: 2px 7px; border-radius: 999px; }
+      .q-status.queued   { background: var(--blue-dim);  color: var(--blue); }
+      .q-status.synced   { background: var(--accent-dim); color: var(--accent); }
+      .q-status.failed   { background: var(--warn-dim);   color: var(--warn); }
+      .q-status.corrupt  { background: var(--danger-dim); color: var(--danger); }
+      /* Diag log area */
+      #diag-log {
+        background: var(--surface2);
+        border-radius: 10px;
+        padding: 12px;
+        max-height: 140px;
+        overflow-y: auto;
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 1.6;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      #diag-log .log-line { margin-bottom: 2px; }
+      #diag-log .log-line.ok   { color: var(--accent); }
+      #diag-log .log-line.warn { color: var(--warn); }
+      #diag-log .log-line.err  { color: var(--danger); }
+
+      /* ── CONFIG INPUT OVERLAY ──────────────────────── */
+      #config-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.7);
+        backdrop-filter: blur(6px);
+        z-index: 300;
+        display: none;
+        align-items: center;
+        justify-content: center;
+      }
+      #config-overlay.open { display: flex; }
+      .config-modal {
+        background: var(--surface);
+        border: 1px solid var(--border2);
+        border-radius: 20px;
+        padding: 28px;
+        width: 380px;
+      }
+      .config-modal h3 {
+        font-size: 1rem;
+        font-weight: 500;
+        margin-bottom: 20px;
+      }
+      .config-field {
+        margin-bottom: 14px;
+      }
+      .config-field label {
+        display: block;
+        font-size: 11px;
+        font-family: var(--mono);
+        color: var(--muted);
+        letter-spacing: 0.06em;
+        margin-bottom: 6px;
+      }
+      .config-field input {
+        width: 100%;
+        padding: 10px 12px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        color: var(--text);
+        font: 13px/1 var(--mono);
+      }
+      .config-field input:focus {
+        outline: none;
+        border-color: rgba(56,232,166,0.3);
+      }
+      .config-modal-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+      }
+      .config-save-btn {
+        flex: 1;
+        padding: 11px;
+        border-radius: 11px;
+        background: var(--accent);
+        border: 0;
+        color: #051a0f;
+        font: 13px/1 var(--sans);
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .config-cancel-btn {
+        padding: 11px 18px;
+        border-radius: 11px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font: 13px/1 var(--sans);
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+
+    <!-- Persistent chrome -->
+    <div id="state-badge"><span class="dot"></span><span id="state-label">BOOTING</span></div>
+    <div id="conn-badge">●&nbsp;<span id="conn-label">OFFLINE</span></div>
+    <div id="hb-ticker">HB: <span id="hb-time">—</span></div>
+    <div id="queue-counter">Q: <span id="q-depth">0</span></div>
+    <div id="diag-trigger" title=""></div>
+
+    <!-- ── SCREEN 1: BOOT ─────────────────────── -->
+    <div id="screen-boot" class="screen active">
+      <div class="boot-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--accent)">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <p class="boot-title">Kiosk Runtime</p>
+      <p id="boot-status">Initialising…</p>
+      <div class="boot-progress"><div class="boot-bar" id="boot-bar"></div></div>
+    </div>
+
+    <!-- ── SCREEN 2: CONFIG ERROR ─────────────── -->
+    <div id="screen-config-error" class="screen">
+      <div class="error-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--danger)">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+      </div>
+      <p class="error-title">Device Not Configured</p>
+      <p class="error-body" id="config-error-msg">Unable to load device configuration. Check network connection or contact platform support.</p>
+      <button id="retry-config-btn" onclick="retryConfig()">Retry Configuration</button>
+    </div>
+
+    <!-- ── SCREEN 3: IDLE ─────────────────────── -->
+    <div id="screen-idle" class="screen">
+      <div class="idle-bg"></div>
+      <div class="idle-sponsor-band"></div>
+      <div class="idle-content">
+        <p class="idle-event-name" id="idle-event-name">Event</p>
+        <div class="idle-tap-ring">
+          <svg class="idle-nfc-icon" viewBox="0 0 48 48" fill="none" width="54" height="54">
+            <path d="M10 24C10 16.3 16.3 10 24 10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+            <path d="M6 24C6 14.1 14.1 6 24 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+            <path d="M38 24C38 31.7 31.7 38 24 38" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+            <path d="M42 24C42 33.9 33.9 42 24 42" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+            <circle cx="24" cy="24" r="4" fill="currentColor"/>
+          </svg>
+        </div>
+        <h1 class="idle-headline">Tap your phone<br><strong>to connect</strong></h1>
+        <p class="idle-sub" id="idle-stall-name">Hold your NFC device near the reader to begin</p>
+      </div>
+      <div class="idle-sponsor-strip">
+        <span id="idle-sponsor-name">Presented by sponsor</span>
+      </div>
+      <div class="idle-qr-corner" id="qr-corner">
+        <div class="qr-box" id="qr-svg-wrap">
+          <!-- QR placeholder pattern -->
+          <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="#000">
+            <rect x="2" y="2" width="24" height="24" rx="2" fill="none" stroke="#000" stroke-width="2"/>
+            <rect x="6" y="6" width="16" height="16" rx="1"/>
+            <rect x="38" y="2" width="24" height="24" rx="2" fill="none" stroke="#000" stroke-width="2"/>
+            <rect x="42" y="6" width="16" height="16" rx="1"/>
+            <rect x="2" y="38" width="24" height="24" rx="2" fill="none" stroke="#000" stroke-width="2"/>
+            <rect x="6" y="42" width="16" height="16" rx="1"/>
+            <rect x="38" y="38" width="4" height="4"/><rect x="44" y="38" width="4" height="4"/>
+            <rect x="50" y="38" width="4" height="4"/><rect x="56" y="38" width="6" height="4"/>
+            <rect x="38" y="44" width="4" height="4"/><rect x="44" y="44" width="4" height="4"/>
+            <rect x="50" y="44" width="12" height="4"/>
+            <rect x="38" y="50" width="4" height="4"/><rect x="44" y="50" width="4" height="4"/>
+            <rect x="50" y="50" width="4" height="4"/><rect x="56" y="50" width="6" height="4"/>
+            <rect x="38" y="56" width="4" height="6"/><rect x="44" y="56" width="4" height="6"/>
+            <rect x="50" y="56" width="12" height="6"/>
+          </svg>
+        </div>
+        <span class="qr-label">SCAN TO CONNECT</span>
+      </div>
+    </div>
+
+    <!-- ── SCREEN 4: TAP PROCESSING ──────────── -->
+    <div id="screen-tap" class="screen">
+      <div class="tap-ring-outer">
+        <div class="tap-ring-inner">
+          <div class="tap-center">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" width="28" height="28">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+      <p class="tap-label">Processing tap…</p>
+      <p id="tap-status">Reading device signal</p>
+    </div>
+
+    <!-- ── SCREEN 5: ACTIVE INTERACTION ──────── -->
+    <div id="screen-active" class="screen">
+      <div class="active-layout">
+        <div class="active-left">
+          <div class="panel">
+            <p class="panel-label">Attendee</p>
+            <div class="attendee-anonymous" id="attendee-preview">
+              <div class="anon-avatar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="1.5" width="24" height="24">
+                  <circle cx="12" cy="8" r="4"/>
+                  <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+                </svg>
+              </div>
+              <div class="anon-lines">
+                <div class="anon-line"></div>
+                <div class="anon-line short"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <p class="panel-label">Consent Status</p>
+            <div class="consent-row" id="consent-row">
+              <div class="consent-dot pending" id="consent-dot"></div>
+              <span id="consent-label">Awaiting attendee response</span>
+            </div>
+          </div>
+
+          <div class="panel" style="flex:1">
+            <p class="panel-label">Attendee Link</p>
+            <div class="link-display" id="attendee-link-display">Generating link…</div>
+          </div>
+
+          <div class="reset-bar-wrap">
+            <div id="reset-bar"></div>
+          </div>
+        </div>
+
+        <div class="active-right">
+          <div class="panel" style="flex:1">
+            <p class="panel-label">Sponsor</p>
+            <div class="sponsor-panel-inner">
+              <p id="active-sponsor-name">Sponsor Name</p>
+              <p id="active-sponsor-msg">Connect with us to discover exclusive event content and offers.</p>
+            </div>
+          </div>
+
+          <div class="panel">
+            <p class="panel-label">Staff Controls</p>
+            <div class="staff-controls">
+              <button class="staff-btn secondary" onclick="dismissInteraction()">Dismiss</button>
+              <button class="staff-btn primary" onclick="forceSync()">Sync now</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SCREEN 6: EXCEPTION ────────────────── -->
+    <div id="screen-exception" class="screen">
+      <div class="exception-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2" width="30" height="30">
+          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </div>
+      <p id="exception-title">Tap Exception</p>
+      <p id="exception-body">Unable to process this tap. Try again or ask the attendee to reposition their device.</p>
+      <button id="exception-retry-btn" onclick="goToIdle()">Return to idle</button>
+    </div>
+
+    <!-- ── SCREEN 7: READER ERROR ──────────────── -->
+    <div id="screen-reader-error" class="screen">
+      <div class="error-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" width="30" height="30">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <line x1="8" y1="21" x2="16" y2="21"/>
+          <line x1="12" y1="17" x2="12" y2="21"/>
+          <line x1="7" y1="8" x2="17" y2="12"/>
+          <line x1="17" y1="8" x2="7" y2="12"/>
+        </svg>
+      </div>
+      <p class="error-title">NFC Reader Unavailable</p>
+      <p class="error-body">The card reader is not responding. QR fallback is active while the reader recovers.</p>
+      <button id="retry-config-btn" style="margin-top:0" onclick="checkReaderRecovery()">Check reader</button>
+    </div>
+
+    <!-- ── SCREEN 8: DIAGNOSTICS ──────────────── -->
+    <div id="screen-diagnostics" class="screen">
+      <div class="diag-header">
+        <p class="diag-title">
+          Diagnostics
+          <span class="diag-badge">ADMIN ONLY</span>
+        </p>
+        <button class="diag-close-btn" onclick="closeDiagnostics()">Close ✕</button>
+      </div>
+      <div class="diag-grid">
+        <!-- Device identity -->
+        <div class="diag-card">
+          <p class="diag-card-title">Device Identity</p>
+          <div class="diag-row"><span class="key">Device ID</span><span class="val" id="d-device-id">—</span></div>
+          <div class="diag-row"><span class="key">Event ID</span><span class="val" id="d-event-id">—</span></div>
+          <div class="diag-row"><span class="key">Stall ID</span><span class="val" id="d-stall-id">—</span></div>
+          <div class="diag-row"><span class="key">Assignment checksum</span><span class="val" id="d-checksum">—</span></div>
+          <div class="diag-row"><span class="key">Lease expires</span><span class="val" id="d-lease">—</span></div>
+          <div class="diag-row"><span class="key">API base</span><span class="val" id="d-api-base">—</span></div>
+        </div>
+        <!-- Runtime health -->
+        <div class="diag-card">
+          <p class="diag-card-title">Runtime Health</p>
+          <div class="diag-row"><span class="key">State</span><span class="val ok" id="d-state">—</span></div>
+          <div class="diag-row"><span class="key">Reader status</span><span class="val" id="d-reader">—</span></div>
+          <div class="diag-row"><span class="key">Connectivity</span><span class="val" id="d-conn">—</span></div>
+          <div class="diag-row"><span class="key">Queue depth</span><span class="val" id="d-queue-depth">0</span></div>
+          <div class="diag-row"><span class="key">Corrupt items</span><span class="val" id="d-corrupt">0</span></div>
+          <div class="diag-row"><span class="key">Last sync</span><span class="val" id="d-last-sync">—</span></div>
+          <div class="diag-row"><span class="key">Last heartbeat</span><span class="val" id="d-last-hb">—</span></div>
+        </div>
+        <!-- Queue items -->
+        <div class="diag-card">
+          <p class="diag-card-title">Queue Items</p>
+          <div id="d-queue-list"><p style="color:var(--muted);font-size:12px">Queue is empty</p></div>
+        </div>
+        <!-- Actions -->
+        <div class="diag-card">
+          <p class="diag-card-title">Actions</p>
+          <div class="diag-actions">
+            <button class="diag-btn primary" onclick="forceSyncAll()">Force sync all</button>
+            <button class="diag-btn" onclick="refreshConfig()">Refresh config</button>
+            <button class="diag-btn" onclick="sendHeartbeat()">Send heartbeat</button>
+            <button class="diag-btn danger" onclick="restartAdapter()">Restart adapter</button>
+          </div>
+          <p class="diag-card-title" style="margin-top:16px">Activity Log</p>
+          <div id="diag-log"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── CONFIG SETUP OVERLAY ────────────────── -->
+    <div id="config-overlay">
+      <div class="config-modal">
+        <h3>Device Setup</h3>
+        <div class="config-field">
+          <label>API Base URL</label>
+          <input id="cfg-api-base" type="text" placeholder="http://127.0.0.1:3000">
+        </div>
+        <div class="config-field">
+          <label>Device ID</label>
+          <input id="cfg-device-id" type="text" placeholder="device-1">
+        </div>
+        <div class="config-field">
+          <label>Bearer Token</label>
+          <input id="cfg-token" type="text" placeholder="device-token">
+        </div>
+        <div class="config-modal-actions">
+          <button class="config-cancel-btn" onclick="closeConfigOverlay()">Cancel</button>
+          <button class="config-save-btn" onclick="saveConfigAndBoot()">Save &amp; Boot</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      /* ═══════════════════════════════════════════
+         STATE MACHINE (inline — mirrors packages/runtime)
+      ═══════════════════════════════════════════ */
+      const KIOSK_STATES = Object.freeze({
+        BOOTING: "BOOTING",
+        CONFIG_LOADING: "CONFIG_LOADING",
+        CONFIG_ERROR: "CONFIG_ERROR",
+        LOCKED_UNASSIGNED: "LOCKED_UNASSIGNED",
+        IDLE: "IDLE",
+        OFFLINE_IDLE: "OFFLINE_IDLE",
+        TAP_READING: "TAP_READING",
+        INTERACTION_ACTIVE: "INTERACTION_ACTIVE",
+        INTERACTION_EXCEPTION: "INTERACTION_EXCEPTION",
+        SYNCING_BACKGROUND: "SYNCING_BACKGROUND",
+        READER_ERROR: "READER_ERROR",
+        DIAGNOSTICS: "DIAGNOSTICS"
+      });
+
+      const ALLOWED_TRANSITIONS = {
+        [KIOSK_STATES.BOOTING]: [KIOSK_STATES.CONFIG_LOADING],
+        [KIOSK_STATES.CONFIG_LOADING]: [KIOSK_STATES.IDLE, KIOSK_STATES.OFFLINE_IDLE, KIOSK_STATES.CONFIG_ERROR, KIOSK_STATES.LOCKED_UNASSIGNED],
+        [KIOSK_STATES.IDLE]: [KIOSK_STATES.TAP_READING, KIOSK_STATES.READER_ERROR, KIOSK_STATES.DIAGNOSTICS, KIOSK_STATES.SYNCING_BACKGROUND, KIOSK_STATES.OFFLINE_IDLE],
+        [KIOSK_STATES.OFFLINE_IDLE]: [KIOSK_STATES.TAP_READING, KIOSK_STATES.DIAGNOSTICS, KIOSK_STATES.READER_ERROR, KIOSK_STATES.SYNCING_BACKGROUND],
+        [KIOSK_STATES.TAP_READING]: [KIOSK_STATES.INTERACTION_ACTIVE, KIOSK_STATES.INTERACTION_EXCEPTION],
+        [KIOSK_STATES.INTERACTION_ACTIVE]: [KIOSK_STATES.IDLE, KIOSK_STATES.OFFLINE_IDLE],
+        [KIOSK_STATES.INTERACTION_EXCEPTION]: [KIOSK_STATES.IDLE, KIOSK_STATES.OFFLINE_IDLE],
+        [KIOSK_STATES.READER_ERROR]: [KIOSK_STATES.IDLE, KIOSK_STATES.OFFLINE_IDLE],
+        [KIOSK_STATES.SYNCING_BACKGROUND]: [KIOSK_STATES.IDLE, KIOSK_STATES.OFFLINE_IDLE],
+        [KIOSK_STATES.DIAGNOSTICS]: [KIOSK_STATES.IDLE, KIOSK_STATES.OFFLINE_IDLE],
+        [KIOSK_STATES.CONFIG_ERROR]: [KIOSK_STATES.CONFIG_LOADING],
+        [KIOSK_STATES.LOCKED_UNASSIGNED]: [KIOSK_STATES.CONFIG_LOADING]
+      };
+
+      /* ═══════════════════════════════════════════
+         QUEUE STORE (inline — mirrors packages/runtime)
+      ═══════════════════════════════════════════ */
+      function createQueueStore() { return { lastSequence: 0, items: [] }; }
+      function checksumFor(payload) {
+        const str = JSON.stringify(payload, Object.keys(payload).sort());
+        let h = 0;
+        for (let i = 0; i < str.length; i++) {
+          h = (Math.imul(31, h) + str.charCodeAt(i)) | 0;
+        }
+        return (h >>> 0).toString(16).padStart(8, '0');
+      }
+      function appendQueueItem(store, payload) {
+        const seq = ++store.lastSequence;
+        const item = { queue_sequence_number: seq, payload, sync_status: "queued", retry_count: 0, checksum: checksumFor(payload) };
+        store.items.push(item);
+        return item;
+      }
+      function classifyQueueItem(item) {
+        return checksumFor(item.payload) !== item.checksum ? "corrupt" : item.sync_status;
+      }
+      function markQueueItemSynced(store, seq) {
+        const item = store.items.find(e => e.queue_sequence_number === seq);
+        if (item) item.sync_status = "synced";
+        return item;
+      }
+      function markQueueItemRetryable(store, seq) {
+        const item = store.items.find(e => e.queue_sequence_number === seq);
+        if (item) { item.sync_status = "failed_retryable"; item.retry_count++; }
+        return item;
+      }
+      function getReplayableQueueItems(store) {
+        return store.items
+          .filter(item => ["queued","failed_retryable"].includes(classifyQueueItem(item)))
+          .sort((a,b) => a.queue_sequence_number - b.queue_sequence_number);
+      }
+      function detectCorruption(store) {
+        return store.items.filter(item => classifyQueueItem(item) === "corrupt");
+      }
+
+      /* ═══════════════════════════════════════════
+         RUNTIME STATE
+      ═══════════════════════════════════════════ */
+      let kioskState = KIOSK_STATES.BOOTING;
+      let prevState = null;
+      let isOnline = navigator.onLine;
+      let deviceConfig = null;
+      let activeInteraction = null;
+      let resetTimer = null;
+      let heartbeatInterval = null;
+      let diagTapCount = 0;
+      let diagTapTimer = null;
+      let lastSyncAt = null;
+      let lastHbAt = null;
+      let readerOk = true;
+      const queue = createQueueStore();
+      const diagLog = [];
+
+      /* ─ Read params ───────────────────────────── */
+      const params = new URLSearchParams(window.location.search);
+      let apiBase = params.get("apiBase") || localStorage.getItem("kiosk_api_base") || "http://127.0.0.1:3000";
+      let deviceId = params.get("deviceId") || localStorage.getItem("kiosk_device_id") || "device-1";
+      let bearerToken = params.get("auth") || localStorage.getItem("kiosk_token") || "device-token";
+      let stallId = params.get("stallId") || "stall-a1";
+      let eventId = params.get("eventId") || "event-demo";
+
+      /* ═══════════════════════════════════════════
+         SCREEN ROUTING
+      ═══════════════════════════════════════════ */
+      const SCREEN_MAP = {
+        [KIOSK_STATES.BOOTING]:               "screen-boot",
+        [KIOSK_STATES.CONFIG_LOADING]:         "screen-boot",
+        [KIOSK_STATES.CONFIG_ERROR]:           "screen-config-error",
+        [KIOSK_STATES.LOCKED_UNASSIGNED]:      "screen-config-error",
+        [KIOSK_STATES.IDLE]:                   "screen-idle",
+        [KIOSK_STATES.OFFLINE_IDLE]:           "screen-idle",
+        [KIOSK_STATES.TAP_READING]:            "screen-tap",
+        [KIOSK_STATES.INTERACTION_ACTIVE]:     "screen-active",
+        [KIOSK_STATES.INTERACTION_EXCEPTION]:  "screen-exception",
+        [KIOSK_STATES.SYNCING_BACKGROUND]:     "screen-idle",
+        [KIOSK_STATES.READER_ERROR]:           "screen-reader-error",
+        [KIOSK_STATES.DIAGNOSTICS]:            "screen-diagnostics"
+      };
+
+      function transition(toState) {
+        const allowed = ALLOWED_TRANSITIONS[kioskState] ?? [];
+        if (!allowed.includes(toState)) {
+          logDiag(`warn:Invalid transition ${kioskState} → ${toState}`, "warn");
+          return false;
+        }
+        prevState = kioskState;
+        kioskState = toState;
+        renderState();
+        return true;
+      }
+
+      function renderState() {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        const screenId = SCREEN_MAP[kioskState];
+        if (screenId) document.getElementById(screenId).classList.add('active');
+
+        // State badge
+        const badge = document.getElementById("state-badge");
+        document.getElementById("state-label").textContent = kioskState;
+        badge.className = ""; // reset
+        if ([KIOSK_STATES.IDLE, KIOSK_STATES.OFFLINE_IDLE, KIOSK_STATES.INTERACTION_ACTIVE].includes(kioskState)) {
+          badge.classList.add("state-idle");
+        } else if ([KIOSK_STATES.TAP_READING, KIOSK_STATES.SYNCING_BACKGROUND].includes(kioskState)) {
+          badge.classList.add("state-active");
+        } else if ([KIOSK_STATES.INTERACTION_EXCEPTION, KIOSK_STATES.READER_ERROR].includes(kioskState)) {
+          badge.classList.add("state-warn");
+        } else if ([KIOSK_STATES.CONFIG_ERROR, KIOSK_STATES.LOCKED_UNASSIGNED].includes(kioskState)) {
+          badge.classList.add("state-danger");
+        }
+
+        // Diagnostics state field
+        const dState = document.getElementById("d-state");
+        if (dState) dState.textContent = kioskState;
+      }
+
+      /* ═══════════════════════════════════════════
+         CONNECTIVITY
+      ═══════════════════════════════════════════ */
+      function updateConnBadge() {
+        const badge = document.getElementById("conn-badge");
+        const label = document.getElementById("conn-label");
+        if (isOnline) {
+          badge.className = "online";
+          label.textContent = "ONLINE";
+        } else {
+          badge.className = "offline";
+          label.textContent = "OFFLINE";
+        }
+        const dConn = document.getElementById("d-conn");
+        if (dConn) dConn.textContent = isOnline ? "online" : "offline";
+        if (dConn) dConn.className = "val " + (isOnline ? "ok" : "warn");
+      }
+
+      window.addEventListener("online",  () => { isOnline = true;  updateConnBadge(); onConnectivityChange(); });
+      window.addEventListener("offline", () => { isOnline = false; updateConnBadge(); onConnectivityChange(); });
+
+      function onConnectivityChange() {
+        if (!isOnline && kioskState === KIOSK_STATES.IDLE) {
+          transition(KIOSK_STATES.OFFLINE_IDLE);
+        } else if (isOnline && kioskState === KIOSK_STATES.OFFLINE_IDLE) {
+          transition(KIOSK_STATES.IDLE);
+          scheduleBackgroundSync();
+        }
+      }
+
+      /* ═══════════════════════════════════════════
+         API HELPER
+      ═══════════════════════════════════════════ */
+      async function api(path, options = {}) {
+        const response = await fetch(`${apiBase}${path}`, {
+          cache: "no-store",
+          method: options.method || "GET",
+          headers: {
+            authorization: `Bearer ${bearerToken}`,
+            "content-type": "application/json",
+            "x-tenant-id": "tenant-demo",
+            ...(options.headers || {})
+          },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+        return payload;
+      }
+
+      /* ═══════════════════════════════════════════
+         BOOT SEQUENCE
+      ═══════════════════════════════════════════ */
+      function setBootStatus(msg, pct) {
+        document.getElementById("boot-status").textContent = msg;
+        document.getElementById("boot-bar").style.width = pct + "%";
+      }
+
+      async function boot() {
+        renderState();
+        updateConnBadge();
+        setBootStatus("Initialising local services…", 10);
+        await sleep(300);
+
+        // Check if we need setup
+        if (!localStorage.getItem("kiosk_device_id") && !params.get("deviceId")) {
+          setBootStatus("No device identity found…", 20);
+          await sleep(300);
+          openConfigOverlay();
+          return;
+        }
+
+        transition(KIOSK_STATES.CONFIG_LOADING);
+        setBootStatus("Loading cached configuration…", 30);
+        await sleep(200);
+
+        // Try to load config from API
+        setBootStatus("Fetching device configuration…", 50);
+        try {
+          const config = await api(`/device/config/${encodeURIComponent(deviceId)}`);
+          deviceConfig = config;
+          stallId = config.stall_id || stallId;
+          eventId = config.event_id || eventId;
+          setBootStatus("Verifying reader connectivity…", 70);
+          await sleep(200);
+          // Simulate reader check
+          readerOk = true;
+          setBootStatus("Configuration loaded ✓", 90);
+          await sleep(300);
+          logDiag(`ok:Config loaded — event=${eventId} stall=${stallId}`, "ok");
+          populateDiagFields();
+          transition(isOnline ? KIOSK_STATES.IDLE : KIOSK_STATES.OFFLINE_IDLE);
+          updateIdleScreen();
+          startHeartbeat();
+          startQRFallback();
+        } catch (err) {
+          // Offline or unassigned — use cached values
+          if (!isOnline) {
+            setBootStatus("Offline — using cached config", 90);
+            await sleep(300);
+            logDiag(`warn:Offline boot — using cached config`, "warn");
+            populateDiagFields();
+            transition(KIOSK_STATES.OFFLINE_IDLE);
+            updateIdleScreen();
+            startQRFallback();
+          } else if (err.message.includes("404") || err.message.includes("assignment")) {
+            setBootStatus("Device not assigned to event", 90);
+            await sleep(300);
+            document.getElementById("config-error-msg").textContent = "This device is not assigned to an active event. Contact the organizer.";
+            transition(KIOSK_STATES.LOCKED_UNASSIGNED);
+          } else {
+            setBootStatus("Configuration error", 90);
+            await sleep(300);
+            document.getElementById("config-error-msg").textContent = `Unable to load config: ${err.message}`;
+            transition(KIOSK_STATES.CONFIG_ERROR);
+          }
+        }
+      }
+
+      /* ═══════════════════════════════════════════
+         IDLE SCREEN
+      ═══════════════════════════════════════════ */
+      function updateIdleScreen() {
+        const cfg = deviceConfig || {};
+        document.getElementById("idle-event-name").textContent =
+          cfg.event_name || params.get("eventName") || "Live Event";
+        document.getElementById("idle-stall-name").textContent =
+          cfg.stall_name ? `${cfg.stall_name} · Hold your NFC device near the reader` : "Hold your NFC device near the reader to begin";
+        document.getElementById("idle-sponsor-name").textContent =
+          cfg.sponsor_name ? `Presented by ${cfg.sponsor_name}` : "";
+        document.getElementById("active-sponsor-name").textContent =
+          cfg.sponsor_name || "Sponsor";
+      }
+
+      /* ═══════════════════════════════════════════
+         QR FALLBACK
+      ═══════════════════════════════════════════ */
+      function startQRFallback() {
+        // QR always visible in idle — the placeholder SVG is already rendered
+        // In production this would call short-links API and render a real QR
+        document.getElementById("qr-corner").style.display = "flex";
+      }
+
+      /* ═══════════════════════════════════════════
+         SIMULATED TAP (NFC host triggers this in production)
+         Exposed as window.simulateTap for testing
+      ═══════════════════════════════════════════ */
+      window.simulateTap = async function(tapType = "phone_ndef", rawData = null) {
+        if (![KIOSK_STATES.IDLE, KIOSK_STATES.OFFLINE_IDLE].includes(kioskState)) return;
+
+        transition(KIOSK_STATES.TAP_READING);
+        document.getElementById("tap-status").textContent = "Reading device signal…";
+
+        await sleep(400);
+
+        // Generate local_event_id before any cloud call (spec: local-first)
+        const localEventId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const tapPayload = {
+          device_id: deviceId,
+          event_id: eventId,
+          stall_id: stallId,
+          local_event_id: localEventId,
+          tap_type: tapType || "phone_ndef",
+          raw_data: rawData || `mock-tag-${localEventId}`,
+          occurred_at: new Date().toISOString()
+        };
+
+        // RULE: Store locally first before any cloud call
+        const queuedItem = appendQueueItem(queue, tapPayload);
+        updateQueueCounter();
+        logDiag(`ok:Tap queued locally — seq=${queuedItem.queue_sequence_number}`, "ok");
+        document.getElementById("tap-status").textContent = "Saved locally, contacting server…";
+
+        await sleep(300);
+
+        if (!isOnline) {
+          // Offline path: queue persisted, show anonymous active screen
+          document.getElementById("tap-status").textContent = "Offline — tap saved for sync";
+          await sleep(600);
+          showOfflineInteraction(queuedItem, tapPayload);
+          return;
+        }
+
+        // Online path: send to API
+        try {
+          document.getElementById("tap-status").textContent = "Creating interaction…";
+          const result = await api("/interactions/tap", {
+            method: "POST",
+            body: tapPayload
+          });
+          markQueueItemSynced(queue, queuedItem.queue_sequence_number);
+          updateQueueCounter();
+          lastSyncAt = new Date().toISOString();
+          logDiag(`ok:Tap synced — interaction=${result.interaction_id}`, "ok");
+          showActiveInteraction(result);
+        } catch (err) {
+          // Handle duplicate (idempotent — treat as success)
+          if (err.message.includes("409") || err.message.toLowerCase().includes("duplicate")) {
+            markQueueItemSynced(queue, queuedItem.queue_sequence_number);
+            updateQueueCounter();
+            logDiag(`ok:Duplicate tap — treated as synced`, "ok");
+            showExceptionScreen("Duplicate tap", "This interaction was already recorded. The attendee's link is still active.");
+            return;
+          }
+          markQueueItemRetryable(queue, queuedItem.queue_sequence_number);
+          updateQueueCounter();
+          logDiag(`warn:Tap sync failed — ${err.message}`, "warn");
+          showExceptionScreen("Sync error", `Tap saved locally and will retry: ${err.message}`);
+        }
+      };
+
+      function showActiveInteraction(result) {
+        activeInteraction = result;
+        transition(KIOSK_STATES.INTERACTION_ACTIVE);
+        // Attendee link
+        const link = result.customer_short_link || result.customer_link || "—";
+        document.getElementById("attendee-link-display").textContent = link;
+        // Consent
+        updateConsentDisplay("pending");
+        // Reset timer (30s auto-return to idle per spec)
+        startResetTimer(30);
+        logDiag(`ok:Interaction active — ${result.interaction_id}`, "ok");
+      }
+
+      function showOfflineInteraction(queuedItem, payload) {
+        activeInteraction = { offline: true, local_event_id: payload.local_event_id };
+        transition(KIOSK_STATES.INTERACTION_ACTIVE);
+        document.getElementById("attendee-link-display").textContent =
+          `Offline — will generate link when online`;
+        updateConsentDisplay("pending");
+        startResetTimer(30);
+        logDiag(`warn:Offline interaction — seq=${queuedItem.queue_sequence_number}`, "warn");
+      }
+
+      function showExceptionScreen(title, body) {
+        transition(KIOSK_STATES.INTERACTION_EXCEPTION);
+        document.getElementById("exception-title").textContent = title;
+        document.getElementById("exception-body").textContent = body;
+        // Auto-return after 8s
+        setTimeout(() => {
+          if (kioskState === KIOSK_STATES.INTERACTION_EXCEPTION) goToIdle();
+        }, 8000);
+      }
+
+      function updateConsentDisplay(status) {
+        const dot = document.getElementById("consent-dot");
+        const label = document.getElementById("consent-label");
+        dot.className = "consent-dot " + status;
+        label.textContent = {
+          pending: "Awaiting attendee response",
+          granted: "Consent granted ✓",
+          declined: "Consent declined"
+        }[status] || status;
+      }
+
+      /* ═══════════════════════════════════════════
+         AUTO-RESET TIMER (spec: active screen auto-reset)
+      ═══════════════════════════════════════════ */
+      function startResetTimer(seconds) {
+        clearResetTimer();
+        const bar = document.getElementById("reset-bar");
+        bar.style.transition = "none";
+        bar.style.width = "100%";
+        void bar.offsetWidth; // force reflow
+        bar.style.transition = `width ${seconds}s linear`;
+        bar.style.width = "0%";
+        resetTimer = setTimeout(() => {
+          if (kioskState === KIOSK_STATES.INTERACTION_ACTIVE) {
+            logDiag("ok:Auto-reset to idle", "ok");
+            goToIdle();
+          }
+        }, seconds * 1000);
+      }
+
+      function clearResetTimer() {
+        if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
+        const bar = document.getElementById("reset-bar");
+        bar.style.transition = "none";
+        bar.style.width = "100%";
+      }
+
+      /* ═══════════════════════════════════════════
+         HEARTBEAT (every 60s per spec)
+      ═══════════════════════════════════════════ */
+      function startHeartbeat() {
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+        heartbeatInterval = setInterval(sendHeartbeatInternal, 60_000);
+        sendHeartbeatInternal(); // immediate first HB
+      }
+
+      async function sendHeartbeatInternal() {
+        if (!isOnline || !eventId || !stallId) return;
+        try {
+          await api("/device/heartbeat", {
+            method: "POST",
+            body: {
+              device_id: deviceId,
+              event_id: eventId,
+              stall_id: stallId,
+              local_queue_depth: getReplayableQueueItems(queue).length,
+              battery_level: 1.0,
+              connectivity_status: isOnline ? "online" : "offline",
+              reader_status: readerOk ? "connected" : "disconnected",
+              app_version: "1.0.0",
+              recorded_at: new Date().toISOString()
+            }
+          });
+          lastHbAt = new Date().toISOString();
+          document.getElementById("hb-time").textContent = new Date().toLocaleTimeString();
+          const dlHb = document.getElementById("d-last-hb");
+          if (dlHb) dlHb.textContent = new Date(lastHbAt).toLocaleTimeString();
+        } catch {
+          // Non-blocking — heartbeat failures are ok
+        }
+      }
+
+      window.sendHeartbeat = sendHeartbeatInternal;
+
+      /* ═══════════════════════════════════════════
+         BACKGROUND SYNC
+      ═══════════════════════════════════════════ */
+      async function scheduleBackgroundSync() {
+        const replayable = getReplayableQueueItems(queue);
+        if (!replayable.length || !isOnline) return;
+        if (kioskState === KIOSK_STATES.IDLE) {
+          transition(KIOSK_STATES.SYNCING_BACKGROUND);
+        }
+        logDiag(`ok:Background sync — ${replayable.length} items`, "ok");
+        try {
+          const items = replayable.map(item => item.payload);
+          await api("/device/sync", {
+            method: "POST",
+            body: { device_id: deviceId, items }
+          });
+          for (const item of replayable) {
+            markQueueItemSynced(queue, item.queue_sequence_number);
+          }
+          lastSyncAt = new Date().toISOString();
+          updateQueueCounter();
+          logDiag(`ok:Sync complete — ${replayable.length} items`, "ok");
+        } catch (err) {
+          for (const item of replayable) {
+            markQueueItemRetryable(queue, item.queue_sequence_number);
+          }
+          logDiag(`warn:Sync failed — ${err.message}`, "warn");
+        }
+        if (kioskState === KIOSK_STATES.SYNCING_BACKGROUND) {
+          transition(isOnline ? KIOSK_STATES.IDLE : KIOSK_STATES.OFFLINE_IDLE);
+        }
+      }
+
+      window.forceSync = async function() {
+        clearResetTimer();
+        if (activeInteraction) goToIdle();
+        await scheduleBackgroundSync();
+      };
+      window.forceSyncAll = window.forceSync;
+
+      /* ═══════════════════════════════════════════
+         NAVIGATION HELPERS
+      ═══════════════════════════════════════════ */
+      window.goToIdle = function() {
+        clearResetTimer();
+        activeInteraction = null;
+        transition(isOnline ? KIOSK_STATES.IDLE : KIOSK_STATES.OFFLINE_IDLE);
+      };
+
+      window.dismissInteraction = function() {
+        logDiag("ok:Staff dismissed interaction", "ok");
+        goToIdle();
+      };
+
+      window.retryConfig = window.refreshConfig = async function() {
+        if (kioskState === KIOSK_STATES.CONFIG_ERROR || kioskState === KIOSK_STATES.LOCKED_UNASSIGNED) {
+          transition(KIOSK_STATES.CONFIG_LOADING);
+          await sleep(200);
+          await boot();
+        } else {
+          transition(KIOSK_STATES.CONFIG_LOADING);
+          setBootStatus("Refreshing configuration…", 50);
+          await sleep(200);
+          await boot();
+        }
+      };
+
+      window.checkReaderRecovery = function() {
+        readerOk = true;
+        logDiag("ok:Reader recovery checked", "ok");
+        transition(isOnline ? KIOSK_STATES.IDLE : KIOSK_STATES.OFFLINE_IDLE);
+      };
+
+      /* ═══════════════════════════════════════════
+         DIAGNOSTICS
+      ═══════════════════════════════════════════ */
+      // Hidden 5-tap trigger in top-right corner
+      document.getElementById("diag-trigger").addEventListener("click", () => {
+        diagTapCount++;
+        clearTimeout(diagTapTimer);
+        diagTapTimer = setTimeout(() => { diagTapCount = 0; }, 2000);
+        if (diagTapCount >= 5) {
+          diagTapCount = 0;
+          openDiagnostics();
+        }
+      });
+
+      function openDiagnostics() {
+        if (kioskState === KIOSK_STATES.DIAGNOSTICS) return;
+        transition(KIOSK_STATES.DIAGNOSTICS);
+        populateDiagFields();
+        refreshDiagQueue();
+      }
+
+      window.closeDiagnostics = function() {
+        transition(isOnline ? KIOSK_STATES.IDLE : KIOSK_STATES.OFFLINE_IDLE);
+      };
+
+      function populateDiagFields() {
+        const cfg = deviceConfig || {};
+        setText("d-device-id", deviceId);
+        setText("d-event-id", cfg.event_id || eventId);
+        setText("d-stall-id", cfg.stall_id || stallId);
+        setText("d-checksum", cfg.assignment_checksum || "—");
+        setText("d-lease", cfg.lease_expires_at ? new Date(cfg.lease_expires_at).toLocaleString() : "—");
+        setText("d-api-base", apiBase);
+        setText("d-state", kioskState);
+        const readerEl = document.getElementById("d-reader");
+        if (readerEl) {
+          readerEl.textContent = readerOk ? "connected" : "disconnected";
+          readerEl.className = "val " + (readerOk ? "ok" : "danger");
+        }
+      }
+
+      function refreshDiagQueue() {
+        const replayable = getReplayableQueueItems(queue);
+        const corrupt = detectCorruption(queue);
+        setText("d-queue-depth", String(replayable.length));
+        setText("d-corrupt", String(corrupt.length));
+        const el = document.getElementById("d-queue-list");
+        if (!el) return;
+        if (!queue.items.length) {
+          el.innerHTML = '<p style="color:var(--muted);font-size:12px">Queue is empty</p>';
+          return;
+        }
+        el.innerHTML = queue.items.slice(-10).map(item => {
+          const status = classifyQueueItem(item);
+          return `<div class="queue-item">
+            <span class="q-seq">#${item.queue_sequence_number}</span>
+            <span>${item.payload.local_event_id || "—"}</span>
+            <span class="q-status ${status}">${status}</span>
+          </div>`;
+        }).join("");
+        const lastSync = document.getElementById("d-last-sync");
+        if (lastSync) lastSync.textContent = lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString() : "—";
+      }
+
+      window.restartAdapter = function() {
+        logDiag("warn:Adapter restart requested", "warn");
+        readerOk = false;
+        setTimeout(() => {
+          readerOk = true;
+          logDiag("ok:Adapter restarted", "ok");
+        }, 2000);
+      };
+
+      function logDiag(message, type = "ok") {
+        const ts = new Date().toLocaleTimeString();
+        const [level, msg] = message.startsWith("ok:") || message.startsWith("warn:") || message.startsWith("err:")
+          ? [message.split(":")[0], message.slice(message.indexOf(":")+1)]
+          : ["ok", message];
+        diagLog.unshift({ ts, msg, type: type || level });
+        if (diagLog.length > 40) diagLog.pop();
+        const el = document.getElementById("diag-log");
+        if (!el) return;
+        el.innerHTML = diagLog.slice(0,20).map(entry =>
+          `<div class="log-line ${entry.type}">[${entry.ts}] ${entry.msg}</div>`
+        ).join("");
+      }
+
+      /* ═══════════════════════════════════════════
+         QUEUE COUNTER
+      ═══════════════════════════════════════════ */
+      function updateQueueCounter() {
+        const depth = getReplayableQueueItems(queue).length;
+        const el = document.getElementById("q-depth");
+        const wrap = document.getElementById("queue-counter");
+        el.textContent = String(depth);
+        wrap.className = depth > 0 ? "has-items" : "";
+        const dd = document.getElementById("d-queue-depth");
+        if (dd) dd.textContent = String(depth);
+      }
+
+      /* ═══════════════════════════════════════════
+         CONFIG OVERLAY
+      ═══════════════════════════════════════════ */
+      window.openConfigOverlay = function() {
+        document.getElementById("cfg-api-base").value = apiBase;
+        document.getElementById("cfg-device-id").value = deviceId;
+        document.getElementById("cfg-token").value = bearerToken;
+        document.getElementById("config-overlay").classList.add("open");
+      };
+
+      window.closeConfigOverlay = function() {
+        document.getElementById("config-overlay").classList.remove("open");
+      };
+
+      window.saveConfigAndBoot = async function() {
+        apiBase     = document.getElementById("cfg-api-base").value.trim() || apiBase;
+        deviceId    = document.getElementById("cfg-device-id").value.trim() || deviceId;
+        bearerToken = document.getElementById("cfg-token").value.trim() || bearerToken;
+        localStorage.setItem("kiosk_api_base", apiBase);
+        localStorage.setItem("kiosk_device_id", deviceId);
+        localStorage.setItem("kiosk_token", bearerToken);
+        closeConfigOverlay();
+        await boot();
+      };
+
+      /* ═══════════════════════════════════════════
+         KEYBOARD SHORTCUTS (dev/demo only)
+      ═══════════════════════════════════════════ */
+      window.addEventListener("keydown", e => {
+        if (e.key === "t" && [KIOSK_STATES.IDLE, KIOSK_STATES.OFFLINE_IDLE].includes(kioskState)) {
+          simulateTap("phone_ndef");
+        }
+        if (e.key === "q" && [KIOSK_STATES.IDLE, KIOSK_STATES.OFFLINE_IDLE].includes(kioskState)) {
+          simulateTap("qr");
+        }
+        if (e.key === "d") openDiagnostics();
+        if (e.key === "Escape") {
+          if (kioskState === KIOSK_STATES.DIAGNOSTICS) closeDiagnostics();
+          else if (kioskState === KIOSK_STATES.INTERACTION_ACTIVE) goToIdle();
+        }
+      });
+
+      /* ═══════════════════════════════════════════
+         UTILS
+      ═══════════════════════════════════════════ */
+      function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+      function setText(id, val) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+      }
+
+      /* ═══════════════════════════════════════════
+         BOOT
+      ═══════════════════════════════════════════ */
+      boot();
+    </script>
+  </body>
+</html>

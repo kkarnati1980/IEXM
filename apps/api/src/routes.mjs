@@ -1,0 +1,8516 @@
+import { createHash } from "node:crypto";
+import { nextId } from "./store.mjs";
+import { HttpError } from "./http-error.mjs";
+import { deriveCrmEligibility } from "./policy.mjs";
+import { createAttendeeSessionToken, verifyAttendeeSessionToken } from "./session-tokens.mjs";
+import { createDeviceCredentialToken, hashDeviceCredentialToken } from "./device-credentials.mjs";
+import { createShortLinkToken, hashShortLinkToken, shortLinkPath } from "./short-links.mjs";
+import { listAccessControlMatrix } from "./access-control.mjs";
+import {
+  buildAttackSurfaceReport,
+  buildPentestEvidencePack,
+  buildSecurityAlerts,
+  buildSecurityReadiness,
+  summarizePentestFindings
+} from "./security-hardening.mjs";
+import { buildDeploymentReadiness } from "./deployment-readiness.mjs";
+import { ingestTapEvent } from "./interactions/ingest-tap.mjs";
+import {
+  buildComplianceOverview,
+  buildComplianceOperationalReport,
+  buildDataSubjectRequestDetail,
+  completeDataSubjectRequest,
+  confirmDownstreamDeletionRecord,
+  createDataSubjectRequest,
+  dispatchDownstreamDeletion,
+  listDataSubjectRequestsForEvent,
+  runRetentionLifecycle
+} from "./compliance/post-event-lifecycle.mjs";
+import { PILOT_CRM_PROVIDER, syncInteractionToPilotCrm } from "./crm/pilot-crm.mjs";
+import {
+  buildNotificationAttemptHistory,
+  buildNotificationDeliveryAnalytics,
+  buildNotificationQueueInventory,
+  buildNotificationQueueMetrics,
+  completeNotificationSendFailure,
+  completeNotificationSendSuccess,
+  completeNotificationSendTemporaryFailure,
+  deriveNotificationQueueState,
+  processNotificationQueueBatch,
+  resolveNotificationRetryPolicy
+} from "./notification-worker.mjs";
+import {
+  assertNotificationWebhookAuthorized,
+  buildNotificationEngagementAnalytics,
+  buildNotificationReceiptGovernance,
+  buildNotificationReceiptHistory,
+  ingestNotificationReceipt
+} from "./notification-receipts.mjs";
+import {
+  buildNotificationChannelsReadiness,
+  resolveNotificationWorkerSchedule
+} from "./notification-providers.mjs";
+
+export function registerRoutes(router) {
+  router.addRoute({
+    id: "health",
+    method: "GET",
+    path: "/health",
+    authRequired: false,
+    handler: async ({ state, repos }) => ({
+      status: "ok",
+      version: "0.1.0",
+      backend: repos.backend,
+      events: state.events.length,
+      routes: Object.keys(state.metrics.routeHits).length
+    })
+  });
+
+  router.addRoute({
+    id: "readiness",
+    method: "GET",
+    path: "/ready",
+    authRequired: false,
+    handler: async (ctx) => {
+      const readiness = await buildDeploymentReadiness(ctx, { includeDetails: false });
+      if (!readiness.ready) {
+        throw new HttpError(503, "Deployment readiness checks failed", {
+          summary: readiness.summary
+        });
+      }
+      return readiness;
+    }
+  });
+
+  router.addRoute({
+    id: "auth-browser-config",
+    method: "GET",
+    path: "/auth/browser-config",
+    authRequired: false,
+    handler: async ({ securityMode, allowSeedTokens, oidc }) => {
+      const browserOidcEnabled = securityMode === "secure" && Boolean(oidc?.enabled);
+      const browserConfig = browserOidcEnabled
+        ? await oidc.getBrowserConfiguration()
+        : null;
+
+      return {
+        security_mode: securityMode,
+        allow_seed_tokens: allowSeedTokens,
+        browser_auth: {
+          mode: browserOidcEnabled ? "oidc_pkce" : "seed_bearer",
+          requires_login: securityMode === "secure",
+          oidc: browserConfig
+        }
+      };
+    }
+  });
+
+  router.addRoute({
+    id: "notification-provider-webhook",
+    method: "POST",
+    path: "/webhooks/notifications/:channel",
+    authRequired: false,
+    validate: (body) => body ?? {},
+    handler: async ({ repos, params, headers, body, env }) => {
+      const tenantId = headers["x-tenant-id"] ?? body.tenant_id ?? null;
+      if (!tenantId) {
+        throw new HttpError(400, "Notification webhook tenant_id is required");
+      }
+      assertNotificationWebhookAuthorized(params.channel, headers, body, env);
+      return repos.withTransaction((txRepos) =>
+        ingestNotificationReceipt({
+          repos: txRepos,
+          tenantId,
+          channel: params.channel,
+          payload: body,
+          initiatedBy: `notification-webhook:${params.channel}`
+        })
+      );
+    },
+    statusCode: 202
+  });
+
+  router.addRoute({
+    id: "event-public-leaderboard",
+    method: "GET",
+    path: "/events/:eventId/leaderboard",
+    authRequired: false,
+    resolveResources: async ({ state, repos, params, headers }) => {
+      const tenantId = headers["x-tenant-id"] ?? state.events.find((entry) => entry.id === params.eventId)?.tenant_id;
+      if (!tenantId) {
+        throw new HttpError(400, "Unable to resolve tenant for public leaderboard");
+      }
+      const event = await repos.events.findById(tenantId, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(tenantId, event.id);
+      return { event, eventPolicy, tenantHint: tenantId };
+    },
+    handler: async ({ repos, resources, query }) =>
+      buildPublicLeaderboard({
+        repos,
+        tenantId: resources.event.tenant_id,
+        event: resources.event,
+        eventPolicy: resources.eventPolicy,
+        query
+      }),
+    auditEventType: "event.public_leaderboard.view"
+  });
+
+  router.addRoute({
+    id: "short-link-resolve",
+    method: "GET",
+    path: "/s/:token",
+    authRequired: false,
+    resolveResources: async ({ repos, params }) => {
+      const shortLink = await repos.shortLinks.findByTokenHash(hashShortLinkToken(params.token));
+      if (!shortLink) {
+        throw new HttpError(404, "Short link not found");
+      }
+      const resources = {
+        shortLink,
+        tenantHint: shortLink.tenant_id
+      };
+      if (shortLink.target_type === "attendee_session") {
+        resources.interaction = await repos.interactions.findById(shortLink.tenant_id, shortLink.target_id);
+        resources.event = await repos.events.findById(shortLink.tenant_id, resources.interaction.event_id);
+      }
+      if (shortLink.target_type === "export_download") {
+        resources.exportRequest = await repos.exportRequests.findById(shortLink.tenant_id, shortLink.target_id);
+        resources.event = await repos.events.findById(shortLink.tenant_id, resources.exportRequest.event_id);
+      }
+      if (shortLink.target_type === "wallet_pass") {
+        resources.walletPass = await repos.walletPasses.findById(shortLink.tenant_id, shortLink.target_id);
+        resources.event = await repos.events.findById(shortLink.tenant_id, resources.walletPass.event_id);
+      }
+      return resources;
+    },
+    handler: async ({ repos, resources }) => resolveShortLink({ repos, resources }),
+    auditEventType: "short_link.resolved"
+  });
+
+  router.addRoute({
+    id: "short-link-status",
+    method: "GET",
+    path: "/short-links/:shortLinkId/status",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: resolveShortLinkOperatorResources,
+    handler: async ({ resources }) => serializeShortLinkInvestigation(resources),
+    auditEventType: "short_link.status.view"
+  });
+
+  router.addRoute({
+    id: "short-link-revoke",
+    method: "POST",
+    path: "/short-links/:shortLinkId/revoke",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: resolveShortLinkOperatorResources,
+    handler: async ({ repos, resources }) =>
+      repos.withTransaction(async (txRepos) => {
+        const shortLink = await txRepos.shortLinks.findById(resources.shortLink.tenant_id, resources.shortLink.id);
+        if (shortLink.status === "active") {
+          shortLink.status = "revoked";
+          await txRepos.shortLinks.update(shortLink);
+        }
+        return serializeShortLinkInvestigation({
+          ...resources,
+          shortLink
+        });
+      }),
+    auditEventType: "short_link.revoked"
+  });
+
+  router.addRoute({
+    id: "organizer-leaderboard-snapshots",
+    method: "GET",
+    path: "/organizer/events/:eventId/leaderboard-snapshots",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      return { event };
+    },
+    handler: async ({ repos, resources }) => {
+      const snapshots = await repos.leaderboardSnapshots.listByEvent(resources.event.tenant_id, resources.event.id);
+      return {
+        event_id: resources.event.id,
+        snapshot_interval_minutes: LEADERBOARD_SNAPSHOT_INTERVAL_MINUTES,
+        items: snapshots.map(serializeLeaderboardSnapshot)
+      };
+    },
+    auditEventType: "organizer.leaderboard_snapshots.view"
+  });
+
+  router.addRoute({
+    id: "organizer-leaderboard-snapshot-create",
+    method: "POST",
+    path: "/organizer/events/:eventId/leaderboard-snapshots",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, principal, resources, body }) => {
+      const existingSnapshots = await repos.leaderboardSnapshots.listByEvent(resources.event.tenant_id, resources.event.id);
+      enforceLeaderboardSnapshotCadence(existingSnapshots, body.force === true);
+      const leaderboard = await buildPublicLeaderboard({
+        repos,
+        tenantId: resources.event.tenant_id,
+        event: resources.event,
+        eventPolicy: resources.eventPolicy,
+        query: { limit: body.limit ?? "10" }
+      });
+      const snapshotVersion = nextLeaderboardSnapshotVersion(existingSnapshots);
+      const snapshot = await repos.leaderboardSnapshots.create({
+        id: nextId("leaderboard-snapshot"),
+        tenant_id: resources.event.tenant_id,
+        event_id: resources.event.id,
+        snapshot_version: snapshotVersion,
+        calculation_version: Number(resources.event.metrics_definition_version ?? 1),
+        snapshot_interval_minutes: LEADERBOARD_SNAPSHOT_INTERVAL_MINUTES,
+        payload: buildLeaderboardSnapshotPayload({
+          event: resources.event,
+          leaderboard,
+          snapshotVersion
+        }),
+        created_by_user_id: principal.user_id,
+        created_at: new Date().toISOString()
+      });
+      return serializeLeaderboardSnapshot(snapshot);
+    },
+    statusCode: 201,
+    auditEventType: "organizer.leaderboard_snapshot.created"
+  });
+
+  router.addRoute({
+    id: "auth-me",
+    method: "GET",
+    path: "/auth/me",
+    authRequired: true,
+    handler: async ({ principal }) => ({
+      principal: {
+        type: principal.type,
+        actor_id: principal.actor_id,
+        tenant_id: principal.tenant_id,
+        role: principal.role,
+        user_id: principal.user_id ?? null,
+        device_id: principal.device_id ?? null,
+        organization_id: principal.organization_id ?? null,
+        user_status: principal.user_status ?? null,
+        last_login_at: principal.last_login_at ?? null,
+        mfa_required: principal.mfa_required ?? false,
+        event_ids: principal.event_ids ?? [],
+        stall_ids: principal.stall_ids ?? [],
+        sponsor_organization_ids: principal.sponsor_organization_ids ?? [],
+        auth_source: principal.auth_source ?? "seed"
+      }
+    }),
+    auditEventType: "auth.me.view"
+  });
+
+  router.addRoute({
+    id: "organizer-short-links-list",
+    method: "GET",
+    path: "/organizer/events/:eventId/short-links",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, query }) => {
+      const pagination = parseArtifactInventoryPagination(query);
+      const allLinks = await repos.shortLinks.listByTenant(resources.event.tenant_id);
+      const items = [];
+      for (const shortLink of allLinks) {
+        const itemResources = await resolveShortLinkTargetResources(repos, shortLink);
+        if (itemResources.event?.id === resources.event.id) {
+          items.push(serializeShortLinkInvestigation(itemResources));
+        }
+      }
+      const filtered = items.filter((item) =>
+        (!query.status || item.status === query.status) &&
+        (!query.target_type || item.target_type === query.target_type)
+      );
+      const sorted = filtered.sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+      const pageItems = sorted.slice(pagination.offset, pagination.offset + pagination.limit);
+      return {
+        event_id: resources.event.id,
+        items: pageItems,
+        pagination: buildPaginationEnvelope(sorted.length, pageItems.length, pagination)
+      };
+    },
+    auditEventType: "organizer.short_links.view"
+  });
+
+  router.addRoute({
+    id: "organizer-provider-readiness",
+    method: "GET",
+    path: "/organizer/events/:eventId/provider-readiness",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ resources, env }) => buildProviderReadiness(resources.event, env),
+    auditEventType: "organizer.provider_readiness.view"
+  });
+
+  router.addRoute({
+    id: "organizer-outbound-queue-metrics",
+    method: "GET",
+    path: "/organizer/events/:eventId/outbound-queue/metrics",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) =>
+      buildNotificationQueueMetrics({
+        repos,
+        tenantId: resources.event.tenant_id,
+        eventId: resources.event.id
+      }),
+    auditEventType: "organizer.outbound_queue_metrics.view"
+  });
+
+  router.addRoute({
+    id: "organizer-outbound-delivery-analytics",
+    method: "GET",
+    path: "/organizer/events/:eventId/outbound-delivery-analytics",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, query }) =>
+      Promise.all([
+        buildNotificationDeliveryAnalytics({
+          repos,
+          tenantId: resources.event.tenant_id,
+          eventId: resources.event.id,
+          query
+        }),
+        buildNotificationEngagementAnalytics({
+          repos,
+          tenantId: resources.event.tenant_id,
+          eventId: resources.event.id,
+          query
+        })
+      ]).then(([attemptAnalytics, engagementAnalytics]) => ({
+        ...attemptAnalytics,
+        engagement: engagementAnalytics
+      })),
+    auditEventType: "organizer.outbound_delivery_analytics.view"
+  });
+
+  router.addRoute({
+    id: "organizer-outbound-queue-list",
+    method: "GET",
+    path: "/organizer/events/:eventId/outbound-queue",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, query }) => {
+      const pagination = parseArtifactInventoryPagination(query);
+      const inventory = await buildNotificationQueueInventory({
+        repos,
+        tenantId: resources.event.tenant_id,
+        eventId: resources.event.id,
+        query
+      });
+      const pageItems = inventory.slice(pagination.offset, pagination.offset + pagination.limit);
+      return {
+        event_id: resources.event.id,
+        filters: {
+          channel: query.channel ?? null,
+          status: query.status ?? null
+        },
+        items: pageItems,
+        pagination: buildPaginationEnvelope(inventory.length, pageItems.length, pagination)
+      };
+    },
+    auditEventType: "organizer.outbound_queue.view"
+  });
+
+  router.addRoute({
+    id: "organizer-outbound-queue-process",
+    method: "POST",
+    path: "/organizer/events/:eventId/outbound-queue/process",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => {
+      if (body?.limit != null) {
+        const limit = parsePositiveInteger(body.limit, "limit");
+        if (limit > 200) {
+          throw new HttpError(400, "limit must be 200 or less");
+        }
+      }
+      return body ?? {};
+    },
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, principal, body, env }) =>
+      processNotificationQueueBatch({
+        repos,
+        tenantId: resources.event.tenant_id,
+        eventId: resources.event.id,
+        env,
+        limit: Number(body?.limit ?? 20),
+        initiatedBy: principal.user_id ?? principal.actor_id
+      }),
+    auditEventType: "organizer.outbound_queue.batch_processed"
+  });
+
+  router.addRoute({
+    id: "organizer-outbound-attempts-list",
+    method: "GET",
+    path: "/organizer/events/:eventId/outbound-attempts",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, query }) => {
+      const pagination = parseArtifactInventoryPagination(query);
+      const items = await buildNotificationAttemptHistory({
+        repos,
+        tenantId: resources.event.tenant_id,
+        eventId: resources.event.id,
+        query
+      });
+      const pageItems = items.slice(pagination.offset, pagination.offset + pagination.limit);
+      return {
+        event_id: resources.event.id,
+        filters: {
+          channel: query.channel ?? null,
+          provider: query.provider ?? null,
+          status: query.status ?? null,
+          device_id: query.device_id ?? null,
+          recent_hours: query.recent_hours != null ? Number(query.recent_hours) : null
+        },
+        items: pageItems,
+        pagination: buildPaginationEnvelope(items.length, pageItems.length, pagination)
+      };
+    },
+    auditEventType: "organizer.outbound_attempts.view"
+  });
+
+  router.addRoute({
+    id: "organizer-outbound-queue-export",
+    method: "GET",
+    path: "/organizer/events/:eventId/outbound-queue/export",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, query }) => {
+      const items = await buildNotificationQueueInventory({
+        repos,
+        tenantId: resources.event.tenant_id,
+        eventId: resources.event.id,
+        query
+      });
+      const columns = [
+        "notification_id",
+        "interaction_id",
+        "channel",
+        "provider",
+        "queue_state",
+        "status",
+        "attempts_count",
+        "latest_attempt_status",
+        "latest_attempt_at",
+        "latest_attempt_http_status",
+        "latest_attempt_duration_ms",
+        "latest_attempt_response_excerpt",
+        "next_attempt_at",
+        "last_error",
+        "retry_exhausted_at",
+        "retry_exhausted_reason",
+        "provider_message_id",
+        "created_at",
+        "updated_at"
+      ];
+      const rows = items.map((item) => ({
+        notification_id: item.id,
+        interaction_id: item.interaction_id,
+        channel: item.channel,
+        provider: item.provider,
+        queue_state: item.queue_state,
+        status: item.status,
+        attempts_count: item.attempts_count,
+        latest_attempt_status: item.latest_attempt_status,
+        latest_attempt_at: item.latest_attempt_at,
+        latest_attempt_http_status: item.latest_attempt_http_status,
+        latest_attempt_duration_ms: item.latest_attempt_duration_ms,
+        latest_attempt_response_excerpt: item.latest_attempt_response_excerpt,
+        next_attempt_at: item.next_attempt_at,
+        last_error: item.last_error,
+        retry_exhausted_at: item.retry_exhausted_at,
+        retry_exhausted_reason: item.retry_exhausted_reason,
+        provider_message_id: item.provider_message_id,
+        created_at: item.created_at,
+        updated_at: item.updated_at
+      }));
+      return {
+        event_id: resources.event.id,
+        content_type: "text/csv",
+        filename: `${resources.event.id}-outbound-queue.csv`,
+        row_count: rows.length,
+        csv: toCsv(columns, rows)
+      };
+    },
+    auditEventType: "organizer.outbound_queue.exported"
+  });
+
+  router.addRoute({
+    id: "organizer-outbound-attempts-export",
+    method: "GET",
+    path: "/organizer/events/:eventId/outbound-attempts/export",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, query }) => {
+      const items = await buildNotificationAttemptHistory({
+        repos,
+        tenantId: resources.event.tenant_id,
+        eventId: resources.event.id,
+        query
+      });
+      const columns = [
+        "attempt_id",
+        "notification_id",
+        "interaction_id",
+        "channel",
+        "provider",
+        "status",
+        "attempt_number",
+        "provider_message_id",
+        "http_status",
+        "duration_ms",
+        "response_excerpt",
+        "error_message",
+        "attempted_at"
+      ];
+      const rows = items.map((item) => ({
+        attempt_id: item.id,
+        notification_id: item.notification_id,
+        interaction_id: item.interaction_id,
+        channel: item.channel,
+        provider: item.provider,
+        status: item.status,
+        attempt_number: item.attempt_number,
+        provider_message_id: item.provider_message_id,
+        http_status: item.http_status,
+        duration_ms: item.duration_ms,
+        response_excerpt: item.response_excerpt,
+        error_message: item.error_message,
+        attempted_at: item.attempted_at
+      }));
+      return {
+        event_id: resources.event.id,
+        content_type: "text/csv",
+        filename: `${resources.event.id}-outbound-attempts.csv`,
+        row_count: rows.length,
+        csv: toCsv(columns, rows)
+      };
+    },
+    auditEventType: "organizer.outbound_attempts.exported"
+  });
+
+  router.addRoute({
+    id: "organizer-notification-receipts-list",
+    method: "GET",
+    path: "/organizer/events/:eventId/notification-receipts",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, query }) => {
+      const pagination = parseArtifactInventoryPagination(query);
+      const items = await buildNotificationReceiptHistory({
+        repos,
+        tenantId: resources.event.tenant_id,
+        eventId: resources.event.id,
+        query
+      });
+      const pageItems = items.slice(pagination.offset, pagination.offset + pagination.limit);
+      return {
+        event_id: resources.event.id,
+        filters: {
+          channel: query.channel ?? null,
+          provider: query.provider ?? null,
+          receipt_type: query.receipt_type ?? null,
+          device_id: query.device_id ?? null,
+          recent_hours: query.recent_hours != null ? Number(query.recent_hours) : null
+        },
+        items: pageItems,
+        pagination: buildPaginationEnvelope(items.length, pageItems.length, pagination)
+      };
+    },
+    auditEventType: "organizer.notification_receipts.view"
+  });
+
+  router.addRoute({
+    id: "organizer-notification-receipts-export",
+    method: "GET",
+    path: "/organizer/events/:eventId/notification-receipts/export",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, query }) => {
+      const items = await buildNotificationReceiptHistory({
+        repos,
+        tenantId: resources.event.tenant_id,
+        eventId: resources.event.id,
+        query
+      });
+      const columns = [
+        "receipt_id",
+        "notification_id",
+        "interaction_id",
+        "channel",
+        "provider",
+        "receipt_type",
+        "provider_message_id",
+        "provider_event_id",
+        "summary",
+        "occurred_at",
+        "received_at"
+      ];
+      const rows = items.map((item) => ({
+        receipt_id: item.id,
+        notification_id: item.notification_id,
+        interaction_id: item.interaction_id,
+        channel: item.channel,
+        provider: item.provider,
+        receipt_type: item.receipt_type,
+        provider_message_id: item.provider_message_id,
+        provider_event_id: item.provider_event_id,
+        summary: item.summary,
+        occurred_at: item.occurred_at,
+        received_at: item.received_at
+      }));
+      return {
+        event_id: resources.event.id,
+        content_type: "text/csv",
+        filename: `${resources.event.id}-notification-receipts.csv`,
+        row_count: rows.length,
+        csv: toCsv(columns, rows)
+      };
+    },
+    auditEventType: "organizer.notification_receipts.exported"
+  });
+
+  router.addRoute({
+    id: "organizer-operational-alerts",
+    method: "GET",
+    path: "/organizer/events/:eventId/operational-alerts",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, query }) => {
+      const pagination = parseArtifactInventoryPagination(query);
+      const alerts = await buildOperationalArtifactAlerts(repos, resources.event);
+      const pageItems = alerts.items.slice(pagination.offset, pagination.offset + pagination.limit);
+      return {
+        ...alerts,
+        items: pageItems,
+        pagination: buildPaginationEnvelope(alerts.items.length, pageItems.length, pagination)
+      };
+    },
+    auditEventType: "organizer.operational_alerts.view"
+  });
+
+  router.addRoute({
+    id: "organizer-artifact-attempts-export",
+    method: "GET",
+    path: "/organizer/events/:eventId/artifact-attempts/export",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => buildArtifactAttemptsCsvExport(repos, resources.event),
+    auditEventType: "organizer.artifact_attempts.exported"
+  });
+
+  router.addRoute({
+    id: "auth-oidc-exchange",
+    method: "POST",
+    path: "/auth/oidc/exchange",
+    authRequired: false,
+    validate: (body) => {
+      required(body, ["code", "code_verifier", "redirect_uri"]);
+      return body;
+    },
+    handler: async ({ oidc, securityMode, body }) => {
+      if (securityMode !== "secure") {
+        throw new HttpError(400, "OIDC browser exchange is only available in secure mode");
+      }
+      if (!oidc?.enabled) {
+        throw new HttpError(503, "OIDC browser login is not configured");
+      }
+
+      const tokenSet = await oidc.exchangeAuthorizationCode({
+        code: body.code,
+        codeVerifier: body.code_verifier,
+        redirectUri: body.redirect_uri
+      });
+
+      return {
+        access_token: tokenSet.access_token ?? null,
+        token_type: tokenSet.token_type ?? "Bearer",
+        expires_in: tokenSet.expires_in ?? null,
+        scope: tokenSet.scope ?? null,
+        id_token: tokenSet.id_token ?? null
+      };
+    }
+  });
+
+  router.addRoute({
+    id: "device-credentials-list",
+    method: "GET",
+    path: "/devices/:deviceId/credentials",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    resolveResources: resolveDeviceCredentialResources,
+    handler: async ({ repos, resources }) => ({
+      device_id: resources.device.id,
+      items: (await repos.deviceCredentials.listByDevice(resources.device.tenant_id, resources.device.id)).map(
+        (credential) => ({
+          id: credential.id,
+          credential_label: credential.credential_label,
+          status: credential.status,
+          created_by_user_id: credential.created_by_user_id,
+          revoked_by_user_id: credential.revoked_by_user_id,
+          last_used_at: credential.last_used_at,
+          revoked_at: credential.revoked_at,
+          created_at: credential.created_at
+        })
+      )
+    }),
+    auditEventType: "device.credentials.view"
+  });
+
+  router.addRoute({
+    id: "device-credentials-provision",
+    method: "POST",
+    path: "/devices/:deviceId/credentials/provision",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    validate: (body) => {
+      required(body, ["credential_label"]);
+      return body;
+    },
+    resolveResources: resolveDeviceCredentialResources,
+    handler: async ({ repos, principal, body, resources }) => {
+      const token = createDeviceCredentialToken();
+      const credential = await repos.deviceCredentials.create({
+        id: nextId("device-credential"),
+        tenant_id: resources.device.tenant_id,
+        device_id: resources.device.id,
+        credential_label: body.credential_label,
+        token_hash: hashDeviceCredentialToken(token),
+        status: "active",
+        created_by_user_id: principal.user_id,
+        revoked_by_user_id: null,
+        last_used_at: null,
+        revoked_at: null,
+        created_at: new Date().toISOString()
+      });
+
+      return {
+        device_id: resources.device.id,
+        credential: {
+          id: credential.id,
+          credential_label: credential.credential_label,
+          status: credential.status,
+          created_at: credential.created_at
+        },
+        bearer_token: token
+      };
+    },
+    statusCode: 201,
+    auditEventType: "device.credentials.provisioned"
+  });
+
+  router.addRoute({
+    id: "device-credentials-revoke",
+    method: "POST",
+    path: "/devices/:deviceId/credentials/:credentialId/revoke",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const base = await resolveDeviceCredentialResources({ repos, principal, params });
+      const credential = await repos.deviceCredentials.findById(principal.tenant_id, params.credentialId);
+      if (credential.device_id !== base.device.id) {
+        throw new HttpError(404, "Device credential not found");
+      }
+      return { ...base, credential };
+    },
+    handler: async ({ repos, principal, resources }) => {
+      resources.credential.status = "revoked";
+      resources.credential.revoked_by_user_id = principal.user_id;
+      resources.credential.revoked_at = new Date().toISOString();
+      const credential = await repos.deviceCredentials.update(resources.credential);
+      return {
+        id: credential.id,
+        device_id: credential.device_id,
+        credential_label: credential.credential_label,
+        status: credential.status,
+        revoked_by_user_id: credential.revoked_by_user_id,
+        revoked_at: credential.revoked_at
+      };
+    },
+    auditEventType: "device.credentials.revoked"
+  });
+
+  router.addRoute({
+    id: "device-config",
+    method: "GET",
+    path: "/device/config/:deviceId",
+    allowedRoles: ["device_principal"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const device = await repos.devices.findById(principal.tenant_id, params.deviceId);
+      const assignment = await repos.deviceAssignments.findActiveByDeviceId(principal.tenant_id, device.id);
+      const event = await repos.events.findById(principal.tenant_id, assignment.event_id);
+      const stall = await repos.stalls.findById(principal.tenant_id, assignment.stall_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { device, assignment, event, stall, eventPolicy };
+    },
+    handler: async ({ resources }) => ({
+      device_id: resources.device.id,
+      event_id: resources.event.id,
+      stall_id: resources.stall.id,
+      assignment_checksum: resources.assignment.assignment_checksum,
+      lease_expires_at: resources.device.config_lease_expires_at,
+      metrics_definition_version: resources.event.metrics_definition_version,
+      event_policy: resources.eventPolicy
+    }),
+    auditEventType: "device.config.view"
+  });
+
+  router.addRoute({
+    id: "device-heartbeat",
+    method: "POST",
+    path: "/device/heartbeat",
+    allowedRoles: ["device_principal"],
+    validate: (body) => {
+      required(body, ["device_id", "event_id", "stall_id", "local_queue_depth", "battery_level"]);
+      return body;
+    },
+    resolveResources: async ({ repos, principal, body }) => {
+      const device = await repos.devices.findById(principal.tenant_id, body.device_id);
+      const event = await repos.events.findById(principal.tenant_id, body.event_id);
+      const stall = await repos.stalls.findById(principal.tenant_id, body.stall_id);
+      const assignment = await repos.deviceAssignments.findActiveByDeviceId(principal.tenant_id, device.id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      if (assignment.event_id !== event.id || assignment.stall_id !== stall.id) {
+        throw new HttpError(403, "Heartbeat event/stall must match active assignment");
+      }
+      return { device, assignment, event, stall, eventPolicy };
+    },
+    handler: async ({ repos, body, resources }) => {
+      await repos.heartbeats.create({
+        id: nextId("heartbeat"),
+        tenant_id: resources.event.tenant_id,
+        device_id: body.device_id,
+        event_id: body.event_id,
+        stall_id: body.stall_id,
+        battery_level: body.battery_level,
+        local_queue_depth: body.local_queue_depth,
+        assignment_checksum: resources.assignment.assignment_checksum,
+        connectivity_status: body.connectivity_status ?? "online",
+        reader_status: body.reader_status ?? "connected",
+        app_version: body.app_version ?? null,
+        firmware_version: body.firmware_version ?? null,
+        source_cursor: null,
+        raw_payload: body,
+        recorded_at: new Date().toISOString()
+      });
+      return { accepted: true };
+    },
+    statusCode: 202,
+    auditEventType: "device.heartbeat.recorded"
+  });
+
+  router.addRoute({
+    id: "interaction-tap",
+    method: "POST",
+    path: "/interactions/tap",
+    allowedRoles: ["device_principal"],
+    validate: validateTapBody,
+    resolveResources: async ({ repos, principal, body }) => {
+      const device = await repos.devices.findById(principal.tenant_id, body.device_id);
+      const assignment = await repos.deviceAssignments.findActiveByDeviceId(principal.tenant_id, device.id);
+      const event = await repos.events.findById(principal.tenant_id, body.event_id);
+      const stall = await repos.stalls.findById(principal.tenant_id, body.stall_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { device, assignment, event, stall, eventPolicy };
+    },
+    handler: async (ctx) => createInteractionFromTap(ctx),
+    statusCode: 201,
+    auditEventType: "interaction.tap.created"
+  });
+
+  router.addRoute({
+    id: "device-sync",
+    method: "POST",
+    path: "/device/sync",
+    allowedRoles: ["device_principal"],
+    validate: (body) => {
+      required(body, ["device_id", "items"]);
+      if (!Array.isArray(body.items)) {
+        throw new HttpError(400, "items must be an array");
+      }
+      return body;
+    },
+    resolveResources: async ({ repos, principal, body }) => {
+      const device = await repos.devices.findById(principal.tenant_id, body.device_id);
+      const assignment = await repos.deviceAssignments.findActiveByDeviceId(principal.tenant_id, device.id);
+      const event = await repos.events.findById(principal.tenant_id, assignment.event_id);
+      const stall = await repos.stalls.findById(principal.tenant_id, assignment.stall_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { device, assignment, event, stall, eventPolicy };
+    },
+    handler: async (ctx) => {
+      const results = [];
+      for (const item of ctx.body.items) {
+        if (item.event_id !== ctx.resources.assignment.event_id || item.stall_id !== ctx.resources.assignment.stall_id) {
+          throw new HttpError(403, "Sync item event/stall must match active device assignment");
+        }
+        const result = await createInteractionFromTap({
+          ...ctx,
+          body: item,
+          resources: {
+            ...ctx.resources,
+            event: await ctx.repos.events.findById(ctx.tenantId, item.event_id),
+            stall: await ctx.repos.stalls.findById(ctx.tenantId, item.stall_id)
+          }
+        });
+        results.push(result);
+      }
+      return { device_id: ctx.body.device_id, results };
+    },
+    auditEventType: "device.sync.completed"
+  });
+
+  router.addRoute({
+    id: "consent-capture",
+    method: "POST",
+    path: "/consents/capture",
+    authRequired: false,
+    validate: (body) => {
+      required(body, ["session_token", "vendor_release_allowed", "sponsor_release_allowed"]);
+      if (typeof body.vendor_release_allowed !== "boolean" || typeof body.sponsor_release_allowed !== "boolean") {
+        throw new HttpError(400, "Consent choices must be explicit booleans");
+      }
+      validateCommunicationChannelConsentChoices(body.communication_channel_consents);
+      return body;
+    },
+    resolveResources: async ({ state, repos, body, headers }) => {
+      const session = verifyAttendeeSessionToken(body.session_token, state.sessionSecret);
+      const interaction = await repos.interactions.findById(session.tenant_id, session.interaction_id);
+      const event = await repos.events.findById(session.tenant_id, interaction.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(session.tenant_id, event.id);
+      return {
+        session,
+        interaction,
+        event,
+        eventPolicy,
+        tenantHint: headers["x-tenant-id"] || event.tenant_id
+      };
+    },
+    handler: async ({ repos, body, resources, headers }) =>
+      repos.withTransaction(async (txRepos) => {
+        const evidence = buildConsentEvidence({ body, headers });
+        const interaction = await txRepos.interactions.findById(resources.interaction.tenant_id, resources.interaction.id);
+        let attendee = interaction.attendee_id
+          ? await txRepos.attendees.findById(interaction.tenant_id, interaction.attendee_id)
+          : null;
+
+        if (!attendee) {
+          attendee = {
+            id: nextId("attendee"),
+            tenant_id: interaction.tenant_id,
+            created_at: new Date().toISOString()
+          };
+          await txRepos.attendees.create(attendee);
+          interaction.attendee_id = attendee.id;
+        }
+
+        const consentStatus = body.vendor_release_allowed
+          ? body.sponsor_release_allowed
+            ? "vendor_and_sponsor"
+            : "vendor_only"
+          : "declined";
+
+        interaction.consent_status = consentStatus;
+        interaction.status = consentStatus === "declined" ? "anonymized" : "active";
+        await txRepos.interactions.update(interaction);
+
+        await txRepos.consents.upsert({
+          interaction_id: interaction.id,
+          tenant_id: interaction.tenant_id,
+          attendee_id: attendee.id,
+          vendor_release_allowed: Boolean(body.vendor_release_allowed),
+          sponsor_release_allowed: Boolean(body.sponsor_release_allowed),
+          revoked_at: null,
+          updated_at: new Date().toISOString()
+        });
+
+        await txRepos.consentEvents.create({
+          id: nextId("consent-event"),
+          interaction_id: interaction.id,
+          tenant_id: interaction.tenant_id,
+          action: "capture",
+          vendor_release_allowed: Boolean(body.vendor_release_allowed),
+          sponsor_release_allowed: Boolean(body.sponsor_release_allowed),
+          locale: evidence.locale,
+          ip_address: evidence.ip_address,
+          user_agent: evidence.user_agent,
+          created_at: new Date().toISOString()
+        });
+
+        if (body.attendee_profile) {
+          await txRepos.attendeeProfiles.upsert({
+            attendee_id: attendee.id,
+            full_name: body.attendee_profile.full_name ?? null,
+            company_name: body.attendee_profile.company_name ?? null,
+            email: body.attendee_profile.email ?? null,
+            phone: body.attendee_profile.phone ?? null,
+            updated_at: new Date().toISOString()
+          });
+        }
+
+        const channelConsents = await upsertCommunicationChannelConsents({
+          repos: txRepos,
+          interaction,
+          attendee,
+          choices: body.communication_channel_consents,
+          evidence
+        });
+        const revokedChannels = Object.entries(body.communication_channel_consents ?? {})
+          .filter(([, allowed]) => allowed === false)
+          .map(([channel]) => channel);
+        if (revokedChannels.length) {
+          await cancelQueuedFollowupsForInteraction({
+            repos: txRepos,
+            interaction,
+            channels: revokedChannels
+          });
+        }
+
+        return {
+          interaction_id: interaction.id,
+          consent_status: interaction.consent_status,
+          attendee_id: attendee.id,
+          communication_channel_consents: channelConsents
+        };
+      }),
+    auditEventType: "consent.capture"
+  });
+
+  router.addRoute({
+    id: "consent-revoke",
+    method: "POST",
+    path: "/consents/revoke",
+    authRequired: false,
+    validate: (body) => {
+      required(body, ["session_token"]);
+      return body;
+    },
+    resolveResources: async ({ state, repos, body }) => {
+      const session = verifyAttendeeSessionToken(body.session_token, state.sessionSecret);
+      const interaction = await repos.interactions.findById(session.tenant_id, session.interaction_id);
+      const event = await repos.events.findById(session.tenant_id, interaction.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(session.tenant_id, event.id);
+      return { session, interaction, event, eventPolicy };
+    },
+    handler: async ({ repos, resources, body, headers }) =>
+      repos.withTransaction(async (txRepos) => {
+        const evidence = buildConsentEvidence({ body, headers });
+        const interaction = await txRepos.interactions.findById(resources.interaction.tenant_id, resources.interaction.id);
+        const existingConsent =
+          (await txRepos.consents.findByInteractionId(interaction.tenant_id, interaction.id)) ?? {
+            vendor_release_allowed: interaction.consent_status === "vendor_only" || interaction.consent_status === "vendor_and_sponsor",
+            sponsor_release_allowed: interaction.consent_status === "vendor_and_sponsor"
+          };
+        const revokeVendorRelease = body.revoke_vendor_release ?? true;
+        const revokeSponsorRelease = body.revoke_sponsor_release ?? true;
+        let vendorReleaseAllowed = Boolean(existingConsent.vendor_release_allowed) && !revokeVendorRelease;
+        let sponsorReleaseAllowed = Boolean(existingConsent.sponsor_release_allowed) && !revokeSponsorRelease;
+        if (!vendorReleaseAllowed) {
+          sponsorReleaseAllowed = false;
+        }
+        interaction.consent_status = vendorReleaseAllowed
+          ? sponsorReleaseAllowed
+            ? "vendor_and_sponsor"
+            : "vendor_only"
+          : "declined";
+        interaction.status = interaction.consent_status === "declined" ? "anonymized" : "active";
+        await txRepos.interactions.update(interaction);
+
+        await txRepos.consents.upsert({
+          interaction_id: interaction.id,
+          tenant_id: interaction.tenant_id,
+          attendee_id: interaction.attendee_id ?? null,
+          vendor_release_allowed: vendorReleaseAllowed,
+          sponsor_release_allowed: sponsorReleaseAllowed,
+          revoked_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+
+        await txRepos.consentEvents.create({
+          id: nextId("consent-event"),
+          interaction_id: interaction.id,
+          tenant_id: interaction.tenant_id,
+          action: "revoke",
+          vendor_release_allowed: vendorReleaseAllowed,
+          sponsor_release_allowed: sponsorReleaseAllowed,
+          locale: evidence.locale,
+          ip_address: evidence.ip_address,
+          user_agent: evidence.user_agent,
+          created_at: new Date().toISOString()
+        });
+
+        if (!vendorReleaseAllowed && body.revoke_communication_channels !== false) {
+          await revokeCommunicationChannelConsents({
+            repos: txRepos,
+            interaction,
+            evidence
+          });
+          await cancelQueuedFollowupsForInteraction({
+            repos: txRepos,
+            interaction,
+            channels: COMMUNICATION_CHANNELS
+          });
+        }
+
+        return { interaction_id: interaction.id, consent_status: interaction.consent_status };
+      }),
+    auditEventType: "consent.revoke"
+  });
+
+  router.addRoute({
+    id: "attendee-session-view",
+    method: "GET",
+    path: "/attendee/session/:interactionId",
+    authRequired: false,
+    resolveResources: async ({ state, repos, params, query, headers }) => {
+      const sessionToken = query.token ?? headers["x-attendee-session-token"];
+      const session = verifyAttendeeSessionToken(sessionToken, state.sessionSecret);
+      if (session.interaction_id !== params.interactionId) {
+        throw new HttpError(403, "Attendee session does not match requested interaction");
+      }
+      const interaction = await repos.interactions.findById(session.tenant_id, session.interaction_id);
+      const event = await repos.events.findById(session.tenant_id, interaction.event_id);
+      const stall = await repos.stalls.findById(session.tenant_id, interaction.stall_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(session.tenant_id, event.id);
+      return { session, interaction, event, stall, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => {
+      const interaction = resources.interaction;
+      const attendeeProfile = interaction.attendee_id
+        ? await repos.attendeeProfiles.findByAttendeeId(interaction.attendee_id)
+        : null;
+      const consent =
+        (await repos.consents.findByInteractionId(interaction.tenant_id, interaction.id)) ?? {
+          vendor_release_allowed: false,
+          sponsor_release_allowed: false,
+          revoked_at: null
+        };
+      const consentEvents = typeof repos.consentEvents.listByInteraction === "function"
+        ? await repos.consentEvents.listByInteraction(interaction.tenant_id, interaction.id)
+        : [];
+      const communicationChannelConsents = typeof repos.communicationChannelConsents.listByInteraction === "function"
+        ? await repos.communicationChannelConsents.listByInteraction(interaction.tenant_id, interaction.id)
+        : [];
+      const communicationSuppressions = typeof repos.communicationSuppressions?.listByInteraction === "function"
+        ? await repos.communicationSuppressions.listByInteraction(interaction.tenant_id, interaction.id)
+        : [];
+      const walletPasses = typeof repos.walletPasses?.listByInteraction === "function"
+        ? await repos.walletPasses.listByInteraction(interaction.tenant_id, interaction.id)
+        : [];
+
+      const eventInteractions = interaction.attendee_id
+        ? await repos.interactions.listByEvent(interaction.tenant_id, interaction.event_id)
+        : [];
+      const connections = await Promise.all(
+        eventInteractions
+          .filter((entry) => entry.attendee_id && entry.attendee_id === interaction.attendee_id)
+          .map(async (entry) => {
+            const stall = await repos.stalls.findById(interaction.tenant_id, entry.stall_id);
+            return {
+              interaction_id: entry.id,
+              stall_id: stall.id,
+              stall_name: stall.name,
+              stall_code: stall.code,
+              consent_status: entry.consent_status,
+              status: entry.status,
+              created_at: entry.created_at
+            };
+          })
+      );
+
+      return {
+        interaction_id: interaction.id,
+        event: {
+          id: resources.event.id,
+          name: resources.event.name
+        },
+        current_connection: {
+          stall_id: resources.stall.id,
+          stall_name: resources.stall.name,
+          stall_code: resources.stall.code,
+          consent_status: interaction.consent_status,
+          status: interaction.status,
+          created_at: interaction.created_at
+        },
+        attendee_profile: attendeeProfile,
+        consent,
+        consent_events: consentEvents,
+        communication_channel_consents: communicationChannelConsents,
+        communication_suppressions: communicationSuppressions,
+        wallet_passes: walletPasses.map(serializeWalletPass),
+        connections: connections.sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at)),
+        privacy: {
+          sponsor_pii_enabled: resources.eventPolicy.sponsor_pii_enabled,
+          vendor_exports_enabled: resources.eventPolicy.vendor_exports_enabled,
+          allow_crm_push: resources.eventPolicy.allow_crm_push,
+          self_service_controls: {
+            revoke_consent: {
+              method: "POST",
+              endpoint: "/consents/revoke",
+              requires_session_token: true
+            },
+            request_access_export: {
+              method: "POST",
+              endpoint: `/attendee/session/${interaction.id}/dsr`,
+              request_type: "access",
+              requires_session_token: true
+            },
+            request_delete: {
+              method: "POST",
+              endpoint: `/attendee/session/${interaction.id}/dsr`,
+              request_type: "delete",
+              requires_session_token: true
+            },
+            request_wallet_pass: {
+              method: "POST",
+              endpoint: `/attendee/session/${interaction.id}/wallet-pass`,
+              requires_session_token: true,
+              safe_disabled: true
+            }
+          }
+        }
+      };
+    },
+    auditEventType: "attendee.session.view"
+  });
+
+  router.addRoute({
+    id: "attendee-wallet-pass-create",
+    method: "POST",
+    path: "/attendee/session/:interactionId/wallet-pass",
+    authRequired: false,
+    validate: validateWalletPassRequestBody,
+    resolveResources: async ({ state, repos, params, body }) => {
+      const session = verifyAttendeeSessionToken(body.session_token, state.sessionSecret);
+      if (session.interaction_id !== params.interactionId) {
+        throw new HttpError(403, "Attendee session does not match requested interaction");
+      }
+      const interaction = await repos.interactions.findById(session.tenant_id, session.interaction_id);
+      const event = await repos.events.findById(session.tenant_id, interaction.event_id);
+      const stall = await repos.stalls.findById(session.tenant_id, interaction.stall_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(session.tenant_id, event.id);
+      return { session, interaction, event, stall, eventPolicy };
+    },
+    handler: async ({ repos, resources, body, env }) =>
+      repos.withTransaction(async (txRepos) => createWalletPassSafely({
+        repos: txRepos,
+        resources,
+        passType: body.pass_type ?? "generic",
+        requestedByUserId: null,
+        env
+      })),
+    statusCode: 201,
+    auditEventType: "attendee.wallet_pass.requested"
+  });
+
+  router.addRoute({
+    id: "attendee-dsr-create",
+    method: "POST",
+    path: "/attendee/session/:interactionId/dsr",
+    authRequired: false,
+    validate: (body) => {
+      required(body, ["session_token", "request_type"]);
+      if (!["access", "delete"].includes(body.request_type)) {
+        throw new HttpError(400, "request_type must be access or delete");
+      }
+      return body;
+    },
+    resolveResources: async ({ state, repos, params, body }) => {
+      const session = verifyAttendeeSessionToken(body.session_token, state.sessionSecret);
+      if (session.interaction_id !== params.interactionId) {
+        throw new HttpError(403, "Attendee session does not match requested interaction");
+      }
+      const interaction = await repos.interactions.findById(session.tenant_id, session.interaction_id);
+      const event = await repos.events.findById(session.tenant_id, interaction.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(session.tenant_id, event.id);
+      return { session, interaction, event, eventPolicy };
+    },
+    handler: async ({ repos, resources, body }) => {
+      const request = await createDataSubjectRequest({
+        repos,
+        event: resources.event,
+        principal: null,
+        body: {
+          request_type: body.request_type,
+          interaction_id: resources.interaction.id,
+          request_reason: body.request_reason ?? `Attendee self-service ${body.request_type} request`
+        }
+      });
+      return {
+        id: request.id,
+        event_id: request.event_id,
+        interaction_id: request.interaction_id,
+        attendee_id: request.attendee_id,
+        request_type: request.request_type,
+        status: request.status,
+        created_at: request.created_at
+      };
+    },
+    statusCode: 201,
+    auditEventType: "attendee.dsr.created"
+  });
+
+  router.addRoute({
+    id: "stall-leads",
+    method: "GET",
+    path: "/stalls/:stallId/leads",
+    allowedRoles: ["vendor_manager", "organizer_admin", "platform_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const stall = await repos.stalls.findById(principal.tenant_id, params.stallId);
+      const event = await repos.events.findById(principal.tenant_id, stall.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { stall, event, eventPolicy };
+    },
+    maskResponse: true,
+    handler: async ({ repos, resources, query }) => {
+      const pagination = parseLeadInboxQuery(query);
+      const leadItems = await Promise.all(
+        (await repos.interactions.listByStall(resources.event.tenant_id, resources.stall.id))
+          .map((interaction) => buildLeadItem(repos, resources.event.tenant_id, interaction, resources.eventPolicy))
+      );
+      const sorted = leadItems.sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+      const filtered = applyLeadInboxFilters(sorted, pagination.filters);
+      const pageItems = filtered.slice(pagination.offset, pagination.offset + pagination.limit);
+
+      return {
+        items: pageItems,
+        columns: LEAD_INBOX_COLUMNS,
+        filters: LEAD_INBOX_FILTERS,
+        pagination: {
+          limit: pagination.limit,
+          offset: pagination.offset,
+          total: filtered.length,
+          has_more: pagination.offset + pageItems.length < filtered.length,
+          next_offset:
+            pagination.offset + pageItems.length < filtered.length
+              ? pagination.offset + pageItems.length
+              : null
+        },
+        filters_applied: pagination.filters
+      };
+    },
+    auditEventType: "vendor.leads.view"
+  });
+
+  router.addRoute({
+    id: "stall-dashboard-metrics",
+    method: "GET",
+    path: "/stalls/:stallId/dashboard-metrics",
+    allowedRoles: ["vendor_manager", "organizer_admin", "platform_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const stall = await repos.stalls.findById(principal.tenant_id, params.stallId);
+      const event = await repos.events.findById(principal.tenant_id, stall.event_id);
+      return { stall, event };
+    },
+    handler: async ({ repos, resources, query }) =>
+      buildVendorDashboardMetrics({
+        repos,
+        tenantId: resources.event.tenant_id,
+        event: resources.event,
+        stall: resources.stall,
+        query
+      }),
+    auditEventType: "vendor.dashboard_metrics.view"
+  });
+
+  router.addRoute({
+    id: "interaction-lead-detail",
+    method: "GET",
+    path: "/interactions/:interactionId/detail",
+    allowedRoles: ["vendor_manager", "organizer_admin", "platform_admin"],
+    maskResponse: true,
+    resolveResources: async ({ repos, principal, params }) => {
+      const interaction = await repos.interactions.findById(principal.tenant_id, params.interactionId);
+      const stall = await repos.stalls.findById(principal.tenant_id, interaction.stall_id);
+      const event = await repos.events.findById(principal.tenant_id, interaction.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { interaction, stall, event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => {
+      const item = await buildLeadItem(repos, resources.event.tenant_id, resources.interaction, resources.eventPolicy);
+      return { item };
+    },
+    auditEventType: "vendor.lead_detail.view"
+  });
+
+  router.addRoute({
+    id: "interaction-wallet-passes-list",
+    method: "GET",
+    path: "/interactions/:interactionId/wallet-passes",
+    allowedRoles: ["vendor_manager", "organizer_admin", "platform_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const interaction = await repos.interactions.findById(principal.tenant_id, params.interactionId);
+      const stall = await repos.stalls.findById(principal.tenant_id, interaction.stall_id);
+      const event = await repos.events.findById(principal.tenant_id, interaction.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { interaction, stall, event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => ({
+      interaction_id: resources.interaction.id,
+      wallet_passes: await Promise.all((await repos.walletPasses.listByInteraction(resources.interaction.tenant_id, resources.interaction.id))
+        .map((walletPass) => serializeWalletPassWithAttempts(repos, walletPass)))
+    }),
+    auditEventType: "wallet_passes.view"
+  });
+
+  router.addRoute({
+    id: "classify-interaction",
+    method: "POST",
+    path: "/interactions/:interactionId/classify",
+    allowedRoles: ["vendor_manager"],
+    validate: (body) => {
+      required(body, ["classification"]);
+      if (!["hot", "warm", "cold"].includes(body.classification)) {
+        throw new HttpError(400, "classification must be hot, warm, or cold");
+      }
+      if ("reason" in body && body.reason != null && typeof body.reason !== "string") {
+        throw new HttpError(400, "reason must be a string when provided");
+      }
+      return body;
+    },
+    resolveResources: async ({ repos, principal, params }) => {
+      const interaction = await repos.interactions.findById(principal.tenant_id, params.interactionId);
+      const stall = await repos.stalls.findById(principal.tenant_id, interaction.stall_id);
+      const event = await repos.events.findById(principal.tenant_id, interaction.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { interaction, stall, event, eventPolicy };
+    },
+    handler: async ({ repos, body, resources, principal }) => {
+      const previousScore = resources.interaction.classification ?? "cold";
+      resources.interaction.classification = body.classification;
+      await repos.interactions.update(resources.interaction);
+      const score = await repos.leadScores.create({
+        id: nextId("lead-score"),
+        tenant_id: resources.interaction.tenant_id,
+        interaction_id: resources.interaction.id,
+        scored_by_user_id: principal.user_id,
+        previous_score: previousScore,
+        score: body.classification,
+        reason: body.reason ?? null,
+        created_at: new Date().toISOString()
+      });
+      return {
+        interaction_id: resources.interaction.id,
+        classification: body.classification,
+        score_event: score
+      };
+    },
+    auditEventType: "interaction.classified"
+  });
+
+  router.addRoute({
+    id: "interaction-note",
+    method: "POST",
+    path: "/interactions/:interactionId/note",
+    allowedRoles: ["vendor_manager"],
+    validate: (body) => {
+      required(body, ["note"]);
+      return body;
+    },
+    resolveResources: async ({ repos, principal, params }) => {
+      const interaction = await repos.interactions.findById(principal.tenant_id, params.interactionId);
+      const stall = await repos.stalls.findById(principal.tenant_id, interaction.stall_id);
+      const event = await repos.events.findById(principal.tenant_id, interaction.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { interaction, stall, event, eventPolicy };
+    },
+    handler: async ({ repos, body, principal, resources }) => {
+      const note = {
+        id: nextId("note"),
+        interaction_id: resources.interaction.id,
+        tenant_id: resources.interaction.tenant_id,
+        author_user_id: principal.user_id,
+        note: body.note,
+        created_at: new Date().toISOString()
+      };
+      await repos.interactionNotes.create(note);
+      return { note_id: note.id, interaction_id: resources.interaction.id };
+    },
+    auditEventType: "interaction.note.created"
+  });
+
+  router.addRoute({
+    id: "interaction-followup-create",
+    method: "POST",
+    path: "/interactions/:interactionId/followups",
+    allowedRoles: ["vendor_manager", "organizer_admin"],
+    validate: validateFollowupBody,
+    resolveResources: resolveInteractionFollowupResources,
+    handler: async ({ repos, body, principal, resources }) =>
+      repos.withTransaction(async (txRepos) => {
+        const now = new Date().toISOString();
+        const followup = await txRepos.followupMessages.create({
+          id: nextId("followup"),
+          tenant_id: resources.interaction.tenant_id,
+          event_id: resources.interaction.event_id,
+          stall_id: resources.interaction.stall_id,
+          interaction_id: resources.interaction.id,
+          channel: body.channel,
+          subject: body.subject ?? null,
+          body: body.body,
+          status: "draft",
+          created_by_user_id: principal.user_id,
+          approved_by_user_id: null,
+          notification_id: null,
+          created_at: now,
+          updated_at: now
+        });
+        if (body.status === "queued") {
+          return queueFollowupMessage({
+            repos: txRepos,
+            followup,
+            resources,
+            principal,
+            humanApproved: body.human_approved === true
+          });
+        }
+        return followup;
+      }),
+    statusCode: 201,
+    auditEventType: "interaction.followup.created"
+  });
+
+  router.addRoute({
+    id: "followup-queue",
+    method: "POST",
+    path: "/followups/:followupId/queue",
+    allowedRoles: ["vendor_manager", "organizer_admin"],
+    validate: (body) => {
+      if (body.human_approved !== true) {
+        throw new HttpError(400, "Human approval is required before a follow-up can be queued");
+      }
+      return body;
+    },
+    resolveResources: async ({ repos, principal, params }) => {
+      const followup = await repos.followupMessages.findById(principal.tenant_id, params.followupId);
+      const interaction = await repos.interactions.findById(principal.tenant_id, followup.interaction_id);
+      const stall = await repos.stalls.findById(principal.tenant_id, interaction.stall_id);
+      const event = await repos.events.findById(principal.tenant_id, interaction.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { followup, interaction, stall, event, eventPolicy };
+    },
+    handler: async ({ repos, resources, principal }) =>
+      repos.withTransaction(async (txRepos) =>
+        queueFollowupMessage({
+          repos: txRepos,
+          followup: await txRepos.followupMessages.findById(resources.followup.tenant_id, resources.followup.id),
+          resources,
+          principal,
+          humanApproved: true
+        })
+      ),
+    auditEventType: "followup.queued"
+  });
+
+  router.addRoute({
+    id: "notification-attempt-create",
+    method: "POST",
+    path: "/notifications/:notificationId/attempts",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => {
+      required(body, ["provider", "status"]);
+      if (!["sent", "failed", "temporary_failure"].includes(body.status)) {
+        throw new HttpError(400, "Notification attempt status must be sent, failed, or temporary_failure");
+      }
+      return body;
+    },
+    resolveResources: async ({ repos, principal, params }) => {
+      const notification = await repos.notifications.findById(principal.tenant_id, params.notificationId);
+      const event = await repos.events.findById(principal.tenant_id, notification.event_id);
+      const interaction = notification.interaction_id
+        ? await repos.interactions.findById(principal.tenant_id, notification.interaction_id)
+        : null;
+      const followup = await repos.followupMessages.findByNotificationId(principal.tenant_id, notification.id);
+      return { notification, event, interaction, followup };
+    },
+    handler: async ({ repos, resources, body, env, principal }) =>
+      repos.withTransaction(async (txRepos) => {
+        if (["sent", "cancelled"].includes(resources.notification.status)) {
+          throw new HttpError(409, "Notification is already in a final state");
+        }
+        const now = new Date().toISOString();
+        if (body.status === "sent") {
+          return completeNotificationSendSuccess({
+            repos: txRepos,
+            tenantId: resources.notification.tenant_id,
+            notificationId: resources.notification.id,
+            provider: body.provider,
+            providerMessageId: body.provider_message_id ?? null,
+            attemptedByUserId: principal.user_id ?? principal.actor_id,
+            now
+          });
+        }
+        if (body.status === "temporary_failure") {
+          return completeNotificationSendTemporaryFailure({
+            repos: txRepos,
+            tenantId: resources.notification.tenant_id,
+            notificationId: resources.notification.id,
+            provider: body.provider,
+            errorMessage: body.error_message ?? "Notification delivery failed and will be retried.",
+            retryAt: new Date(
+              Date.parse(now) + resolveNotificationRetryPolicy(env).retry_delay_minutes * 60 * 1000
+            ).toISOString(),
+            env,
+            providerMessageId: body.provider_message_id ?? null,
+            httpStatus: body.http_status ?? null,
+            durationMs: body.duration_ms ?? null,
+            responseExcerpt: body.response_excerpt ?? null,
+            attemptedByUserId: principal.user_id ?? principal.actor_id,
+            now
+          });
+        }
+        return completeNotificationSendFailure({
+          repos: txRepos,
+          tenantId: resources.notification.tenant_id,
+          notificationId: resources.notification.id,
+          provider: body.provider,
+          errorMessage: body.error_message ?? "Notification delivery was marked failed.",
+          providerMessageId: body.provider_message_id ?? null,
+          httpStatus: body.http_status ?? null,
+          durationMs: body.duration_ms ?? null,
+          responseExcerpt: body.response_excerpt ?? null,
+          attemptedByUserId: principal.user_id ?? principal.actor_id,
+          now
+        });
+      }),
+    statusCode: 201,
+    auditEventType: "notification.attempt.created"
+  });
+
+  router.addRoute({
+    id: "notification-retry-now",
+    method: "POST",
+    path: "/notifications/:notificationId/retry-now",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: resolveNotificationOperationResources,
+    handler: async ({ repos, resources }) =>
+      repos.withTransaction(async (txRepos) => {
+        const queueState = deriveNotificationQueueState(resources.notification);
+        if (queueState === "dead_letter") {
+          throw new HttpError(409, "Dead-letter notifications require force requeue");
+        }
+        if (resources.notification.status === "sent") {
+          throw new HttpError(409, "Sent notifications cannot be retried");
+        }
+        if (resources.notification.status === "cancelled") {
+          throw new HttpError(409, "Cancelled notifications cannot be retried");
+        }
+        if (queueState !== "temporary_failure") {
+          throw new HttpError(409, "Only temporary-failure notifications can be retried now");
+        }
+        await assertNotificationConsentStillValid(txRepos, resources);
+        const now = new Date().toISOString();
+        const notification = await txRepos.notifications.update({
+          ...await txRepos.notifications.findById(resources.notification.tenant_id, resources.notification.id),
+          status: "queued",
+          sending_started_at: null,
+          next_attempt_at: now,
+          final_error: null,
+          retry_exhausted_at: null,
+          retry_exhausted_reason: null,
+          updated_at: now
+        });
+        let followup = null;
+        const existingFollowup = await txRepos.followupMessages.findByNotificationId(notification.tenant_id, notification.id);
+        if (existingFollowup) {
+          followup = await txRepos.followupMessages.update({
+            ...existingFollowup,
+            status: "queued",
+            updated_at: now
+          });
+        }
+        return {
+          notification,
+          followup,
+          attempts: await txRepos.notificationAttempts.listByNotification(notification.tenant_id, notification.id)
+        };
+      }),
+    auditEventType: "notification.retry_now"
+  });
+
+  router.addRoute({
+    id: "notification-force-requeue",
+    method: "POST",
+    path: "/notifications/:notificationId/force-requeue",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: resolveNotificationOperationResources,
+    handler: async ({ repos, resources }) =>
+      repos.withTransaction(async (txRepos) => {
+        const queueState = deriveNotificationQueueState(resources.notification);
+        if (queueState !== "dead_letter") {
+          throw new HttpError(409, "Only dead-letter notifications can be force requeued");
+        }
+        await assertNotificationConsentStillValid(txRepos, resources);
+        const now = new Date().toISOString();
+        const notification = await txRepos.notifications.update({
+          ...await txRepos.notifications.findById(resources.notification.tenant_id, resources.notification.id),
+          status: "queued",
+          sending_started_at: null,
+          next_attempt_at: now,
+          final_error: null,
+          provider_message_id: null,
+          retry_exhausted_at: null,
+          retry_exhausted_reason: null,
+          updated_at: now
+        });
+        let followup = null;
+        const existingFollowup = await txRepos.followupMessages.findByNotificationId(notification.tenant_id, notification.id);
+        if (existingFollowup) {
+          followup = await txRepos.followupMessages.update({
+            ...existingFollowup,
+            status: "queued",
+            updated_at: now
+          });
+        }
+        return {
+          notification,
+          followup,
+          attempts: await txRepos.notificationAttempts.listByNotification(notification.tenant_id, notification.id)
+        };
+      }),
+    auditEventType: "notification.force_requeue"
+  });
+
+  router.addRoute({
+    id: "notification-resend",
+    method: "POST",
+    path: "/notifications/:notificationId/resend",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: resolveNotificationOperationResources,
+    handler: async ({ repos, resources }) =>
+      repos.withTransaction(async (txRepos) => {
+        if (resources.notification.status === "sent") {
+          throw new HttpError(409, "Sent notifications cannot be resent");
+        }
+        if (resources.notification.status === "cancelled") {
+          throw new HttpError(409, "Cancelled notifications cannot be resent");
+        }
+        if (resources.notification.status === "queued") {
+          throw new HttpError(409, "Notification is already queued");
+        }
+        if (resources.notification.retry_exhausted_at) {
+          throw new HttpError(409, "Dead-letter notifications require force requeue");
+        }
+        await assertNotificationConsentStillValid(txRepos, resources);
+        const now = new Date().toISOString();
+        const notification = await txRepos.notifications.update({
+          ...await txRepos.notifications.findById(resources.notification.tenant_id, resources.notification.id),
+          status: "queued",
+          sending_started_at: null,
+          next_attempt_at: now,
+          final_error: null,
+          provider_message_id: null,
+          retry_exhausted_at: null,
+          retry_exhausted_reason: null,
+          updated_at: now
+        });
+        let followup = null;
+        const existingFollowup = await txRepos.followupMessages.findByNotificationId(notification.tenant_id, notification.id);
+        if (existingFollowup) {
+          followup = await txRepos.followupMessages.update({
+            ...existingFollowup,
+            status: "queued",
+            updated_at: now
+          });
+        }
+        return {
+          notification,
+          followup,
+          attempts: await txRepos.notificationAttempts.listByNotification(notification.tenant_id, notification.id)
+        };
+      }),
+    auditEventType: "notification.resend_queued"
+  });
+
+  router.addRoute({
+    id: "notification-cancel",
+    method: "POST",
+    path: "/notifications/:notificationId/cancel",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: resolveNotificationOperationResources,
+    handler: async ({ repos, resources }) =>
+      repos.withTransaction(async (txRepos) => {
+        if (resources.notification.status === "sent") {
+          throw new HttpError(409, "Sent notifications cannot be cancelled");
+        }
+        if (resources.notification.status === "cancelled") {
+          return {
+            notification: resources.notification,
+            followup: resources.followup,
+            attempts: await txRepos.notificationAttempts.listByNotification(resources.notification.tenant_id, resources.notification.id)
+          };
+        }
+        const now = new Date().toISOString();
+        const notification = await txRepos.notifications.update({
+          ...await txRepos.notifications.findById(resources.notification.tenant_id, resources.notification.id),
+          status: "cancelled",
+          next_attempt_at: null,
+          updated_at: now
+        });
+        let followup = null;
+        const existingFollowup = await txRepos.followupMessages.findByNotificationId(notification.tenant_id, notification.id);
+        if (existingFollowup) {
+          followup = await txRepos.followupMessages.update({
+            ...existingFollowup,
+            status: "cancelled",
+            updated_at: now
+          });
+        }
+        return {
+          notification,
+          followup,
+          attempts: await txRepos.notificationAttempts.listByNotification(notification.tenant_id, notification.id)
+        };
+      }),
+    auditEventType: "notification.cancelled"
+  });
+
+  router.addRoute({
+    id: "wallet-pass-retry",
+    method: "POST",
+    path: "/wallet-passes/:walletPassId/retry",
+    allowedRoles: ["organizer_admin"],
+    validate: validateWalletPassRetryBody,
+    resolveResources: resolveWalletPassResources,
+    handler: async ({ repos, resources, body, principal, env }) =>
+      repos.withTransaction(async (txRepos) => {
+        if (["delivered", "cancelled"].includes(resources.walletPass.status)) {
+          throw new HttpError(409, "Wallet pass is already in a final state");
+        }
+        return retryWalletPassSafely({
+          repos: txRepos,
+          resources,
+          passType: body.pass_type ?? resources.walletPass.pass_type,
+          requestedByUserId: principal.user_id,
+          env
+        });
+      }),
+    auditEventType: "wallet_pass.retry"
+  });
+
+  router.addRoute({
+    id: "wallet-pass-status-update",
+    method: "POST",
+    path: "/wallet-passes/:walletPassId/status",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => {
+      required(body, ["status"]);
+      if (!["delivered", "failed", "cancelled"].includes(body.status)) {
+        throw new HttpError(400, "Wallet pass status must be delivered, failed, or cancelled");
+      }
+      return body;
+    },
+    resolveResources: resolveWalletPassResources,
+    handler: async ({ repos, resources, body }) =>
+      repos.withTransaction(async (txRepos) => updateWalletPassStatus({
+        repos: txRepos,
+        walletPass: resources.walletPass,
+        status: body.status,
+        failureCode: body.failure_code ?? null,
+        failureMessage: body.failure_message ?? null
+      })),
+    auditEventType: "wallet_pass.status.updated"
+  });
+
+  router.addRoute({
+    id: "interaction-crm-sync",
+    method: "POST",
+    path: "/interactions/:interactionId/crm-sync",
+    allowedRoles: ["vendor_manager", "organizer_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: async ({ repos, principal, params }) => {
+      const interaction = await repos.interactions.findById(principal.tenant_id, params.interactionId);
+      const stall = await repos.stalls.findById(principal.tenant_id, interaction.stall_id);
+      const event = await repos.events.findById(principal.tenant_id, interaction.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { interaction, stall, event, eventPolicy };
+    },
+    handler: async ({ repos, principal, resources }) =>
+      repos.withTransaction(async (txRepos) => {
+        const attendeeProfile = resources.interaction.attendee_id
+          ? await txRepos.attendeeProfiles.findByAttendeeId(resources.interaction.attendee_id)
+          : null;
+        const notes = await txRepos.interactionNotes.listByInteraction(
+          resources.interaction.tenant_id,
+          resources.interaction.id
+        );
+        const synced = await syncInteractionToPilotCrm({
+          interaction: resources.interaction,
+          attendeeProfile,
+          stall: resources.stall,
+          event: resources.event,
+          notes
+        });
+        const existing = await txRepos.crmSyncRecords.findByInteractionAndProvider(
+          resources.interaction.tenant_id,
+          resources.interaction.id,
+          synced.provider
+        );
+        const record = await txRepos.crmSyncRecords.upsert({
+          id: existing?.id ?? nextId("crm-sync"),
+          tenant_id: resources.interaction.tenant_id,
+          event_id: resources.event.id,
+          stall_id: resources.stall.id,
+          interaction_id: resources.interaction.id,
+          provider: synced.provider,
+          requested_by_user_id: principal.user_id,
+          status: "synced",
+          external_record_id: synced.external_record_id,
+          request_payload: synced.request_payload,
+          response_payload: synced.response_payload,
+          last_error: null,
+          synced_at: synced.synced_at,
+          deleted_at: null,
+          created_at: existing?.created_at ?? synced.synced_at,
+          updated_at: synced.synced_at
+        });
+        return buildCrmSyncResponse(record);
+      }),
+    auditEventType: "interaction.crm_sync.triggered"
+  });
+
+  router.addRoute({
+    id: "interaction-notes-list",
+    method: "GET",
+    path: "/interactions/:interactionId/notes",
+    allowedRoles: ["vendor_manager", "organizer_admin", "platform_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const interaction = await repos.interactions.findById(principal.tenant_id, params.interactionId);
+      const stall = await repos.stalls.findById(principal.tenant_id, interaction.stall_id);
+      const event = await repos.events.findById(principal.tenant_id, interaction.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { interaction, stall, event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => ({
+      interaction_id: resources.interaction.id,
+      items: await repos.interactionNotes.listByInteraction(
+        resources.interaction.tenant_id,
+        resources.interaction.id
+      )
+    }),
+    auditEventType: "interaction.notes.view"
+  });
+
+  router.addRoute({
+    id: "sponsor-metrics",
+    method: "GET",
+    path: "/sponsors/:sponsorId/metrics",
+    allowedRoles: ["sponsor_user", "organizer_admin"],
+    resolveResources: resolveSponsorDashboardResources,
+    handler: async ({ repos, resources }) => buildSponsorDashboardResponse(
+      repos,
+      resources.sponsorOrganization,
+      resources.event
+    ),
+    auditEventType: "sponsor.metrics.view"
+  });
+
+  router.addRoute({
+    id: "sponsor-report-snapshots",
+    method: "GET",
+    path: "/sponsors/:sponsorId/report-snapshots",
+    allowedRoles: ["sponsor_user", "organizer_admin"],
+    resolveResources: resolveSponsorDashboardResources,
+    handler: async ({ repos, resources }) => ({
+      sponsor_id: resources.sponsorOrganization.id,
+      event_id: resources.event.id,
+      items: await listSponsorReportSnapshots(
+        repos,
+        resources.event.tenant_id,
+        resources.event.id,
+        resources.sponsorOrganization.id
+      )
+    }),
+    auditEventType: "sponsor.report_snapshots.view"
+  });
+
+  router.addRoute({
+    id: "sponsor-exports-list",
+    method: "GET",
+    path: "/sponsors/:sponsorId/exports",
+    allowedRoles: ["sponsor_user", "organizer_admin"],
+    resolveResources: resolveSponsorDashboardResources,
+    handler: async ({ repos, resources }) => ({
+      sponsor_id: resources.sponsorOrganization.id,
+      event_id: resources.event.id,
+      items: [...await repos.exportRequests.listByEvent(resources.event.tenant_id, resources.event.id)]
+        .filter((entry) =>
+          entry.export_type === "sponsor_dashboard_snapshot" &&
+          entry.filters?.sponsor_id === resources.sponsorOrganization.id
+        )
+        .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+    }),
+    auditEventType: "sponsor.exports.view"
+  });
+
+  router.addRoute({
+    id: "organizer-sponsor-report-snapshot-create",
+    method: "POST",
+    path: "/organizer/events/:eventId/sponsors/:sponsorId/report-snapshots",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const sponsorOrganization = await repos.organizations.findById(principal.tenant_id, params.sponsorId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, sponsorOrganization, eventPolicy };
+    },
+    handler: async ({ repos, principal, resources, body }) => {
+      const dashboard = await buildSponsorDashboardResponse(
+        repos,
+        resources.sponsorOrganization,
+        resources.event
+      );
+      const snapshot = await repos.reportSnapshots.create({
+        id: nextId("report-snapshot"),
+        tenant_id: resources.event.tenant_id,
+        event_id: resources.event.id,
+        report_snapshot_version: resources.event.report_snapshot_version,
+        payload: {
+          snapshot_type: "sponsor_dashboard",
+          sponsor_id: resources.sponsorOrganization.id,
+          sponsor_name: resources.sponsorOrganization.name,
+          note: body.note ?? null,
+          created_by_user_id: principal.user_id,
+          dashboard
+        },
+        created_at: new Date().toISOString()
+      });
+      return {
+        id: snapshot.id,
+        event_id: snapshot.event_id,
+        report_snapshot_version: snapshot.report_snapshot_version,
+        created_at: snapshot.created_at,
+        payload: snapshot.payload
+      };
+    },
+    statusCode: 201,
+    auditEventType: "sponsor.report_snapshot.created"
+  });
+
+  router.addRoute({
+    id: "organizer-report-freeze-status",
+    method: "GET",
+    path: "/organizer/events/:eventId/report-freeze",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) =>
+      buildReportFreezeStatus(repos, resources.event.tenant_id, resources.event),
+    auditEventType: "organizer.report_freeze.view"
+  });
+
+  router.addRoute({
+    id: "organizer-report-freeze-trigger",
+    method: "POST",
+    path: "/organizer/events/:eventId/report-freeze",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, principal, body }) =>
+      repos.withTransaction(async (txRepos) => {
+        const event = await txRepos.events.findById(resources.event.tenant_id, resources.event.id);
+        const now = new Date().toISOString();
+        const nextVersion = Number(event.report_snapshot_version ?? 0) + 1;
+        const sponsorOrganizations = await listSponsorOrganizationsForEvent(txRepos, event.tenant_id, event.id);
+        const sponsorSnapshots = [];
+        for (const sponsorOrganization of sponsorOrganizations) {
+          const dashboard = await buildSponsorDashboardResponse(txRepos, sponsorOrganization, event);
+          const snapshot = await txRepos.reportSnapshots.create({
+            id: nextId("report-snapshot"),
+            tenant_id: event.tenant_id,
+            event_id: event.id,
+            report_snapshot_version: nextVersion,
+            payload: {
+              snapshot_type: "sponsor_dashboard",
+              sponsor_id: sponsorOrganization.id,
+              sponsor_name: sponsorOrganization.name,
+              note: body.note ?? "Generated during official report freeze",
+              created_by_user_id: principal.user_id,
+              dashboard
+            },
+            created_at: now
+          });
+          sponsorSnapshots.push({
+            id: snapshot.id,
+            sponsor_id: sponsorOrganization.id,
+            sponsor_name: sponsorOrganization.name,
+            dashboard: snapshot.payload.dashboard
+          });
+        }
+
+        const artifactFreezeChecks = await buildArtifactFreezeChecks(txRepos, event);
+        const overview = await buildOrganizerOverviewPayload(txRepos, event);
+        const freezeSnapshot = await txRepos.reportSnapshots.create({
+          id: nextId("report-snapshot"),
+          tenant_id: event.tenant_id,
+          event_id: event.id,
+          report_snapshot_version: nextVersion,
+          payload: {
+            snapshot_type: "official_event_report",
+            note: body.note ?? null,
+            created_by_user_id: principal.user_id,
+            event_status_before_freeze: event.status,
+            artifact_freeze_checks: artifactFreezeChecks,
+            overview,
+            sponsor_snapshots: sponsorSnapshots.map((entry) => ({
+              id: entry.id,
+              sponsor_id: entry.sponsor_id,
+              sponsor_name: entry.sponsor_name,
+              impressions: entry.dashboard.impressions,
+              ctr: entry.dashboard.ctr,
+              opted_in_leads: entry.dashboard.opted_in_leads
+            }))
+          },
+          created_at: now
+        });
+
+        event.status = "closed";
+        event.ends_at = event.ends_at ?? now;
+        event.report_snapshot_version = nextVersion;
+        await txRepos.events.update(event);
+
+        const officialExportId = nextId("export");
+        const exportRequest = await txRepos.exportRequests.create({
+          id: officialExportId,
+          tenant_id: event.tenant_id,
+          event_id: event.id,
+          requested_by_user_id: principal.user_id,
+          requested_for_organization_id: principal.organization_id,
+          export_type: "organizer_event_report",
+          filters: {
+            report_snapshot_id: freezeSnapshot.id,
+            frozen: true
+          },
+          row_count_estimate: 1,
+          status: "generated",
+          approval_required: false,
+          approved_by_user_id: principal.user_id,
+          approval_reason: "Generated during official event close and report freeze",
+          rejection_reason: null,
+          file_url: exportDownloadPath({ id: officialExportId }),
+          file_expires_at: inHours(24),
+          created_at: now
+        });
+
+        return {
+          event_id: event.id,
+          status: "closed",
+          report_snapshot_version: nextVersion,
+          official_snapshot: {
+            id: freezeSnapshot.id,
+            created_at: freezeSnapshot.created_at
+          },
+          sponsor_snapshots: sponsorSnapshots.map((entry) => ({
+            id: entry.id,
+            sponsor_id: entry.sponsor_id,
+            sponsor_name: entry.sponsor_name
+          })),
+          official_export: exportRequest,
+          freeze_status: await buildReportFreezeStatus(txRepos, event.tenant_id, event)
+        };
+      }),
+    auditEventType: "organizer.report_freeze.triggered"
+  });
+
+  router.addRoute({
+    id: "organizer-overview",
+    method: "GET",
+    path: "/organizer/events/:eventId/overview",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => {
+      const assignments = await repos.deviceAssignments.listByEvent(resources.event.tenant_id, resources.event.id);
+      const latestHeartbeats = await Promise.all(
+        assignments.map(async (assignment) => {
+          const records = await repos.heartbeats.listByDevice(resources.event.tenant_id, assignment.device_id);
+          return records.sort((left, right) => Date.parse(right.recorded_at) - Date.parse(left.recorded_at))[0] ?? null;
+        })
+      );
+      const onlineDevices = latestHeartbeats.filter((entry) => isRecent(entry?.recorded_at, 120)).length;
+      const queueDepths = latestHeartbeats.filter(Boolean).map((entry) => entry.local_queue_depth);
+      const avgQueueDepth = queueDepths.length === 0 ? 0 : average(queueDepths);
+      const relevantTapEvents = await repos.tapEvents.listByEvent(resources.event.tenant_id, resources.event.id);
+      const syncLatencies = relevantTapEvents
+        .filter((entry) => entry.cloud_received_at)
+        .map((entry) => Date.parse(entry.cloud_received_at) - Date.parse(entry.occurred_at));
+      const avgSyncLatencyMs = syncLatencies.length === 0 ? 0 : average(syncLatencies);
+      const interactions = await repos.interactions.listByEvent(resources.event.tenant_id, resources.event.id);
+      const incidents = await repos.incidents.listByEvent(resources.event.tenant_id, resources.event.id);
+      return {
+        event_id: resources.event.id,
+        metrics_definition_version: resources.event.metrics_definition_version,
+        report_snapshot_version: resources.event.report_snapshot_version,
+        total_interactions: interactions.length,
+        online_devices: onlineDevices,
+        offline_devices: assignments.length - onlineDevices,
+        average_queue_depth: Number(avgQueueDepth.toFixed(2)),
+        average_sync_latency_ms: Number(avgSyncLatencyMs.toFixed(2)),
+        open_incidents: incidents.filter((entry) => entry.status !== "resolved").length,
+        top_stalls: await topStalls(repos, resources.event.tenant_id, resources.event.id),
+        iot_integration: await buildIotIntegrationStatus(repos, resources.event.tenant_id, resources.event.id)
+      };
+    },
+    auditEventType: "organizer.overview.view"
+  });
+
+  router.addRoute({
+    id: "organizer-data-control",
+    method: "GET",
+    path: "/organizer/events/:eventId/data-control",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ resources }) => serializeEventDataControl(resources.event, resources.eventPolicy),
+    auditEventType: "organizer.data_control.view"
+  });
+
+  router.addRoute({
+    id: "organizer-data-control-update",
+    method: "PUT",
+    path: "/organizer/events/:eventId/data-control",
+    allowedRoles: ["organizer_admin"],
+    validate: validateEventDataControlInput,
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, body }) =>
+      repos.withTransaction(async (txRepos) => {
+        const now = new Date().toISOString();
+        const savedPolicy = await txRepos.eventPolicies.upsert({
+          ...resources.eventPolicy,
+          event_id: resources.event.id,
+          tenant_id: resources.event.tenant_id,
+          vendor_exports_enabled: body.vendor_exports_enabled,
+          sponsor_pii_enabled: body.sponsor_pii_enabled,
+          require_export_approval: body.require_export_approval,
+          allow_crm_push: body.allow_crm_push,
+          retention_days: body.retention_days,
+          allow_cross_event_identity_graph: body.allow_cross_event_identity_graph,
+          created_at: resources.eventPolicy.missing_policy_row ? now : (resources.eventPolicy.created_at ?? now),
+          updated_at: now
+        });
+        return serializeEventDataControl(resources.event, savedPolicy);
+      }),
+    auditEventType: "organizer.data_control.update"
+  });
+
+  router.addRoute({
+    id: "organizer-event-publish",
+    method: "POST",
+    path: "/organizer/events/:eventId/publish",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) =>
+      repos.withTransaction(async (txRepos) => {
+        const event = await txRepos.events.findById(resources.event.tenant_id, resources.event.id);
+        const eventPolicy = await txRepos.eventPolicies.findByEventId(resources.event.tenant_id, resources.event.id);
+        const publishReadiness = buildEventPublishReadiness(event, eventPolicy);
+        if (!publishReadiness.ready) {
+          throw new HttpError(409, "Event data-control policy must be confirmed before publishing", {
+            blockers: publishReadiness.blockers,
+            data_control: serializeEventDataControl(event, eventPolicy)
+          });
+        }
+        if (event.status === "published") {
+          return {
+            event_id: event.id,
+            status: event.status,
+            data_control: serializeEventDataControl(event, eventPolicy)
+          };
+        }
+        if (event.status !== "draft") {
+          throw new HttpError(409, "Only draft events can be published from organizer data control");
+        }
+        event.status = "published";
+        await txRepos.events.update(event);
+        return {
+          event_id: event.id,
+          status: event.status,
+          published_at: new Date().toISOString(),
+          data_control: serializeEventDataControl(event, eventPolicy)
+        };
+      }),
+    auditEventType: "organizer.event.publish"
+  });
+
+  router.addRoute({
+    id: "organizer-compliance-overview",
+    method: "GET",
+    path: "/organizer/events/:eventId/compliance",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) =>
+      buildComplianceOverview({
+        repos,
+        event: resources.event,
+        eventPolicy: resources.eventPolicy
+      }),
+    auditEventType: "organizer.compliance.view"
+  });
+
+  router.addRoute({
+    id: "organizer-compliance-report",
+    method: "GET",
+    path: "/organizer/events/:eventId/compliance/report",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) =>
+      buildComplianceOperationalReport({
+        repos,
+        event: resources.event,
+        eventPolicy: resources.eventPolicy
+    }),
+    auditEventType: "organizer.compliance_report.view"
+  });
+
+  router.addRoute({
+    id: "organizer-compliance-closeout-readiness",
+    method: "GET",
+    path: "/organizer/events/:eventId/compliance/closeout-readiness",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => ({
+      event_id: resources.event.id,
+      readiness: await buildComplianceCloseoutReadiness(
+        repos,
+        resources.event,
+        resources.eventPolicy
+      )
+    }),
+    auditEventType: "organizer.compliance_closeout_readiness.view"
+  });
+
+  router.addRoute({
+    id: "organizer-crm-sync-history",
+    method: "GET",
+    path: "/organizer/events/:eventId/crm-sync",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => {
+      const records = await repos.crmSyncRecords.listByEvent(resources.event.tenant_id, resources.event.id);
+      const items = [];
+      for (const record of records) {
+        const interaction = await repos.interactions.findById(resources.event.tenant_id, record.interaction_id);
+        const stall = await repos.stalls.findById(resources.event.tenant_id, record.stall_id);
+        const profile = interaction.attendee_id
+          ? await repos.attendeeProfiles.findByAttendeeId(interaction.attendee_id)
+          : null;
+        items.push({
+          id: record.id,
+          interaction_id: record.interaction_id,
+          stall_id: record.stall_id,
+          stall_name: stall.name,
+          provider: record.provider,
+          status: record.status,
+          external_record_id: record.external_record_id,
+          synced_at: record.synced_at,
+          deleted_at: record.deleted_at,
+          updated_at: record.updated_at,
+          last_error: record.last_error,
+          request_payload: record.request_payload,
+          response_payload: record.response_payload,
+          full_name: profile?.full_name ?? null,
+          company_name: profile?.company_name ?? null,
+          classification: interaction.classification ?? "cold"
+        });
+      }
+      return {
+        event_id: resources.event.id,
+        items
+      };
+    },
+    auditEventType: "organizer.crm_sync.view"
+  });
+
+  router.addRoute({
+    id: "organizer-compliance-audit-export",
+    method: "POST",
+    path: "/organizer/events/:eventId/compliance/audit-export",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, principal }) => {
+      const exportId = nextId("export");
+      const exportRequest = {
+        id: exportId,
+        tenant_id: resources.event.tenant_id,
+        event_id: resources.event.id,
+        requested_by_user_id: principal.user_id,
+        requested_for_organization_id: principal.organization_id,
+        export_type: "organizer_event_report",
+        filters: {
+          report_variant: "compliance_audit"
+        },
+        row_count_estimate: 1,
+        status: resources.eventPolicy.require_export_approval ? "requested" : "generated",
+        approval_required: resources.eventPolicy.require_export_approval,
+        approved_by_user_id: null,
+        approval_reason: null,
+        rejection_reason: null,
+        file_url: resources.eventPolicy.require_export_approval ? null : exportDownloadPath({ id: exportId }),
+        file_expires_at: resources.eventPolicy.require_export_approval ? null : inHours(4),
+        created_at: new Date().toISOString()
+      };
+      return repos.exportRequests.create(exportRequest);
+    },
+    auditEventType: "organizer.compliance_audit_export.requested"
+  });
+
+  router.addRoute({
+    id: "organizer-dsr-list",
+    method: "GET",
+    path: "/organizer/events/:eventId/dsr",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => ({
+      event_id: resources.event.id,
+      items: await listDataSubjectRequestsForEvent({
+        repos,
+        event: resources.event
+      })
+    }),
+    auditEventType: "organizer.dsr.view"
+  });
+
+  router.addRoute({
+    id: "organizer-dsr-create",
+    method: "POST",
+    path: "/organizer/events/:eventId/dsr",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => {
+      required(body, ["request_type"]);
+      return body;
+    },
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, principal, body }) =>
+      createDataSubjectRequest({
+        repos,
+        event: resources.event,
+        principal,
+        body
+      }),
+    statusCode: 201,
+    auditEventType: "organizer.dsr.created"
+  });
+
+  router.addRoute({
+    id: "organizer-dsr-complete",
+    method: "POST",
+    path: "/organizer/events/:eventId/dsr/:requestId/complete",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      const dsrRequest = await repos.dataSubjectRequests.findById(principal.tenant_id, params.requestId);
+      if (dsrRequest.event_id !== event.id) {
+        throw new HttpError(404, "Data-subject request not found for this event");
+      }
+      return { event, eventPolicy, dsrRequest };
+    },
+    handler: async ({ repos, resources, principal, body }) =>
+      repos.withTransaction(async (txRepos) =>
+        completeDataSubjectRequest({
+          repos: txRepos,
+          event: resources.event,
+          eventPolicy: resources.eventPolicy,
+          principal,
+          request: resources.dsrRequest,
+          body
+        })
+      ),
+    auditEventType: "organizer.dsr.completed"
+  });
+
+  router.addRoute({
+    id: "organizer-downstream-deletion-confirm",
+    method: "POST",
+    path: "/organizer/events/:eventId/downstream-deletions/:recordId",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => {
+      required(body, ["status"]);
+      return body;
+    },
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      const downstreamDeletionRecord = await repos.downstreamDeletionRecords.findById(principal.tenant_id, params.recordId);
+      if (downstreamDeletionRecord.event_id !== event.id) {
+        throw new HttpError(404, "Downstream deletion record not found for this event");
+      }
+      return { event, eventPolicy, downstreamDeletionRecord };
+    },
+    handler: async ({ repos, resources, body }) =>
+      confirmDownstreamDeletionRecord({
+        repos,
+        record: resources.downstreamDeletionRecord,
+        body
+      }),
+    auditEventType: "organizer.downstream_deletion.updated"
+  });
+
+  router.addRoute({
+    id: "organizer-downstream-deletion-dispatch",
+    method: "POST",
+    path: "/organizer/events/:eventId/downstream-deletions/:recordId/dispatch",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      const downstreamDeletionRecord = await repos.downstreamDeletionRecords.findById(principal.tenant_id, params.recordId);
+      if (downstreamDeletionRecord.event_id !== event.id) {
+        throw new HttpError(404, "Downstream deletion record not found for this event");
+      }
+      return { event, eventPolicy, downstreamDeletionRecord };
+    },
+    handler: async ({ repos, resources, principal }) =>
+      repos.withTransaction(async (txRepos) =>
+        dispatchDownstreamDeletion({
+          repos: txRepos,
+          record: resources.downstreamDeletionRecord,
+          principal
+        })
+      ),
+    auditEventType: "organizer.downstream_deletion.dispatched"
+  });
+
+  router.addRoute({
+    id: "organizer-retention-run",
+    method: "POST",
+    path: "/organizer/events/:eventId/compliance/retention",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, principal, body }) =>
+      repos.withTransaction(async (txRepos) =>
+        runRetentionLifecycle({
+          repos: txRepos,
+          event: resources.event,
+          eventPolicy: resources.eventPolicy,
+          principal,
+          body
+        })
+      ),
+    auditEventType: "organizer.retention.run"
+  });
+
+  router.addRoute({
+    id: "organizer-device-fleet",
+    method: "GET",
+    path: "/organizer/events/:eventId/device-fleet",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => {
+      const assignments = await repos.deviceAssignments.listByEvent(resources.event.tenant_id, resources.event.id);
+      const snapshots = await repos.iotDeviceStatusSnapshots.listByEvent(resources.event.tenant_id, resources.event.id);
+      const snapshotByDeviceId = new Map(snapshots.map((entry) => [entry.device_id, entry]));
+
+      const items = await Promise.all(
+        assignments.map(async (assignment) => {
+          const device = await repos.devices.findById(resources.event.tenant_id, assignment.device_id);
+          const snapshot = snapshotByDeviceId.get(assignment.device_id) ?? null;
+          return {
+            device_id: device.id,
+            serial_number: device.serial_number,
+            platform_assignment: {
+              event_id: assignment.event_id,
+              stall_id: assignment.stall_id,
+              assignment_checksum: assignment.assignment_checksum
+            },
+            iot_assignment: snapshot
+              ? {
+                  event_id: snapshot.iot_event_id,
+                  stall_id: snapshot.iot_stall_id,
+                  assignment_checksum: snapshot.iot_assignment_checksum,
+                  lease_expires_at: snapshot.lease_expires_at
+                }
+              : null,
+            assignment_status: snapshot?.assignment_status ?? "unknown",
+            diagnostics_status: snapshot?.diagnostics_status ?? "unknown",
+            connectivity_status: snapshot?.connectivity_status ?? null,
+            reader_status: snapshot?.reader_status ?? null,
+            app_version: snapshot?.app_version ?? null,
+            firmware_version: snapshot?.firmware_version ?? null,
+            local_queue_depth: snapshot?.local_queue_depth ?? null,
+            last_heartbeat_at: snapshot?.last_heartbeat_at ?? null,
+            open_incident: snapshot?.open_incident_code
+              ? {
+                  code: snapshot.open_incident_code,
+                  status: snapshot.open_incident_status,
+                  severity: snapshot.open_incident_severity
+                }
+              : null,
+            checked_at: snapshot?.checked_at ?? null,
+            metadata: snapshot?.metadata ?? {}
+          };
+        })
+      );
+
+      return {
+        event_id: resources.event.id,
+        items: items.sort((left, right) => left.device_id.localeCompare(right.device_id))
+      };
+    },
+    auditEventType: "organizer.device_fleet.view"
+  });
+
+  router.addRoute({
+    id: "organizer-incidents-list",
+    method: "GET",
+    path: "/organizer/events/:eventId/incidents",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, query }) => {
+      const incidents = await repos.incidents.listByEvent(resources.event.tenant_id, resources.event.id);
+      const alerts = await repos.iotAlertEvents.listByEvent(resources.event.tenant_id, resources.event.id, {
+        limit: 200
+      });
+      const filtered = incidents.filter((incident) =>
+        matchesIncidentFilters(incident, {
+          severity: query.severity ?? null,
+          status: query.status ?? null,
+          deviceId: query.device_id ?? null,
+          stallId: query.stall_id ?? null,
+          area: query.area ?? null,
+          recentHours: query.recent_hours ?? null
+        })
+      );
+
+      const items = await Promise.all(
+        filtered.map(async (incident) => buildIncidentSummary(
+          repos,
+          resources.event.tenant_id,
+          resources.event.id,
+          incident,
+          alerts
+        ))
+      );
+
+      return {
+        event_id: resources.event.id,
+        filters: {
+          severity: query.severity ?? null,
+          status: query.status ?? null,
+          device_id: query.device_id ?? null,
+          stall_id: query.stall_id ?? null,
+          area: query.area ?? null,
+          recent_hours: query.recent_hours ?? null
+        },
+        items
+      };
+    },
+    auditEventType: "organizer.incidents.view"
+  });
+
+  router.addRoute({
+    id: "organizer-incident-detail",
+    method: "GET",
+    path: "/organizer/events/:eventId/incidents/:incidentId",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      const incident = await resolveIncidentForEvent(repos, principal.tenant_id, event.id, params.incidentId);
+      return { event, eventPolicy, incident };
+    },
+    handler: async ({ repos, resources }) => {
+      return buildIncidentInvestigation(
+        repos,
+        resources.event.tenant_id,
+        resources.event.id,
+        resources.incident
+      );
+    },
+    auditEventType: "organizer.incident_detail.view"
+  });
+
+  router.addRoute({
+    id: "organizer-incident-annotation",
+    method: "POST",
+    path: "/organizer/events/:eventId/incidents/:incidentId/annotations",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => {
+      required(body, ["note"]);
+      return body;
+    },
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      const incident = await resolveIncidentForEvent(repos, principal.tenant_id, event.id, params.incidentId);
+      return { event, eventPolicy, incident };
+    },
+    handler: async ({ repos, principal, resources, body }) => {
+      const incident = resources.incident;
+      appendIncidentMetadataEntry(incident, "annotations", {
+        id: nextId("incident-note"),
+        author_user_id: principal.user_id,
+        note: body.note,
+        action_type: body.action_type ?? "note",
+        created_at: new Date().toISOString()
+      });
+      await repos.incidents.update(incident);
+      return {
+        incident_id: incident.id,
+        annotations: incident.metadata.annotations
+      };
+    },
+    auditEventType: "organizer.incident_annotation.created"
+  });
+
+  router.addRoute({
+    id: "organizer-incident-state",
+    method: "POST",
+    path: "/organizer/events/:eventId/incidents/:incidentId/state",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => {
+      required(body, ["action"]);
+      if (!["escalate", "resolve"].includes(body.action)) {
+        throw new HttpError(400, "action must be one of: escalate, resolve");
+      }
+      return body;
+    },
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      const incident = await resolveIncidentForEvent(repos, principal.tenant_id, event.id, params.incidentId);
+      return { event, eventPolicy, incident };
+    },
+    handler: async ({ repos, principal, resources, body }) => {
+      const incident = resources.incident;
+      const now = new Date().toISOString();
+      const previousStatus = incident.status;
+
+      if (body.action === "escalate") {
+        incident.status = "escalated";
+        incident.resolved_at = null;
+        if (body.severity) {
+          incident.severity = body.severity;
+        }
+      } else {
+        incident.status = "resolved";
+        incident.resolved_at = now;
+      }
+
+      appendIncidentMetadataEntry(incident, "state_history", {
+        id: nextId("incident-state"),
+        actor_user_id: principal.user_id,
+        action: body.action,
+        previous_status: previousStatus,
+        next_status: incident.status,
+        note: body.note ?? null,
+        severity: incident.severity,
+        created_at: now
+      });
+      appendIncidentMetadataEntry(incident, "annotations", {
+        id: nextId("incident-note"),
+        author_user_id: principal.user_id,
+        note: body.note ?? (body.action === "escalate"
+          ? "Organizer escalated the incident."
+          : "Organizer resolved the incident."),
+        action_type: body.action === "escalate" ? "escalation" : "resolution",
+        created_at: now
+      });
+
+      await repos.incidents.update(incident);
+      return buildIncidentInvestigation(
+        repos,
+        resources.event.tenant_id,
+        resources.event.id,
+        incident
+      );
+    },
+    auditEventType: "organizer.incident_state.updated"
+  });
+
+  router.addRoute({
+    id: "organizer-incident-runbook",
+    method: "POST",
+    path: "/organizer/events/:eventId/incidents/:incidentId/runbook",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => {
+      if (!body || typeof body !== "object") {
+        throw new HttpError(400, "Request body is required");
+      }
+      if (![
+        body.runbook_reference,
+        body.workaround_status,
+        body.workaround_summary,
+        body.next_action,
+        body.note
+      ].some(Boolean)) {
+        throw new HttpError(400, "At least one runbook or workaround field is required");
+      }
+      return body;
+    },
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      const incident = await resolveIncidentForEvent(repos, principal.tenant_id, event.id, params.incidentId);
+      return { event, eventPolicy, incident };
+    },
+    handler: async ({ repos, principal, resources, body }) => {
+      const incident = resources.incident;
+      const now = new Date().toISOString();
+      const tracking = {
+        ...(incident.metadata?.runbook_tracking ?? {}),
+        runbook_reference: body.runbook_reference ?? incident.metadata?.runbook_tracking?.runbook_reference ?? null,
+        workaround_status: body.workaround_status ?? incident.metadata?.runbook_tracking?.workaround_status ?? null,
+        workaround_summary: body.workaround_summary ?? incident.metadata?.runbook_tracking?.workaround_summary ?? null,
+        next_action: body.next_action ?? incident.metadata?.runbook_tracking?.next_action ?? null,
+        updated_by_user_id: principal.user_id,
+        updated_at: now
+      };
+
+      incident.metadata = {
+        ...(incident.metadata ?? {}),
+        runbook_tracking: tracking
+      };
+
+      const note = body.note ?? buildRunbookUpdateNote(tracking);
+      appendIncidentMetadataEntry(incident, "runbook_updates", {
+        id: nextId("incident-runbook"),
+        author_user_id: principal.user_id,
+        note,
+        runbook_reference: tracking.runbook_reference,
+        workaround_status: tracking.workaround_status,
+        workaround_summary: tracking.workaround_summary,
+        next_action: tracking.next_action,
+        created_at: now
+      });
+      appendIncidentMetadataEntry(incident, "annotations", {
+        id: nextId("incident-note"),
+        author_user_id: principal.user_id,
+        note,
+        action_type: "runbook_update",
+        created_at: now
+      });
+
+      await repos.incidents.update(incident);
+      return buildIncidentInvestigation(
+        repos,
+        resources.event.tenant_id,
+        resources.event.id,
+        incident
+      );
+    },
+    auditEventType: "organizer.incident_runbook.updated"
+  });
+
+  router.addRoute({
+    id: "organizer-device-history",
+    method: "GET",
+    path: "/organizer/events/:eventId/devices/:deviceId/history",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, params, query }) => {
+      const limit = Number(query.limit ?? 10);
+      const heartbeats = await repos.heartbeats.listByDevice(resources.event.tenant_id, params.deviceId);
+      const incidents = await repos.incidents.listByDevice(resources.event.tenant_id, params.deviceId);
+      return {
+        event_id: resources.event.id,
+        device_id: params.deviceId,
+        heartbeats: heartbeats
+          .filter((entry) => entry.event_id === resources.event.id)
+          .slice(0, limit),
+        incidents: incidents
+          .filter((entry) => entry.event_id === resources.event.id)
+          .slice(0, limit)
+      };
+    },
+    auditEventType: "organizer.device_history.view"
+  });
+
+  router.addRoute({
+    id: "organizer-iot-health",
+    method: "GET",
+    path: "/organizer/events/:eventId/iot-health",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => ({
+      event_id: resources.event.id,
+      iot_integration: await buildIotIntegrationStatus(repos, resources.event.tenant_id, resources.event.id)
+    }),
+    auditEventType: "organizer.iot_health.view"
+  });
+
+  router.addRoute({
+    id: "organizer-iot-go-live-readiness",
+    method: "GET",
+    path: "/organizer/events/:eventId/iot-go-live-readiness",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => {
+      const iotIntegration = await buildIotIntegrationStatus(
+        repos,
+        resources.event.tenant_id,
+        resources.event.id
+      );
+      return {
+        event_id: resources.event.id,
+        readiness: buildGoLiveReadiness(resources.event.id, iotIntegration)
+      };
+    },
+    auditEventType: "organizer.iot_go_live_readiness.view"
+  });
+
+  router.addRoute({
+    id: "organizer-pilot-rehearsal-report",
+    method: "GET",
+    path: "/organizer/events/:eventId/pilot-rehearsal-report",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => ({
+      event_id: resources.event.id,
+      rehearsal: await buildPilotRehearsalReport(repos, resources.event, resources.eventPolicy)
+    }),
+    auditEventType: "organizer.pilot_rehearsal_report.view"
+  });
+
+  router.addRoute({
+    id: "organizer-pilot-signoff-pack",
+    method: "GET",
+    path: "/organizer/events/:eventId/pilot-signoff-pack",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => ({
+      event_id: resources.event.id,
+      signoff: await buildPilotSignoffPack(repos, resources.event, resources.eventPolicy)
+    }),
+    auditEventType: "organizer.pilot_signoff_pack.view"
+  });
+
+  router.addRoute({
+    id: "organizer-pilot-signoff-export",
+    method: "POST",
+    path: "/organizer/events/:eventId/pilot-signoff-export",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, principal }) => {
+      const exportId = nextId("export");
+      const exportRequest = {
+        id: exportId,
+        tenant_id: resources.event.tenant_id,
+        event_id: resources.event.id,
+        requested_by_user_id: principal.user_id,
+        requested_for_organization_id: principal.organization_id,
+        export_type: "organizer_event_report",
+        filters: {
+          report_variant: "pilot_signoff"
+        },
+        row_count_estimate: 1,
+        status: resources.eventPolicy.require_export_approval ? "requested" : "generated",
+        approval_required: resources.eventPolicy.require_export_approval,
+        approved_by_user_id: null,
+        approval_reason: null,
+        rejection_reason: null,
+        file_url: resources.eventPolicy.require_export_approval ? null : exportDownloadPath({ id: exportId }),
+        file_expires_at: resources.eventPolicy.require_export_approval ? null : inHours(4),
+        created_at: new Date().toISOString()
+      };
+      return repos.exportRequests.create(exportRequest);
+    },
+    auditEventType: "organizer.pilot_signoff_export.requested"
+  });
+
+  router.addRoute({
+    id: "organizer-pilot-go-live-execution",
+    method: "GET",
+    path: "/organizer/events/:eventId/pilot-go-live-execution",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => ({
+      event_id: resources.event.id,
+      execution: await buildPilotGoLiveExecution(repos, resources.event, resources.eventPolicy)
+    }),
+    auditEventType: "organizer.pilot_go_live_execution.view"
+  });
+
+  router.addRoute({
+    id: "organizer-pilot-go-live-dry-run",
+    method: "POST",
+    path: "/organizer/events/:eventId/pilot-go-live-dry-run",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => {
+      if (!body || typeof body !== "object") {
+        throw new HttpError(400, "Request body is required");
+      }
+      if (!body.status) {
+        throw new HttpError(400, "Dry-run status is required");
+      }
+      return body;
+    },
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, principal, body }) => {
+      const now = new Date().toISOString();
+      const blockers = Array.isArray(body.blockers)
+        ? body.blockers.filter(Boolean)
+        : String(body.blockers ?? "")
+            .split("\n")
+            .map((entry) => entry.trim())
+            .filter(Boolean);
+      return repos.pilotDryRunRecords.create({
+        id: nextId("pilot-dry-run"),
+        tenant_id: resources.event.tenant_id,
+        event_id: resources.event.id,
+        execution_type: "staging_go_live_dry_run",
+        status: body.status,
+        executed_by_user_id: principal.user_id,
+        summary: body.summary ?? {},
+        blockers,
+        note: body.note ?? null,
+        started_at: body.started_at ?? now,
+        finished_at: body.finished_at ?? (body.status === "completed" || body.status === "failed" ? now : null),
+        created_at: now,
+        updated_at: now
+      });
+    },
+    auditEventType: "organizer.pilot_go_live_dry_run.recorded"
+  });
+
+  router.addRoute({
+    id: "organizer-pilot-go-live-approval",
+    method: "POST",
+    path: "/organizer/events/:eventId/pilot-go-live-approvals",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => {
+      if (!body || typeof body !== "object") {
+        throw new HttpError(400, "Request body is required");
+      }
+      required(body, ["approver_role", "approver_label", "approval_status"]);
+      return body;
+    },
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, principal, body }) => {
+      const now = new Date().toISOString();
+      return repos.pilotSignoffApprovals.upsert({
+        id: nextId("pilot-signoff-approval"),
+        tenant_id: resources.event.tenant_id,
+        event_id: resources.event.id,
+        approver_role: body.approver_role,
+        approver_label: body.approver_label,
+        approver_user_id: body.approver_role === "organizer" ? principal.user_id : null,
+        approval_status: body.approval_status,
+        note: body.note ?? null,
+        approved_at: body.approval_status === "approved" ? now : null,
+        created_at: now,
+        updated_at: now
+      });
+    },
+    auditEventType: "organizer.pilot_go_live_approval.recorded"
+  });
+
+  router.addRoute({
+    id: "organizer-iot-runs",
+    method: "GET",
+    path: "/organizer/events/:eventId/iot-runs",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, query }) => {
+      const limit = Number(query.limit ?? 20);
+      const runs = await repos.iotIntegrationRuns.listByEvent(resources.event.tenant_id, resources.event.id, {
+        limit
+      });
+      return {
+        event_id: resources.event.id,
+        items: runs.map(formatIntegrationRun)
+      };
+    },
+    auditEventType: "organizer.iot_runs.view"
+  });
+
+  router.addRoute({
+    id: "organizer-iot-alerts",
+    method: "GET",
+    path: "/organizer/events/:eventId/iot-alerts",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources, query }) => {
+      const limit = Number(query.limit ?? 20);
+      const status = query.status ?? null;
+      const items = await repos.iotAlertEvents.listByEvent(resources.event.tenant_id, resources.event.id, {
+        limit,
+        status
+      });
+      return {
+        event_id: resources.event.id,
+        open_count: await repos.iotAlertEvents.countOpenByEvent(resources.event.tenant_id, resources.event.id),
+        items: items.map(formatAlertEvent)
+      };
+    },
+    auditEventType: "organizer.iot_alerts.view"
+  });
+
+  router.addRoute({
+    id: "organizer-iot-runs-trigger",
+    method: "POST",
+    path: "/organizer/events/:eventId/iot-runs/trigger",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ state, repos, resources, principal }) => {
+      const orchestrator = state.iotOperations?.orchestrator;
+      if (!orchestrator) {
+        throw new HttpError(503, "IoT integration orchestrator is not configured");
+      }
+      const run = await orchestrator.runForEvent({
+        tenantId: resources.event.tenant_id,
+        eventId: resources.event.id,
+        triggerMode: "manual",
+        initiatedBy: principal.user_id ?? principal.actor_id
+      });
+      return {
+        event_id: resources.event.id,
+        run: formatIntegrationRun(run),
+        iot_integration: await buildIotIntegrationStatus(repos, resources.event.tenant_id, resources.event.id)
+      };
+    },
+    auditEventType: "organizer.iot_runs.triggered"
+  });
+
+  router.addRoute({
+    id: "organizer-iot-parity-trigger",
+    method: "POST",
+    path: "/organizer/events/:eventId/iot-parity/trigger",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ state, repos, resources }) => {
+      const parityRunner = state.iotOperations?.parityRunner;
+      const alertRouter = state.iotOperations?.alertRouter ?? null;
+      if (!parityRunner) {
+        throw new HttpError(503, "IoT environment parity runner is not configured");
+      }
+      const parity = await parityRunner.runForEvent({
+        tenantId: resources.event.tenant_id,
+        eventId: resources.event.id
+      });
+      if (alertRouter) {
+        await alertRouter.routeForEventState({
+          tenantId: resources.event.tenant_id,
+          eventId: resources.event.id,
+          parity
+        });
+      }
+      return {
+        event_id: resources.event.id,
+        parity: formatParityStatus(parity),
+        iot_integration: await buildIotIntegrationStatus(repos, resources.event.tenant_id, resources.event.id)
+      };
+    },
+    auditEventType: "organizer.iot_parity.triggered"
+  });
+
+  router.addRoute({
+    id: "admin-iot-runs-trigger",
+    method: "POST",
+    path: "/admin/events/:eventId/iot-runs/trigger",
+    allowedRoles: ["platform_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ state, repos, resources, principal }) => {
+      const orchestrator = state.iotOperations?.orchestrator;
+      if (!orchestrator) {
+        throw new HttpError(503, "IoT integration orchestrator is not configured");
+      }
+      const run = await orchestrator.runForEvent({
+        tenantId: resources.event.tenant_id,
+        eventId: resources.event.id,
+        triggerMode: "manual",
+        initiatedBy: principal.user_id ?? principal.actor_id
+      });
+      return {
+        event_id: resources.event.id,
+        run: formatIntegrationRun(run),
+        iot_integration: await buildIotIntegrationStatus(repos, resources.event.tenant_id, resources.event.id)
+      };
+    },
+    auditEventType: "admin.iot_runs.triggered"
+  });
+
+  router.addRoute({
+    id: "admin-iot-cleanup-trigger",
+    method: "POST",
+    path: "/admin/events/:eventId/iot-cleanup/trigger",
+    allowedRoles: ["platform_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ state, resources }) => {
+      const retentionManager = state.iotOperations?.retentionManager;
+      if (!retentionManager) {
+        throw new HttpError(503, "IoT retention manager is not configured");
+      }
+      return retentionManager.cleanupEventData({
+        tenantId: resources.event.tenant_id,
+        eventId: resources.event.id
+      });
+    },
+    auditEventType: "admin.iot_cleanup.triggered"
+  });
+
+  router.addRoute({
+    id: "admin-reference-data",
+    method: "GET",
+    path: "/admin/reference-data",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, tenantId }) => {
+      const [organizations, events, stalls] = await Promise.all([
+        repos.organizations.listByTenant(tenantId),
+        repos.events.listByTenant(tenantId),
+        repos.stalls.listByTenant(tenantId)
+      ]);
+
+      return {
+        roles: ["platform_admin", "organizer_admin", "vendor_manager", "sponsor_user", "ops_user"],
+        user_statuses: ["pending_invite", "active", "disabled", "suspended", "deleted"],
+        organizations: organizations.map(formatOrganizationSummary),
+        events: events.map(formatEventSummary),
+        stalls: stalls.map(formatStallSummary)
+      };
+    },
+    auditEventType: "admin.reference_data.view"
+  });
+
+  router.addRoute({
+    id: "admin-access-control-matrix",
+    method: "GET",
+    path: "/admin/access-control-matrix",
+    allowedRoles: ["platform_admin"],
+    handler: async () => ({
+      items: listAccessControlMatrix()
+    }),
+    auditEventType: "admin.access_control_matrix.view"
+  });
+
+  router.addRoute({
+    id: "admin-security-readiness",
+    method: "GET",
+    path: "/admin/security/readiness",
+    allowedRoles: ["platform_admin"],
+    handler: async (ctx) => buildSecurityReadiness(ctx),
+    auditEventType: "admin.security_readiness.view"
+  });
+
+  router.addRoute({
+    id: "admin-security-alerts",
+    method: "GET",
+    path: "/admin/security/alerts",
+    allowedRoles: ["platform_admin"],
+    handler: async (ctx) => {
+      const [auditLogs, breakGlassRequests, users, pentestFindings, notificationDeadLetterSummary] = await Promise.all([
+        ctx.repos.auditLogs.listByTenant(ctx.tenantId),
+        ctx.repos.breakGlassAccess.listByTenant(ctx.tenantId),
+        ctx.repos.users.listByTenant(ctx.tenantId),
+        ctx.repos.pentestFindings.listByTenant(ctx.tenantId),
+        buildNotificationDeadLetterSummary(ctx.repos, ctx.tenantId, ctx.env)
+      ]);
+      const readiness = buildSecurityReadiness(ctx);
+      return buildSecurityAlerts({
+        readiness,
+        auditLogs,
+        breakGlassRequests,
+        users,
+        pentestFindings,
+        notificationProviderReadiness: buildNotificationChannelsReadiness(ctx.env),
+        notificationWorkerSchedule: resolveNotificationWorkerSchedule(ctx.env),
+        notificationDeadLetterSummary
+      });
+    },
+    auditEventType: "admin.security_alerts.view"
+  });
+
+  router.addRoute({
+    id: "admin-security-pentest-pack",
+    method: "GET",
+    path: "/admin/security/pentest-pack",
+    allowedRoles: ["platform_admin"],
+    handler: async (ctx) => {
+      const [auditLogs, breakGlassRequests, users, pentestFindings, notificationDeadLetterSummary] = await Promise.all([
+        ctx.repos.auditLogs.listByTenant(ctx.tenantId),
+        ctx.repos.breakGlassAccess.listByTenant(ctx.tenantId),
+        ctx.repos.users.listByTenant(ctx.tenantId),
+        ctx.repos.pentestFindings.listByTenant(ctx.tenantId),
+        buildNotificationDeadLetterSummary(ctx.repos, ctx.tenantId, ctx.env)
+      ]);
+      const accessControlMatrix = listAccessControlMatrix();
+      const readiness = buildSecurityReadiness(ctx);
+      const alerts = buildSecurityAlerts({
+        readiness,
+        auditLogs,
+        breakGlassRequests,
+        users,
+        pentestFindings,
+        notificationProviderReadiness: buildNotificationChannelsReadiness(ctx.env),
+        notificationWorkerSchedule: resolveNotificationWorkerSchedule(ctx.env),
+        notificationDeadLetterSummary
+      });
+      return buildPentestEvidencePack({
+        readiness,
+        alerts,
+        accessControlMatrix,
+        auditLogs: [...auditLogs].sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at)),
+        pentestFindings,
+        attackSurface: buildAttackSurfaceReport({
+          accessControlMatrix,
+          routes: ctx.router?.routes ?? []
+        })
+      });
+    },
+    auditEventType: "admin.security_pentest_pack.export"
+  });
+
+  router.addRoute({
+    id: "admin-pentest-attack-surface",
+    method: "GET",
+    path: "/admin/security/pentest/attack-surface",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ router: routeRegistry }) => buildAttackSurfaceReport({
+      accessControlMatrix: listAccessControlMatrix(),
+      routes: routeRegistry.routes
+    }),
+    auditEventType: "admin.security_pentest_attack_surface.view"
+  });
+
+  router.addRoute({
+    id: "admin-pentest-findings-list",
+    method: "GET",
+    path: "/admin/security/pentest/findings",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, tenantId }) => {
+      const items = await repos.pentestFindings.listByTenant(tenantId);
+      return {
+        summary: summarizePentestFindings(items),
+        items
+      };
+    },
+    auditEventType: "admin.security_pentest_findings.view"
+  });
+
+  router.addRoute({
+    id: "admin-pentest-finding-create",
+    method: "POST",
+    path: "/admin/security/pentest/findings",
+    allowedRoles: ["platform_admin"],
+    validate: validatePentestFindingCreateBody,
+    handler: async ({ repos, tenantId, principal, body }) => {
+      const now = new Date().toISOString();
+      const finding = await repos.pentestFindings.create({
+        id: nextId("pentest-finding"),
+        tenant_id: tenantId,
+        source: body.source ?? "external_pentest",
+        title: body.title,
+        severity: body.severity,
+        category: body.category ?? "general",
+        status: body.status ?? "open",
+        affected_area: body.affected_area ?? null,
+        description: body.description ?? null,
+        evidence: body.evidence ?? {},
+        remediation_plan: body.remediation_plan ?? null,
+        owner_user_id: body.owner_user_id ?? null,
+        due_at: body.due_at ?? null,
+        resolved_at: null,
+        accepted_risk_reason: null,
+        created_by_user_id: principal.user_id,
+        updated_by_user_id: principal.user_id,
+        created_at: now,
+        updated_at: now
+      });
+      return { item: finding };
+    },
+    statusCode: 201,
+    auditEventType: "admin.security_pentest_finding.created"
+  });
+
+  router.addRoute({
+    id: "admin-pentest-finding-update",
+    method: "PATCH",
+    path: "/admin/security/pentest/findings/:findingId",
+    allowedRoles: ["platform_admin"],
+    validate: validatePentestFindingUpdateBody,
+    resolveResources: async ({ repos, principal, params }) => ({
+      pentestFinding: await repos.pentestFindings.findById(principal.tenant_id, params.findingId)
+    }),
+    handler: async ({ repos, principal, resources, body }) => {
+      const nextStatus = body.status ?? resources.pentestFinding.status;
+      const now = new Date().toISOString();
+      const finding = await repos.pentestFindings.update({
+        ...resources.pentestFinding,
+        source: body.source ?? resources.pentestFinding.source,
+        title: body.title ?? resources.pentestFinding.title,
+        severity: body.severity ?? resources.pentestFinding.severity,
+        category: body.category ?? resources.pentestFinding.category,
+        status: nextStatus,
+        affected_area: body.affected_area ?? resources.pentestFinding.affected_area,
+        description: body.description ?? resources.pentestFinding.description,
+        evidence: body.evidence ?? resources.pentestFinding.evidence ?? {},
+        remediation_plan: body.remediation_plan ?? resources.pentestFinding.remediation_plan,
+        owner_user_id: body.owner_user_id ?? resources.pentestFinding.owner_user_id,
+        due_at: body.due_at ?? resources.pentestFinding.due_at,
+        resolved_at: ["remediated", "accepted_risk", "false_positive"].includes(nextStatus)
+          ? body.resolved_at ?? resources.pentestFinding.resolved_at ?? now
+          : null,
+        accepted_risk_reason: body.accepted_risk_reason ?? resources.pentestFinding.accepted_risk_reason,
+        updated_by_user_id: principal.user_id,
+        updated_at: now
+      });
+      return { item: finding };
+    },
+    auditEventType: "admin.security_pentest_finding.updated"
+  });
+
+  router.addRoute({
+    id: "admin-deployment-readiness",
+    method: "GET",
+    path: "/admin/deployment/readiness",
+    allowedRoles: ["platform_admin"],
+    handler: async (ctx) => buildDeploymentReadiness(ctx),
+    auditEventType: "admin.deployment_readiness.view"
+  });
+
+  router.addRoute({
+    id: "admin-final-go-live-package",
+    method: "GET",
+    path: "/admin/events/:eventId/final-go-live",
+    allowedRoles: ["platform_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async (ctx) => ({
+      launch: await buildFinalGoLivePackage(ctx, ctx.resources.event, ctx.resources.eventPolicy)
+    }),
+    auditEventType: "admin.final_go_live.view"
+  });
+
+  router.addRoute({
+    id: "admin-final-go-live-approval",
+    method: "POST",
+    path: "/admin/events/:eventId/final-go-live/approvals",
+    allowedRoles: ["platform_admin"],
+    validate: validateFinalLaunchApprovalBody,
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, principal, body, resources }) => {
+      const now = new Date().toISOString();
+      const approval = await repos.finalLaunchApprovals.upsert({
+        id: nextId("final-launch-approval"),
+        tenant_id: resources.event.tenant_id,
+        event_id: resources.event.id,
+        approver_role: body.approver_role,
+        approver_label: body.approver_label,
+        approver_user_id: principal.user_id,
+        approval_status: body.approval_status,
+        note: body.note ?? null,
+        approved_at: body.approval_status === "approved" ? now : null,
+        created_at: now,
+        updated_at: now
+      });
+      return { item: approval };
+    },
+    auditEventType: "admin.final_go_live_approval.recorded"
+  });
+
+  router.addRoute({
+    id: "admin-final-go-live-export",
+    method: "POST",
+    path: "/admin/events/:eventId/final-go-live/export",
+    allowedRoles: ["platform_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async (ctx) => {
+      const launch = await buildFinalGoLivePackage(ctx, ctx.resources.event, ctx.resources.eventPolicy);
+      return {
+        file_name: `event-${ctx.resources.event.id}-final-go-live-package.json`,
+        generated_at: new Date().toISOString(),
+        payload: launch
+      };
+    },
+    auditEventType: "admin.final_go_live_export.generated"
+  });
+
+  router.addRoute({
+    id: "admin-users-list",
+    method: "GET",
+    path: "/admin/users",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, tenantId }) => {
+      const [users, organizations, events, stalls] = await Promise.all([
+        repos.users.listByTenant(tenantId),
+        repos.organizations.listByTenant(tenantId),
+        repos.events.listByTenant(tenantId),
+        repos.stalls.listByTenant(tenantId)
+      ]);
+      const lookups = buildAdminReferenceLookups({ organizations, events, stalls });
+      const accessScopesByUserId = new Map();
+
+      await Promise.all(
+        users.map(async (user) => {
+          accessScopesByUserId.set(user.id, await repos.userAccessScopes.listByUser(tenantId, user.id));
+        })
+      );
+
+      return {
+        items: users
+          .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+          .map((user) =>
+            formatManagedUser(user, {
+              organization: lookups.organizations.get(user.organization_id) ?? null,
+              accessScopes: accessScopesByUserId.get(user.id) ?? [],
+              lookups
+            })
+          )
+      };
+    },
+    auditEventType: "admin.users.view"
+  });
+
+  router.addRoute({
+    id: "admin-user-create",
+    method: "POST",
+    path: "/admin/users",
+    statusCode: 201,
+    allowedRoles: ["platform_admin"],
+    validate: validateAdminUserCreateBody,
+    resolveResources: async ({ repos, principal, body }) => {
+      const organization = await repos.organizations.findById(principal.tenant_id, body.organization_id);
+      return { organization };
+    },
+    handler: async ({ repos, tenantId, body, resources }) => {
+      const existingUsers = await repos.users.listByTenant(tenantId);
+      const email = normalizeManagedUserEmail(body.email);
+      if (
+        existingUsers.some((entry) => entry.email.toLowerCase() === email.toLowerCase())
+      ) {
+        throw new HttpError(409, "A user with this email already exists in the tenant");
+      }
+
+      assertOrganizationCompatibleWithRole(body.role, resources.organization);
+
+      const status = body.status ?? "pending_invite";
+      if (!["pending_invite", "active"].includes(status)) {
+        throw new HttpError(400, "New users may only start as pending_invite or active");
+      }
+
+      const createdUser = await repos.users.create({
+        id: nextId("user"),
+        tenant_id: tenantId,
+        organization_id: resources.organization.id,
+        email,
+        display_name: body.display_name,
+        role: body.role,
+        external_identity_provider: body.external_identity_provider ?? null,
+        external_subject: body.external_subject ?? null,
+        status,
+        last_login_at: null,
+        disabled_at: null,
+        disabled_reason: null,
+        mfa_required: body.mfa_required ?? false,
+        invited_at: status === "pending_invite" ? new Date().toISOString() : null,
+        deleted_at: null,
+        created_at: new Date().toISOString()
+      });
+      resources.user = createdUser;
+      return createdUser;
+    },
+    auditEventType: "admin.user.created"
+  });
+
+  router.addRoute({
+    id: "admin-user-detail",
+    method: "GET",
+    path: "/admin/users/:userId",
+    allowedRoles: ["platform_admin"],
+    resolveResources: resolveAdminUserResources,
+    handler: async ({ repos, resources, tenantId }) => {
+      const [organizations, events, stalls] = await Promise.all([
+        repos.organizations.listByTenant(tenantId),
+        repos.events.listByTenant(tenantId),
+        repos.stalls.listByTenant(tenantId)
+      ]);
+      const lookups = buildAdminReferenceLookups({ organizations, events, stalls });
+      return {
+        item: formatManagedUser(resources.user, {
+          organization: resources.organization,
+          accessScopes: resources.accessScopes,
+          lookups
+        })
+      };
+    },
+    auditEventType: "admin.user.view"
+  });
+
+  router.addRoute({
+    id: "admin-user-update",
+    method: "PATCH",
+    path: "/admin/users/:userId",
+    allowedRoles: ["platform_admin"],
+    validate: validateAdminUserUpdateBody,
+    resolveResources: resolveAdminUserResources,
+    handler: async ({ repos, tenantId, body, resources }) => {
+      const nextOrganization =
+        body.organization_id && body.organization_id !== resources.user.organization_id
+          ? await repos.organizations.findById(tenantId, body.organization_id)
+          : resources.organization;
+      const nextRole = body.role ?? resources.user.role;
+      assertOrganizationCompatibleWithRole(nextRole, nextOrganization);
+
+      const nextEmail = body.email ? normalizeManagedUserEmail(body.email) : resources.user.email;
+      if (nextEmail.toLowerCase() !== resources.user.email.toLowerCase()) {
+        const existingUsers = await repos.users.listByTenant(tenantId);
+        if (
+          existingUsers.some(
+            (entry) =>
+              entry.id !== resources.user.id && entry.email.toLowerCase() === nextEmail.toLowerCase()
+          )
+        ) {
+          throw new HttpError(409, "A user with this email already exists in the tenant");
+        }
+      }
+
+      return repos.users.update({
+        ...resources.user,
+        organization_id: nextOrganization.id,
+        email: nextEmail,
+        display_name: body.display_name ?? resources.user.display_name,
+        role: nextRole,
+        external_identity_provider:
+          "external_identity_provider" in body
+            ? body.external_identity_provider ?? null
+            : resources.user.external_identity_provider,
+        external_subject:
+          "external_subject" in body ? body.external_subject ?? null : resources.user.external_subject,
+        mfa_required:
+          "mfa_required" in body ? body.mfa_required : resources.user.mfa_required
+      });
+    },
+    auditEventType: "admin.user.updated"
+  });
+
+  router.addRoute({
+    id: "admin-user-activate",
+    method: "POST",
+    path: "/admin/users/:userId/activate",
+    allowedRoles: ["platform_admin"],
+    resolveResources: resolveAdminUserResources,
+    handler: async ({ repos, resources }) => {
+      if (resources.user.status === "deleted") {
+        throw new HttpError(409, "Deleted users cannot be reactivated");
+      }
+      return repos.users.update({
+        ...resources.user,
+        status: "active",
+        disabled_at: null,
+        disabled_reason: null
+      });
+    },
+    auditEventType: "admin.user.activated"
+  });
+
+  router.addRoute({
+    id: "admin-user-disable",
+    method: "POST",
+    path: "/admin/users/:userId/disable",
+    allowedRoles: ["platform_admin"],
+    validate: validateAdminUserActionBody,
+    resolveResources: resolveAdminUserResources,
+    handler: async ({ repos, body, resources }) =>
+      repos.users.update({
+        ...resources.user,
+        status: "disabled",
+        disabled_at: new Date().toISOString(),
+        disabled_reason: body.reason ?? "Disabled by platform admin"
+      }),
+    auditEventType: "admin.user.disabled"
+  });
+
+  router.addRoute({
+    id: "admin-user-suspend",
+    method: "POST",
+    path: "/admin/users/:userId/suspend",
+    allowedRoles: ["platform_admin"],
+    validate: validateAdminUserActionBody,
+    resolveResources: resolveAdminUserResources,
+    handler: async ({ repos, body, resources }) =>
+      repos.users.update({
+        ...resources.user,
+        status: "suspended",
+        disabled_at: new Date().toISOString(),
+        disabled_reason: body.reason ?? "Suspended by platform admin"
+      }),
+    auditEventType: "admin.user.suspended"
+  });
+
+  router.addRoute({
+    id: "admin-user-delete",
+    method: "POST",
+    path: "/admin/users/:userId/delete",
+    allowedRoles: ["platform_admin"],
+    validate: validateAdminUserActionBody,
+    resolveResources: resolveAdminUserResources,
+    handler: async ({ repos, body, resources }) =>
+      repos.withTransaction(async (txRepos) => {
+        const currentScopes = await txRepos.userAccessScopes.listByUser(
+          resources.user.tenant_id,
+          resources.user.id
+        );
+        for (const scope of currentScopes) {
+          await txRepos.userAccessScopes.deleteById(resources.user.tenant_id, scope.id);
+        }
+        return txRepos.users.update({
+          ...resources.user,
+          status: "deleted",
+          disabled_at: resources.user.disabled_at ?? new Date().toISOString(),
+          disabled_reason: body.reason ?? resources.user.disabled_reason ?? "Deleted by platform admin",
+          deleted_at: new Date().toISOString()
+        });
+      }),
+    auditEventType: "admin.user.deleted"
+  });
+
+  router.addRoute({
+    id: "admin-user-scope-assign",
+    method: "POST",
+    path: "/admin/users/:userId/access-scopes",
+    statusCode: 201,
+    allowedRoles: ["platform_admin"],
+    validate: validateAdminUserScopeBody,
+    resolveResources: resolveAdminUserScopeAssignmentResources,
+    handler: async ({ repos, resources }) => {
+      if (resources.user.status === "deleted") {
+        throw new HttpError(409, "Deleted users cannot receive access scopes");
+      }
+
+      validateScopeAssignmentForManagedUser(resources);
+
+      const existingScopes = await repos.userAccessScopes.listByUser(
+        resources.user.tenant_id,
+        resources.user.id
+      );
+      if (
+        existingScopes.some(
+          (entry) =>
+            normalizeNullableId(entry.event_id) === normalizeNullableId(resources.event?.id ?? null) &&
+            normalizeNullableId(entry.stall_id) === normalizeNullableId(resources.stall?.id ?? null) &&
+            normalizeNullableId(entry.sponsor_organization_id) ===
+              normalizeNullableId(resources.sponsorOrganization?.id ?? null)
+        )
+      ) {
+        throw new HttpError(409, "This access scope already exists for the user");
+      }
+
+      const createdScope = await repos.userAccessScopes.create({
+        id: nextId("user-scope"),
+        tenant_id: resources.user.tenant_id,
+        user_id: resources.user.id,
+        event_id: resources.event?.id ?? null,
+        stall_id: resources.stall?.id ?? null,
+        sponsor_organization_id: resources.sponsorOrganization?.id ?? null,
+        created_at: new Date().toISOString()
+      });
+      resources.accessScope = createdScope;
+      return createdScope;
+    },
+    auditEventType: "admin.user_scope.assigned"
+  });
+
+  router.addRoute({
+    id: "admin-user-scope-revoke",
+    method: "DELETE",
+    path: "/admin/users/:userId/access-scopes/:scopeId",
+    allowedRoles: ["platform_admin"],
+    resolveResources: resolveAdminUserScopeResources,
+    handler: async ({ repos, resources }) =>
+      repos.userAccessScopes.deleteById(resources.user.tenant_id, resources.accessScope.id),
+    auditEventType: "admin.user_scope.revoked"
+  });
+
+  router.addRoute({
+    id: "admin-commercial-governance",
+    method: "GET",
+    path: "/admin/commercial/governance",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, tenantId }) => {
+      const [partners, deals, payouts, approvals] = await Promise.all([
+        repos.commercialPartners.listByTenant(tenantId),
+        repos.commercialDeals.listByTenant(tenantId),
+        repos.commercialPartnerPayouts.listByTenant(tenantId),
+        repos.commercialApprovals.listByTenant(tenantId)
+      ]);
+      return buildCommercialGovernance({ partners, deals, payouts, approvals });
+    },
+    auditEventType: "admin.commercial_governance.view"
+  });
+
+  router.addRoute({
+    id: "admin-commercial-partners-list",
+    method: "GET",
+    path: "/admin/commercial/partners",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, tenantId }) => ({
+      items: await repos.commercialPartners.listByTenant(tenantId)
+    }),
+    auditEventType: "admin.commercial_partners.view"
+  });
+
+  router.addRoute({
+    id: "admin-commercial-partner-create",
+    method: "POST",
+    path: "/admin/commercial/partners",
+    statusCode: 201,
+    allowedRoles: ["platform_admin"],
+    validate: validateCommercialPartnerCreateBody,
+    resolveResources: resolveCommercialPartnerAccessUser,
+    handler: async ({ repos, tenantId, body, resources }) =>
+      repos.commercialPartners.create({
+        id: nextId("commercial-partner"),
+        tenant_id: tenantId,
+        name: body.name,
+        partner_type: body.partner_type,
+        status: body.status ?? "active",
+        access_level: body.access_level ?? "commercial_status_only",
+        platform_user_id: resources.platformAccessUser?.id ?? null,
+        notes: body.notes ?? null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }),
+    auditEventType: "admin.commercial_partner.created"
+  });
+
+  router.addRoute({
+    id: "admin-commercial-partner-update",
+    method: "PATCH",
+    path: "/admin/commercial/partners/:partnerId",
+    allowedRoles: ["platform_admin"],
+    validate: validateCommercialPartnerUpdateBody,
+    resolveResources: async (ctx) => ({
+      partner: await ctx.repos.commercialPartners.findById(ctx.principal.tenant_id, ctx.params.partnerId),
+      ...(await resolveCommercialPartnerAccessUser(ctx))
+    }),
+    handler: async ({ repos, body, resources }) =>
+      repos.commercialPartners.update({
+        ...resources.partner,
+        name: body.name ?? resources.partner.name,
+        partner_type: body.partner_type ?? resources.partner.partner_type,
+        status: body.status ?? resources.partner.status,
+        access_level: body.access_level ?? resources.partner.access_level,
+        platform_user_id:
+          "platform_user_id" in body
+            ? resources.platformAccessUser?.id ?? null
+            : resources.partner.platform_user_id,
+        notes: "notes" in body ? body.notes ?? null : resources.partner.notes,
+        updated_at: new Date().toISOString()
+      }),
+    auditEventType: "admin.commercial_partner.updated"
+  });
+
+  router.addRoute({
+    id: "admin-commercial-partner-status-update",
+    method: "POST",
+    path: "/admin/commercial/partners/:partnerId/status-updates",
+    statusCode: 201,
+    allowedRoles: ["platform_admin"],
+    validate: validateCommercialPartnerStatusUpdateBody,
+    resolveResources: async ({ repos, principal, params, body }) => ({
+      partner: await repos.commercialPartners.findById(principal.tenant_id, params.partnerId),
+      deal: body.deal_id ? await repos.commercialDeals.findById(principal.tenant_id, body.deal_id) : null
+    }),
+    handler: async ({ repos, principal, tenantId, body, resources }) => {
+      if (resources.deal?.partner_id && resources.deal.partner_id !== resources.partner.id) {
+        throw new HttpError(409, "deal_id must belong to the partner receiving the update");
+      }
+      return repos.commercialPartnerStatusUpdates.create({
+        id: nextId("partner-status"),
+        tenant_id: tenantId,
+        partner_id: resources.partner.id,
+        deal_id: resources.deal?.id ?? null,
+        update_type: body.update_type,
+        summary: body.summary,
+        created_by_user_id: principal.user_id,
+        created_at: new Date().toISOString()
+      });
+    },
+    auditEventType: "admin.commercial_partner_status_update.created"
+  });
+
+  router.addRoute({
+    id: "admin-commercial-deals-list",
+    method: "GET",
+    path: "/admin/commercial/deals",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, tenantId }) => ({
+      items: await repos.commercialDeals.listByTenant(tenantId)
+    }),
+    auditEventType: "admin.commercial_deals.view"
+  });
+
+  router.addRoute({
+    id: "admin-commercial-deal-create",
+    method: "POST",
+    path: "/admin/commercial/deals",
+    statusCode: 201,
+    allowedRoles: ["platform_admin"],
+    validate: validateCommercialDealCreateBody,
+    resolveResources: async ({ repos, principal, body }) => ({
+      partner: body.partner_id ? await repos.commercialPartners.findById(principal.tenant_id, body.partner_id) : null
+    }),
+    handler: async ({ repos, tenantId, body, resources }) =>
+      repos.commercialDeals.create({
+        id: nextId("commercial-deal"),
+        tenant_id: tenantId,
+        partner_id: resources.partner?.id ?? null,
+        account_name: body.account_name,
+        stage: body.stage,
+        next_action: body.next_action,
+        next_action_at: body.next_action_at,
+        offer_structure: body.offer_structure,
+        commercial_positioning_ack: body.commercial_positioning_ack,
+        notes: body.notes ?? null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }),
+    auditEventType: "admin.commercial_deal.created"
+  });
+
+  router.addRoute({
+    id: "admin-commercial-deal-update",
+    method: "PATCH",
+    path: "/admin/commercial/deals/:dealId",
+    allowedRoles: ["platform_admin"],
+    validate: validateCommercialDealUpdateBody,
+    resolveResources: async ({ repos, principal, params, body }) => ({
+      deal: await repos.commercialDeals.findById(principal.tenant_id, params.dealId),
+      partner: body.partner_id ? await repos.commercialPartners.findById(principal.tenant_id, body.partner_id) : null
+    }),
+    handler: async ({ repos, body, resources }) =>
+      repos.commercialDeals.update({
+        ...resources.deal,
+        partner_id: "partner_id" in body ? resources.partner?.id ?? null : resources.deal.partner_id,
+        account_name: body.account_name ?? resources.deal.account_name,
+        stage: body.stage ?? resources.deal.stage,
+        next_action: body.next_action ?? resources.deal.next_action,
+        next_action_at: body.next_action_at ?? resources.deal.next_action_at,
+        offer_structure: body.offer_structure ?? resources.deal.offer_structure,
+        commercial_positioning_ack:
+          "commercial_positioning_ack" in body
+            ? body.commercial_positioning_ack
+            : resources.deal.commercial_positioning_ack,
+        notes: "notes" in body ? body.notes ?? null : resources.deal.notes,
+        updated_at: new Date().toISOString()
+      }),
+    auditEventType: "admin.commercial_deal.updated"
+  });
+
+  router.addRoute({
+    id: "admin-commercial-payouts-list",
+    method: "GET",
+    path: "/admin/commercial/payouts",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, tenantId }) => ({
+      items: await repos.commercialPartnerPayouts.listByTenant(tenantId)
+    }),
+    auditEventType: "admin.commercial_payouts.view"
+  });
+
+  router.addRoute({
+    id: "admin-commercial-payout-create",
+    method: "POST",
+    path: "/admin/commercial/payouts",
+    statusCode: 201,
+    allowedRoles: ["platform_admin"],
+    validate: validateCommercialPayoutCreateBody,
+    resolveResources: resolveCommercialPayoutResources,
+    handler: async ({ repos, principal, tenantId, body, resources }) => {
+      const now = new Date().toISOString();
+      const status = body.status ?? "pending";
+      const approvedAt = status === "approved" || status === "paid" ? now : null;
+      const paidAt = status === "paid" ? now : null;
+      return repos.commercialPartnerPayouts.create({
+        id: nextId("partner-payout"),
+        tenant_id: tenantId,
+        partner_id: resources.partner.id,
+        deal_id: resources.deal?.id ?? null,
+        amount_cents: body.amount_cents,
+        currency: body.currency ?? "USD",
+        status,
+        client_payment_received_at: body.client_payment_received_at ?? null,
+        approved_by_user_id: approvedAt ? principal.user_id : null,
+        approved_at: approvedAt,
+        paid_at: paidAt,
+        notes: body.notes ?? null,
+        created_at: now,
+        updated_at: now
+      });
+    },
+    auditEventType: "admin.commercial_payout.created"
+  });
+
+  router.addRoute({
+    id: "admin-commercial-payout-update",
+    method: "PATCH",
+    path: "/admin/commercial/payouts/:payoutId",
+    allowedRoles: ["platform_admin"],
+    validate: validateCommercialPayoutUpdateBody,
+    resolveResources: async (ctx) => {
+      const payout = await ctx.repos.commercialPartnerPayouts.findById(ctx.principal.tenant_id, ctx.params.payoutId);
+      return {
+        payout,
+        ...(await resolveCommercialPayoutResources({
+          ...ctx,
+          body: {
+            partner_id: ctx.body.partner_id ?? payout.partner_id,
+            deal_id: "deal_id" in ctx.body ? ctx.body.deal_id : payout.deal_id
+          }
+        }))
+      };
+    },
+    handler: async ({ repos, principal, body, resources }) => {
+      const now = new Date().toISOString();
+      const nextStatus = body.status ?? resources.payout.status;
+      const approvedAt =
+        nextStatus === "approved" || nextStatus === "paid"
+          ? resources.payout.approved_at ?? now
+          : resources.payout.approved_at;
+      return repos.commercialPartnerPayouts.update({
+        ...resources.payout,
+        partner_id: resources.partner.id,
+        deal_id: "deal_id" in body ? resources.deal?.id ?? null : resources.payout.deal_id,
+        amount_cents: body.amount_cents ?? resources.payout.amount_cents,
+        currency: body.currency ?? resources.payout.currency,
+        status: nextStatus,
+        client_payment_received_at:
+          "client_payment_received_at" in body
+            ? body.client_payment_received_at
+            : resources.payout.client_payment_received_at,
+        approved_by_user_id: approvedAt ? resources.payout.approved_by_user_id ?? principal.user_id : null,
+        approved_at: approvedAt,
+        paid_at: nextStatus === "paid" ? resources.payout.paid_at ?? now : resources.payout.paid_at,
+        notes: "notes" in body ? body.notes ?? null : resources.payout.notes,
+        updated_at: now
+      });
+    },
+    auditEventType: "admin.commercial_payout.updated"
+  });
+
+  router.addRoute({
+    id: "admin-commercial-approvals-list",
+    method: "GET",
+    path: "/admin/commercial/approvals",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, tenantId }) => ({
+      items: await repos.commercialApprovals.listByTenant(tenantId)
+    }),
+    auditEventType: "admin.commercial_approvals.view"
+  });
+
+  router.addRoute({
+    id: "admin-commercial-approval-create",
+    method: "POST",
+    path: "/admin/commercial/approvals",
+    statusCode: 201,
+    allowedRoles: ["platform_admin"],
+    validate: validateCommercialApprovalBody,
+    handler: async ({ repos, principal, tenantId, body }) =>
+      repos.commercialApprovals.create({
+        id: nextId("commercial-approval"),
+        tenant_id: tenantId,
+        approval_type: body.approval_type,
+        subject_id: body.subject_id ?? null,
+        requested_by_user_id: principal.user_id,
+        approver_user_id: principal.user_id,
+        approver_role: body.approver_role,
+        approval_status: body.approval_status,
+        reason: body.reason,
+        created_at: new Date().toISOString(),
+        decided_at: body.approval_status === "pending" ? null : new Date().toISOString()
+      }),
+    auditEventType: "admin.commercial_approval.created"
+  });
+
+  router.addRoute({
+    id: "organizer-exports-list",
+    method: "GET",
+    path: "/organizer/events/:eventId/exports",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => ({
+      event_id: resources.event.id,
+      approval_required: resources.eventPolicy.require_export_approval,
+      items: [...await repos.exportRequests.listByEvent(resources.event.tenant_id, resources.event.id)]
+        .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+    }),
+    auditEventType: "organizer.exports.view"
+  });
+
+  router.addRoute({
+    id: "exports-request",
+    method: "POST",
+    path: "/exports/request",
+    allowedRoles: ["vendor_manager", "sponsor_user", "organizer_admin"],
+    validate: (body) => {
+      required(body, ["event_id", "export_type"]);
+      return body;
+    },
+    resolveResources: async ({ repos, principal, body }) => {
+      const event = await repos.events.findById(principal.tenant_id, body.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { event, eventPolicy };
+    },
+    handler: async ({ repos, body, principal, resources }) => {
+      const exportId = nextId("export");
+      const exportRequest = {
+        id: exportId,
+        tenant_id: resources.event.tenant_id,
+        event_id: resources.event.id,
+        requested_by_user_id: principal.user_id,
+        requested_for_organization_id: principal.organization_id,
+        export_type: body.export_type,
+        filters: body.filters ?? {},
+        row_count_estimate: await estimateRows(repos, resources.event.tenant_id, body.export_type, resources.event.id),
+        status: resources.eventPolicy.require_export_approval ? "requested" : "generated",
+        approval_required: resources.eventPolicy.require_export_approval,
+        approved_by_user_id: null,
+        approval_reason: null,
+        rejection_reason: null,
+        file_url: resources.eventPolicy.require_export_approval ? null : exportDownloadPath({ id: exportId }),
+        file_expires_at: resources.eventPolicy.require_export_approval ? null : inHours(4),
+        created_at: new Date().toISOString()
+      };
+      return repos.exportRequests.create(exportRequest);
+    },
+    auditEventType: "export.requested"
+  });
+
+  router.addRoute({
+    id: "exports-approve",
+    method: "POST",
+    path: "/exports/:exportId/approve",
+    allowedRoles: ["organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const exportRequest = await repos.exportRequests.findById(principal.tenant_id, params.exportId);
+      const event = await repos.events.findById(principal.tenant_id, exportRequest.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { exportRequest, event, eventPolicy };
+    },
+    handler: async ({ repos, principal, resources }) =>
+      repos.withTransaction(async (txRepos) => {
+        const exportRequest = await txRepos.exportRequests.findById(resources.exportRequest.tenant_id, resources.exportRequest.id);
+        exportRequest.status = "generated";
+        exportRequest.approved_by_user_id = principal.user_id;
+        exportRequest.approval_reason = "Approved for pilot export";
+        exportRequest.file_url = exportDownloadPath(exportRequest);
+        exportRequest.file_expires_at = inHours(4);
+        return txRepos.exportRequests.update(exportRequest);
+      }),
+    auditEventType: "export.approved"
+  });
+
+  router.addRoute({
+    id: "exports-reject",
+    method: "POST",
+    path: "/exports/:exportId/reject",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => {
+      required(body, ["reason"]);
+      return body;
+    },
+    resolveResources: async ({ repos, principal, params }) => {
+      const exportRequest = await repos.exportRequests.findById(principal.tenant_id, params.exportId);
+      const event = await repos.events.findById(principal.tenant_id, exportRequest.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { exportRequest, event, eventPolicy };
+    },
+    handler: async ({ repos, body, resources }) =>
+      repos.withTransaction(async (txRepos) => {
+        const exportRequest = await txRepos.exportRequests.findById(resources.exportRequest.tenant_id, resources.exportRequest.id);
+        exportRequest.status = "rejected";
+        exportRequest.rejection_reason = body.reason;
+        return txRepos.exportRequests.update(exportRequest);
+      }),
+    auditEventType: "export.rejected"
+  });
+
+  router.addRoute({
+    id: "exports-status",
+    method: "GET",
+    path: "/exports/:exportId/status",
+    allowedRoles: ["vendor_manager", "sponsor_user", "organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const exportRequest = await repos.exportRequests.findById(principal.tenant_id, params.exportId);
+      const event = await repos.events.findById(principal.tenant_id, exportRequest.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { exportRequest, event, eventPolicy };
+    },
+    handler: async ({ resources }) => resources.exportRequest,
+    auditEventType: "export.status.view"
+  });
+
+  router.addRoute({
+    id: "exports-short-link-create",
+    method: "POST",
+    path: "/exports/:exportId/short-link",
+    allowedRoles: ["vendor_manager", "sponsor_user", "organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const exportRequest = await repos.exportRequests.findById(principal.tenant_id, params.exportId);
+      const event = await repos.events.findById(principal.tenant_id, exportRequest.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { exportRequest, event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => {
+      if (resources.exportRequest.status !== "generated") {
+        throw new HttpError(409, "Export file is not ready");
+      }
+      if (resources.exportRequest.file_expires_at && Date.parse(resources.exportRequest.file_expires_at) < Date.now()) {
+        throw new HttpError(410, "Export file has expired");
+      }
+      const shortLink = await createShortLinkRecord({
+        repos,
+        tenantId: resources.exportRequest.tenant_id,
+        targetType: "export_download",
+        targetId: resources.exportRequest.id,
+        targetPayload: {
+          export_id: resources.exportRequest.id,
+          event_id: resources.exportRequest.event_id,
+          download_path: exportDownloadPath(resources.exportRequest)
+        },
+        expiresAt: resources.exportRequest.file_expires_at ?? inHours(4)
+      });
+      return serializeShortLink(shortLink);
+    },
+    statusCode: 201,
+    auditEventType: "export.short_link.created"
+  });
+
+  router.addRoute({
+    id: "exports-download",
+    method: "GET",
+    path: "/exports/:exportId/download",
+    allowedRoles: ["vendor_manager", "sponsor_user", "organizer_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const exportRequest = await repos.exportRequests.findById(principal.tenant_id, params.exportId);
+      const event = await repos.events.findById(principal.tenant_id, exportRequest.event_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { exportRequest, event, eventPolicy };
+    },
+    handler: async ({ repos, resources }) => {
+      if (resources.exportRequest.status !== "generated") {
+        throw new HttpError(409, "Export file is not ready");
+      }
+      if (resources.exportRequest.file_expires_at && Date.parse(resources.exportRequest.file_expires_at) < Date.now()) {
+        throw new HttpError(410, "Export file has expired");
+      }
+      const file = await buildExportDownloadPayload(
+        repos,
+        resources.exportRequest.tenant_id,
+        resources.exportRequest.event_id,
+        resources.exportRequest
+      );
+      return {
+        export_id: resources.exportRequest.id,
+        export_type: resources.exportRequest.export_type,
+        file_name: file.file_name,
+        generated_at: resources.exportRequest.created_at,
+        payload: file.payload
+      };
+    },
+    auditEventType: "export.download"
+  });
+
+  router.addRoute({
+    id: "break-glass-request",
+    method: "POST",
+    path: "/break-glass/request",
+    allowedRoles: ["platform_admin"],
+    validate: (body) => {
+      required(body, ["justification", "access_scope", "expires_at"]);
+      return body;
+    },
+    resolveResources: async ({ state, headers }) => ({
+      tenantHint: headers["x-tenant-id"] ?? state.tenants[0].id
+    }),
+    handler: async ({ repos, body, principal, tenantId }) => {
+      const request = {
+        id: nextId("break-glass"),
+        tenant_id: tenantId,
+        requested_by_user_id: principal.user_id,
+        first_approved_by_user_id: null,
+        second_approved_by_user_id: null,
+        justification: body.justification,
+        access_scope: body.access_scope,
+        status: "requested",
+        starts_at: null,
+        expires_at: body.expires_at,
+        revoked_at: null,
+        created_at: new Date().toISOString()
+      };
+      return repos.breakGlassAccess.create(request);
+    },
+    auditEventType: "break_glass.requested"
+  });
+
+  router.addRoute({
+    id: "break-glass-approve",
+    method: "POST",
+    path: "/break-glass/:requestId/approve",
+    allowedRoles: ["platform_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const breakGlassRequest = await repos.breakGlassAccess.findById(principal.tenant_id, params.requestId);
+      return { breakGlassRequest };
+    },
+    handler: async ({ repos, principal, resources }) =>
+      repos.withTransaction(async (txRepos) => {
+        const request = await txRepos.breakGlassAccess.findById(resources.breakGlassRequest.tenant_id, resources.breakGlassRequest.id);
+        if (!request.first_approved_by_user_id) {
+          request.first_approved_by_user_id = principal.user_id;
+          request.status = "partially_approved";
+          return txRepos.breakGlassAccess.update(request);
+        }
+
+        request.second_approved_by_user_id = principal.user_id;
+        request.starts_at = new Date().toISOString();
+        request.status = "active";
+        return txRepos.breakGlassAccess.update(request);
+      }),
+    auditEventType: "break_glass.approved"
+  });
+
+  router.addRoute({
+    id: "break-glass-revoke",
+    method: "POST",
+    path: "/break-glass/:requestId/revoke",
+    allowedRoles: ["platform_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const breakGlassRequest = await repos.breakGlassAccess.findById(principal.tenant_id, params.requestId);
+      return { breakGlassRequest };
+    },
+    handler: async ({ repos, resources }) =>
+      repos.withTransaction(async (txRepos) => {
+        const request = await txRepos.breakGlassAccess.findById(resources.breakGlassRequest.tenant_id, resources.breakGlassRequest.id);
+        request.status = "revoked";
+        request.revoked_at = new Date().toISOString();
+        return txRepos.breakGlassAccess.update(request);
+      }),
+    auditEventType: "break_glass.revoked"
+  });
+
+  router.addRoute({
+    id: "break-glass-list",
+    method: "GET",
+    path: "/break-glass",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, tenantId }) => ({
+      items: [...await repos.breakGlassAccess.listByTenant(tenantId)]
+        .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+    }),
+    auditEventType: "break_glass.view"
+  });
+
+  router.addRoute({
+    id: "audit-logs",
+    method: "GET",
+    path: "/audit/logs",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    handler: async ({ repos, tenantId }) => ({
+      items: [...await repos.auditLogs.listByTenant(tenantId)].sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+    }),
+    auditEventType: "audit.logs.view"
+  });
+}
+
+async function resolveDeviceCredentialResources({ repos, principal, params }) {
+  const device = await repos.devices.findById(principal.tenant_id, params.deviceId);
+
+  let assignment = null;
+  let event = null;
+  let stall = null;
+  let eventPolicy = null;
+
+  try {
+    assignment = await repos.deviceAssignments.findActiveByDeviceId(principal.tenant_id, device.id);
+    event = await repos.events.findById(principal.tenant_id, assignment.event_id);
+    stall = await repos.stalls.findById(principal.tenant_id, assignment.stall_id);
+    eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+  } catch (error) {
+    if (!(error instanceof HttpError) || error.statusCode !== 404) {
+      throw error;
+    }
+  }
+
+  return { device, assignment, event, stall, eventPolicy };
+}
+
+async function resolveAdminUserResources({ repos, principal, params }) {
+  const user = await repos.users.findById(principal.tenant_id, params.userId);
+  const [organization, accessScopes] = await Promise.all([
+    user.organization_id
+      ? repos.organizations.findById(principal.tenant_id, user.organization_id)
+      : Promise.resolve(null),
+    repos.userAccessScopes.listByUser(principal.tenant_id, user.id)
+  ]);
+  return { user, organization, accessScopes };
+}
+
+async function resolveAdminUserScopeAssignmentResources({ repos, principal, params, body }) {
+  const user = await repos.users.findById(principal.tenant_id, params.userId);
+  const [organization, event, stall, sponsorOrganization] = await Promise.all([
+    user.organization_id
+      ? repos.organizations.findById(principal.tenant_id, user.organization_id)
+      : Promise.resolve(null),
+    body.event_id ? repos.events.findById(principal.tenant_id, body.event_id) : Promise.resolve(null),
+    body.stall_id ? repos.stalls.findById(principal.tenant_id, body.stall_id) : Promise.resolve(null),
+    body.sponsor_organization_id
+      ? repos.organizations.findById(principal.tenant_id, body.sponsor_organization_id)
+      : Promise.resolve(null)
+  ]);
+  return { user, organization, event, stall, sponsorOrganization };
+}
+
+async function resolveAdminUserScopeResources({ repos, principal, params }) {
+  const user = await repos.users.findById(principal.tenant_id, params.userId);
+  const accessScope = await repos.userAccessScopes.findById(principal.tenant_id, params.scopeId);
+  if (accessScope.user_id !== user.id) {
+    throw new HttpError(404, "User access scope not found");
+  }
+  return { user, accessScope };
+}
+
+async function createInteractionFromTap({ state, repos, body, resources }) {
+  const interactionResult = await ingestTapEvent({ repos, body, resources });
+  const interaction = interactionResult.interaction;
+
+  const attendeeSessionToken = createAttendeeSessionToken(
+    buildAttendeeSessionPayload(interaction, resources.event.tenant_id),
+    state.sessionSecret
+  );
+  const customerShortLink = await createShortLinkRecord({
+    repos,
+    tenantId: interaction.tenant_id,
+    targetType: "attendee_session",
+    targetId: interaction.id,
+    targetPayload: {
+      interaction_id: interaction.id,
+      session_token: attendeeSessionToken,
+      target_url: `/attendee.html?interactionId=${encodeURIComponent(interaction.id)}&token=${encodeURIComponent(attendeeSessionToken)}`
+    },
+    expiresAt: inHours(24)
+  });
+
+  return {
+    result: interactionResult.mode,
+    interaction_id: interaction.id,
+    tap_event_id: interactionResult.tapEvent.id,
+    consent_status: interaction.consent_status,
+    attendee_preview: null,
+    attendee_session_token: attendeeSessionToken,
+    customer_link: `/attendee/session/${interaction.id}?token=${encodeURIComponent(attendeeSessionToken)}`,
+    customer_short_link: customerShortLink.short_link_url,
+    customer_short_link_expires_at: customerShortLink.expires_at
+  };
+}
+
+async function createShortLinkRecord({
+  repos,
+  tenantId,
+  targetType,
+  targetId,
+  targetPayload,
+  expiresAt,
+  token = createShortLinkToken()
+}) {
+  const shortLinkUrl = shortLinkPath(token);
+  const shortLink = await repos.shortLinks.create({
+    id: nextId("short-link"),
+    tenant_id: tenantId,
+    token_hash: hashShortLinkToken(token),
+    target_type: targetType,
+    target_id: targetId,
+    target_payload: targetPayload,
+    status: "active",
+    expires_at: expiresAt,
+    consumed_at: null,
+    created_at: new Date().toISOString()
+  });
+  return { ...shortLink, short_link_url: shortLinkUrl };
+}
+
+async function resolveShortLinkOperatorResources({ repos, principal, params }) {
+  const shortLink = await repos.shortLinks.findById(principal.tenant_id, params.shortLinkId);
+  return resolveShortLinkTargetResources(repos, shortLink);
+}
+
+async function resolveShortLinkTargetResources(repos, shortLink) {
+  const resources = {
+    shortLink,
+    tenantHint: shortLink.tenant_id
+  };
+  if (shortLink.target_type === "attendee_session") {
+    resources.interaction = await repos.interactions.findById(shortLink.tenant_id, shortLink.target_id);
+    resources.stall = await repos.stalls.findById(shortLink.tenant_id, resources.interaction.stall_id);
+    resources.event = await repos.events.findById(shortLink.tenant_id, resources.interaction.event_id);
+  }
+  if (shortLink.target_type === "export_download") {
+    resources.exportRequest = await repos.exportRequests.findById(shortLink.tenant_id, shortLink.target_id);
+    resources.event = await repos.events.findById(shortLink.tenant_id, resources.exportRequest.event_id);
+  }
+  if (shortLink.target_type === "wallet_pass") {
+    resources.walletPass = await repos.walletPasses.findById(shortLink.tenant_id, shortLink.target_id);
+    resources.interaction = await repos.interactions.findById(shortLink.tenant_id, resources.walletPass.interaction_id);
+    resources.stall = await repos.stalls.findById(shortLink.tenant_id, resources.walletPass.stall_id);
+    resources.event = await repos.events.findById(shortLink.tenant_id, resources.walletPass.event_id);
+  }
+  return resources;
+}
+
+async function resolveShortLink({ repos, resources }) {
+  const shortLink = resources.shortLink;
+  if (shortLink.status !== "active") {
+    throw new HttpError(410, "Short link is no longer active");
+  }
+  if (shortLink.expires_at && Date.parse(shortLink.expires_at) < Date.now()) {
+    await repos.shortLinks.update({
+      ...shortLink,
+      status: "expired"
+    });
+    throw new HttpError(410, "Short link has expired");
+  }
+
+  if (shortLink.target_type === "attendee_session") {
+    return {
+      short_link_id: shortLink.id,
+      target_type: shortLink.target_type,
+      target_id: shortLink.target_id,
+      expires_at: shortLink.expires_at,
+      target_url: shortLink.target_payload?.target_url ?? null,
+      interaction_id: shortLink.target_payload?.interaction_id ?? shortLink.target_id,
+      requires_session_token: true
+    };
+  }
+
+  if (shortLink.target_type === "export_download") {
+    const exportRequest = resources.exportRequest;
+    if (exportRequest.status !== "generated") {
+      throw new HttpError(409, "Export file is not ready");
+    }
+    if (exportRequest.file_expires_at && Date.parse(exportRequest.file_expires_at) < Date.now()) {
+      throw new HttpError(410, "Export file has expired");
+    }
+    const file = await buildExportDownloadPayload(
+      repos,
+      exportRequest.tenant_id,
+      exportRequest.event_id,
+      exportRequest
+    );
+    return {
+      short_link_id: shortLink.id,
+      target_type: shortLink.target_type,
+      target_id: shortLink.target_id,
+      expires_at: shortLink.expires_at,
+      export_id: exportRequest.id,
+      export_type: exportRequest.export_type,
+      file_name: file.file_name,
+      generated_at: exportRequest.created_at,
+      payload: file.payload
+    };
+  }
+
+  if (shortLink.target_type === "wallet_pass") {
+    const walletPass = resources.walletPass;
+    if (!["generated", "delivered"].includes(walletPass.status)) {
+      throw new HttpError(409, "Wallet pass is not available");
+    }
+    return {
+      short_link_id: shortLink.id,
+      target_type: shortLink.target_type,
+      target_id: shortLink.target_id,
+      expires_at: shortLink.expires_at,
+      wallet_pass: serializeWalletPass(walletPass),
+      artifact_ref: walletPass.artifact_ref
+    };
+  }
+
+  return {
+    short_link_id: shortLink.id,
+    target_type: shortLink.target_type,
+    target_id: shortLink.target_id,
+    expires_at: shortLink.expires_at
+  };
+}
+
+function serializeShortLink(shortLink) {
+  return {
+    id: shortLink.id,
+    target_type: shortLink.target_type,
+    target_id: shortLink.target_id,
+    short_link_url: shortLink.short_link_url,
+    expires_at: shortLink.expires_at,
+    status: shortLink.status
+  };
+}
+
+function serializeShortLinkInvestigation(resources) {
+  const shortLink = resources.shortLink;
+  const targetStatus =
+    resources.exportRequest?.status ??
+    resources.walletPass?.status ??
+    resources.interaction?.status ??
+    null;
+  return {
+    id: shortLink.id,
+    target_type: shortLink.target_type,
+    target_id: shortLink.target_id,
+    status: shortLink.status,
+    target_status: targetStatus,
+    event_id: resources.event?.id ?? null,
+    stall_id: resources.stall?.id ?? null,
+    interaction_id: resources.interaction?.id ?? null,
+    export_id: resources.exportRequest?.id ?? null,
+    wallet_pass_id: resources.walletPass?.id ?? null,
+    expires_at: shortLink.expires_at,
+    consumed_at: shortLink.consumed_at,
+    created_at: shortLink.created_at,
+    expired: Boolean(shortLink.expires_at && Date.parse(shortLink.expires_at) < Date.now()),
+    revocable: shortLink.status === "active"
+  };
+}
+
+function buildProviderReadiness(event, env = {}) {
+  const wallet = resolveWalletPassProviderOutcome(env);
+  const notificationChannels = buildNotificationChannelsReadiness(env);
+  const scheduler = resolveNotificationWorkerSchedule(env);
+  return {
+    event_id: event.id,
+    generated_at: new Date().toISOString(),
+    wallet_pass: {
+      enabled: env.WALLET_PASS_ENABLED === "true",
+      mode: env.WALLET_PASS_PROVIDER_MODE ?? "not_configured",
+      status: wallet.status === "generated"
+        ? "ready"
+        : wallet.status === "disabled"
+          ? "disabled"
+          : "misconfigured",
+      failure_code: wallet.failure_code ?? null,
+      non_blocking: true
+    },
+    notifications: notificationChannels,
+    scheduler,
+    blocking: false
+  };
+}
+
+async function buildOperationalArtifactAlerts(repos, event) {
+  const [walletPasses, notifications] = await Promise.all([
+    typeof repos.walletPasses?.listByEvent === "function"
+      ? repos.walletPasses.listByEvent(event.tenant_id, event.id)
+      : [],
+    typeof repos.notifications?.listByEvent === "function"
+      ? repos.notifications.listByEvent(event.tenant_id, event.id)
+      : []
+  ]);
+
+  const walletAlerts = walletPasses
+    .filter((walletPass) => ["failed", "disabled"].includes(walletPass.status))
+    .map((walletPass) => ({
+      id: `wallet:${walletPass.id}`,
+      kind: "wallet_pass",
+      severity: walletPass.status === "failed" ? "warning" : "info",
+      status: walletPass.status,
+      event_id: event.id,
+      interaction_id: walletPass.interaction_id,
+      stall_id: walletPass.stall_id,
+      wallet_pass_id: walletPass.id,
+      notification_id: null,
+      channel: null,
+      provider: "wallet-pass",
+      message: walletPass.failure_message || walletPass.failure_code || "Wallet pass needs operator review.",
+      updated_at: walletPass.updated_at
+    }));
+
+  const notificationAlerts = [];
+  for (const notification of notifications) {
+    const attempts = await repos.notificationAttempts.listByNotification(notification.tenant_id, notification.id);
+    const receipts = await repos.notificationReceipts.listByNotification(notification.tenant_id, notification.id);
+    const receiptGovernance = await buildNotificationReceiptGovernance({
+      repos,
+      tenantId: notification.tenant_id,
+      notification
+    });
+    const latestAttempt = attempts.at(-1) ?? null;
+    const latestReceipt = receipts[0] ?? null;
+    const needsReceiptAlert = Boolean(receiptGovernance.blocking_receipt || receiptGovernance.review_receipt);
+    const needsStatusAlert = ["failed", "cancelled"].includes(notification.status);
+    if (!needsStatusAlert && !needsReceiptAlert) {
+      continue;
+    }
+    notificationAlerts.push({
+      id: `notification:${notification.id}`,
+      kind: "notification",
+      severity: receiptGovernance.blocking_receipt
+        ? "warning"
+        : notification.status === "failed" || receiptGovernance.review_receipt
+          ? "warning"
+          : "info",
+      status: notification.status,
+      event_id: event.id,
+      interaction_id: notification.interaction_id,
+      stall_id: null,
+      wallet_pass_id: null,
+      notification_id: notification.id,
+      channel: notification.channel,
+      provider: latestAttempt?.provider ?? "notification-provider",
+      message:
+        receiptGovernance.resend_blocked_reason ||
+        receiptGovernance.resend_review_reason ||
+        (latestReceipt ? `Provider receipt ${latestReceipt.receipt_type}${latestReceipt.summary ? `: ${latestReceipt.summary}` : "."}` : null) ||
+        latestAttempt?.error_message ||
+        notification.final_error ||
+        `Notification ${notification.status}.`,
+      attempts_count: attempts.length,
+      latest_attempt_status: latestAttempt?.status ?? null,
+      latest_receipt_type: latestReceipt?.receipt_type ?? null,
+      receipts_count: receipts.length,
+      updated_at: notification.updated_at
+    });
+  }
+
+  const items = [...walletAlerts, ...notificationAlerts]
+    .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at));
+  return {
+    event_id: event.id,
+    generated_at: new Date().toISOString(),
+    counts: {
+      total: items.length,
+      wallet_passes: walletAlerts.length,
+      notifications: notificationAlerts.length,
+      receipt_governance: notificationAlerts.filter((item) => item.latest_receipt_type).length,
+      receipt_blocked: notificationAlerts.filter((item) => item.message?.includes("blocks resend")).length,
+      receipt_review: notificationAlerts.filter((item) => item.message?.includes("requires operator review")).length,
+      warning: items.filter((item) => item.severity === "warning").length,
+      info: items.filter((item) => item.severity === "info").length
+    },
+    items
+  };
+}
+
+async function buildArtifactAttemptsCsvExport(repos, event) {
+  const [walletAttempts, notifications] = await Promise.all([
+    typeof repos.walletPassAttempts?.listByEvent === "function"
+      ? repos.walletPassAttempts.listByEvent(event.tenant_id, event.id)
+      : [],
+    typeof repos.notifications?.listByEvent === "function"
+      ? repos.notifications.listByEvent(event.tenant_id, event.id)
+      : []
+  ]);
+  const notificationRows = [];
+  const receiptRows = [];
+  for (const notification of notifications) {
+    const attempts = await repos.notificationAttempts.listByNotification(notification.tenant_id, notification.id);
+    const receipts = await repos.notificationReceipts.listByNotification(notification.tenant_id, notification.id);
+    for (const attempt of attempts) {
+      notificationRows.push({
+        artifact_type: "notification",
+        artifact_id: notification.id,
+        attempt_id: attempt.id,
+        interaction_id: notification.interaction_id,
+        channel_or_pass_type: notification.channel,
+        provider: attempt.provider,
+        status: attempt.status,
+        reason: notification.message_type,
+        failure_code: "",
+        failure_message: attempt.error_message ?? "",
+        attempted_by_user_id: notification.approved_by_user_id ?? notification.created_by_user_id ?? "",
+        attempted_at: attempt.attempted_at
+      });
+    }
+    for (const receipt of receipts) {
+      receiptRows.push({
+        artifact_type: "notification_receipt",
+        artifact_id: notification.id,
+        attempt_id: receipt.id,
+        interaction_id: notification.interaction_id,
+        channel_or_pass_type: notification.channel,
+        provider: receipt.provider,
+        status: receipt.receipt_type,
+        reason: notification.message_type,
+        failure_code: receipt.provider_event_id ?? "",
+        failure_message: receipt.summary ?? "",
+        attempted_by_user_id: "notification-provider-webhook",
+        attempted_at: receipt.occurred_at ?? receipt.received_at
+      });
+    }
+  }
+  const walletRows = walletAttempts.map((attempt) => ({
+    artifact_type: "wallet_pass",
+    artifact_id: attempt.wallet_pass_id,
+    attempt_id: attempt.id,
+    interaction_id: attempt.interaction_id,
+    channel_or_pass_type: attempt.pass_type,
+    provider: attempt.provider,
+    status: attempt.status,
+    reason: attempt.reason,
+    failure_code: attempt.failure_code ?? "",
+    failure_message: attempt.failure_message ?? "",
+    attempted_by_user_id: attempt.attempted_by_user_id ?? "",
+    attempted_at: attempt.attempted_at
+  }));
+  const columns = [
+    "artifact_type",
+    "artifact_id",
+    "attempt_id",
+    "interaction_id",
+    "channel_or_pass_type",
+    "provider",
+    "status",
+    "reason",
+    "failure_code",
+    "failure_message",
+    "attempted_by_user_id",
+    "attempted_at"
+  ];
+  const rows = [...notificationRows, ...receiptRows, ...walletRows]
+    .sort((left, right) => Date.parse(right.attempted_at) - Date.parse(left.attempted_at));
+  return {
+    event_id: event.id,
+    filename: `${event.id}-artifact-attempt-evidence.csv`,
+    content_type: "text/csv",
+    row_count: rows.length,
+    csv: toCsv(columns, rows)
+  };
+}
+
+function toCsv(columns, rows) {
+  return [
+    columns.join(","),
+    ...rows.map((row) => columns.map((column) => csvEscape(row[column])).join(","))
+  ].join("\n");
+}
+
+function csvEscape(value) {
+  const text = value == null ? "" : String(value);
+  if (!/[",\n]/.test(text)) {
+    return text;
+  }
+  return `"${text.replaceAll("\"", "\"\"")}"`;
+}
+
+const COMMERCIAL_PARTNER_TYPES = ["referrer", "channel_partner", "delivery_ecosystem_partner"];
+const COMMERCIAL_PARTNER_STATUSES = ["active", "inactive"];
+const COMMERCIAL_PARTNER_ACCESS_LEVELS = ["commercial_status_only", "platform_access_provisioned"];
+const COMMERCIAL_PIPELINE_STAGES = [
+  "lead_added",
+  "contacted",
+  "replied",
+  "call_scheduled",
+  "demo_done",
+  "proposal_sent",
+  "negotiation",
+  "closed_won",
+  "closed_lost"
+];
+const COMMERCIAL_OFFER_STRUCTURES = ["organizer_paid", "sponsor_funded", "mixed"];
+const COMMERCIAL_PAYOUT_STATUSES = ["pending", "approved", "paid", "cancelled"];
+const COMMERCIAL_APPROVAL_TYPES = ["standard_proposal", "pricing_discount", "pricing_exception", "partner_payout_exception"];
+const COMMERCIAL_APPROVER_ROLES = ["account_owner", "founder", "product_owner", "platform_admin"];
+const COMMERCIAL_STATUS_UPDATE_TYPES = ["commercial_status", "deal_status", "payout_status"];
+const COMMERCIAL_POSITIONING_RULE =
+  "Commercial communication must position the platform as exhibitor ROI + sponsor revenue + measurable engagement, not NFC novelty or AI novelty.";
+const COMMERCIAL_DAILY_TARGETS = [
+  { metric: "outreach_touches_or_connections", minimum: 20 },
+  { metric: "follow_ups", minimum: 10 },
+  { metric: "qualification_calls", minimum: 2 },
+  { metric: "demos", minimum: 1 }
+];
+const COMMERCIAL_DEMO_SOP = [
+  "Live or simulated physical tap",
+  "Vendor lead capture and ROI view",
+  "Sponsor aggregate reporting and snapshot workflow",
+  "Consent, export approval, masking, and break-glass trust controls",
+  "Trust objection handling for sensitive organizer data"
+];
+
+function buildCommercialGovernance({ partners, deals, payouts, approvals }) {
+  return {
+    rtm_scope: "Deferred/Gap Step 1 mandatory production scope",
+    positioning_rule: COMMERCIAL_POSITIONING_RULE,
+    partner_types: COMMERCIAL_PARTNER_TYPES,
+    partner_access_rule: "Partners receive commercial status updates only unless platform access is explicitly provisioned by a platform admin.",
+    forbidden_partner_access: [
+      "raw_attendee_data",
+      "organizer_dashboard",
+      "vendor_leads",
+      "sponsor_pii"
+    ],
+    offer_structures: COMMERCIAL_OFFER_STRUCTURES,
+    pipeline_stages: COMMERCIAL_PIPELINE_STAGES,
+    daily_targets: COMMERCIAL_DAILY_TARGETS,
+    demo_sop: COMMERCIAL_DEMO_SOP,
+    pricing_controls: {
+      standard_proposal_approver_roles: ["account_owner", "platform_admin"],
+      restricted_approver_roles: ["founder", "product_owner"],
+      restricted_approval_types: ["pricing_discount", "pricing_exception", "partner_payout_exception"]
+    },
+    summary: {
+      partners: partners.length,
+      active_partners: partners.filter((entry) => entry.status === "active").length,
+      deals: deals.length,
+      open_deals: deals.filter((entry) => !["closed_won", "closed_lost"].includes(entry.stage)).length,
+      payouts: payouts.length,
+      payouts_paid: payouts.filter((entry) => entry.status === "paid").length,
+      approvals: approvals.length
+    }
+  };
+}
+
+function validateTapBody(body) {
+  required(body, ["device_id", "event_id", "stall_id", "local_event_id", "tap_type", "occurred_at"]);
+  if (!["phone_ndef", "card_uid", "qr"].includes(body.tap_type)) {
+    throw new HttpError(400, "tap_type must be phone_ndef, card_uid, or qr");
+  }
+  return body;
+}
+
+function validateCommercialPartnerCreateBody(body) {
+  required(body, ["name", "partner_type"]);
+  validateCommercialPartnerFields(body, { create: true });
+  return body;
+}
+
+function validateCommercialPartnerUpdateBody(body) {
+  const mutableFields = ["name", "partner_type", "status", "access_level", "platform_user_id", "notes"];
+  if (!mutableFields.some((field) => field in body)) {
+    throw new HttpError(400, "At least one mutable commercial partner field must be provided");
+  }
+  validateCommercialPartnerFields(body, { create: false });
+  return body;
+}
+
+function validateCommercialPartnerFields(body) {
+  if ("partner_type" in body && !COMMERCIAL_PARTNER_TYPES.includes(body.partner_type)) {
+    throw new HttpError(400, "partner_type is invalid");
+  }
+  if ("status" in body && !COMMERCIAL_PARTNER_STATUSES.includes(body.status)) {
+    throw new HttpError(400, "status is invalid");
+  }
+  if ("access_level" in body && !COMMERCIAL_PARTNER_ACCESS_LEVELS.includes(body.access_level)) {
+    throw new HttpError(400, "access_level is invalid");
+  }
+  if (body.platform_user_id && body.access_level !== "platform_access_provisioned") {
+    throw new HttpError(400, "platform_user_id requires access_level platform_access_provisioned");
+  }
+  if ((body.access_level ?? "commercial_status_only") === "platform_access_provisioned" && !body.platform_user_id) {
+    throw new HttpError(400, "platform_access_provisioned requires platform_user_id");
+  }
+  for (const field of ["name", "notes"]) {
+    if (field in body && body[field] != null && typeof body[field] !== "string") {
+      throw new HttpError(400, `${field} must be a string when provided`);
+    }
+  }
+}
+
+async function resolveCommercialPartnerAccessUser({ repos, principal, body }) {
+  if (!body.platform_user_id) {
+    return { platformAccessUser: null };
+  }
+  const user = await repos.users.findById(principal.tenant_id, body.platform_user_id);
+  if (user.status !== "active") {
+    throw new HttpError(409, "Partner platform access requires an active user");
+  }
+  return { platformAccessUser: user };
+}
+
+function validateCommercialDealCreateBody(body) {
+  required(body, ["account_name", "stage", "next_action", "next_action_at", "offer_structure", "commercial_positioning_ack"]);
+  validateCommercialDealFields(body);
+  if (body.commercial_positioning_ack !== true) {
+    throw new HttpError(400, "commercial_positioning_ack must be true before a commercial deal is created");
+  }
+  return body;
+}
+
+function validateCommercialDealUpdateBody(body) {
+  const mutableFields = [
+    "partner_id",
+    "account_name",
+    "stage",
+    "next_action",
+    "next_action_at",
+    "offer_structure",
+    "commercial_positioning_ack",
+    "notes"
+  ];
+  if (!mutableFields.some((field) => field in body)) {
+    throw new HttpError(400, "At least one mutable commercial deal field must be provided");
+  }
+  validateCommercialDealFields(body);
+  if ("commercial_positioning_ack" in body && body.commercial_positioning_ack !== true) {
+    throw new HttpError(400, "commercial_positioning_ack cannot be unset for production commercial deals");
+  }
+  return body;
+}
+
+function validateCommercialDealFields(body) {
+  if ("stage" in body && !COMMERCIAL_PIPELINE_STAGES.includes(body.stage)) {
+    throw new HttpError(400, "stage is invalid");
+  }
+  if ("offer_structure" in body && !COMMERCIAL_OFFER_STRUCTURES.includes(body.offer_structure)) {
+    throw new HttpError(400, "offer_structure is invalid");
+  }
+  if ("commercial_positioning_ack" in body && typeof body.commercial_positioning_ack !== "boolean") {
+    throw new HttpError(400, "commercial_positioning_ack must be boolean");
+  }
+  for (const field of ["account_name", "next_action", "next_action_at", "notes"]) {
+    if (field in body && body[field] != null && typeof body[field] !== "string") {
+      throw new HttpError(400, `${field} must be a string when provided`);
+    }
+  }
+  for (const field of ["account_name", "next_action", "next_action_at"]) {
+    if (field in body && !String(body[field] ?? "").trim()) {
+      throw new HttpError(400, `${field} must be non-empty`);
+    }
+  }
+  if ("next_action_at" in body && Number.isNaN(Date.parse(body.next_action_at))) {
+    throw new HttpError(400, "next_action_at must be a valid date-time");
+  }
+}
+
+function validateCommercialPayoutCreateBody(body) {
+  required(body, ["partner_id", "amount_cents"]);
+  validateCommercialPayoutFields(body);
+  return body;
+}
+
+function validateCommercialPayoutUpdateBody(body) {
+  const mutableFields = ["partner_id", "deal_id", "amount_cents", "currency", "status", "client_payment_received_at", "notes"];
+  if (!mutableFields.some((field) => field in body)) {
+    throw new HttpError(400, "At least one mutable commercial payout field must be provided");
+  }
+  validateCommercialPayoutFields(body);
+  return body;
+}
+
+function validateCommercialPayoutFields(body) {
+  if ("amount_cents" in body && (!Number.isInteger(body.amount_cents) || body.amount_cents < 0)) {
+    throw new HttpError(400, "amount_cents must be a non-negative integer");
+  }
+  if ("status" in body && !COMMERCIAL_PAYOUT_STATUSES.includes(body.status)) {
+    throw new HttpError(400, "status is invalid");
+  }
+  if (body.status === "paid" && !body.client_payment_received_at) {
+    throw new HttpError(400, "paid payouts require client_payment_received_at");
+  }
+  for (const field of ["currency", "client_payment_received_at", "notes"]) {
+    if (field in body && body[field] != null && typeof body[field] !== "string") {
+      throw new HttpError(400, `${field} must be a string when provided`);
+    }
+  }
+}
+
+async function resolveCommercialPayoutResources({ repos, principal, body }) {
+  const partnerId = body.partner_id;
+  const partner = partnerId
+    ? await repos.commercialPartners.findById(principal.tenant_id, partnerId)
+    : null;
+  const deal = body.deal_id
+    ? await repos.commercialDeals.findById(principal.tenant_id, body.deal_id)
+    : null;
+  if (partner && deal?.partner_id && deal.partner_id !== partner.id) {
+    throw new HttpError(409, "deal_id must belong to partner_id");
+  }
+  return { partner, deal };
+}
+
+function validateCommercialApprovalBody(body) {
+  required(body, ["approval_type", "approver_role", "approval_status", "reason"]);
+  if (!COMMERCIAL_APPROVAL_TYPES.includes(body.approval_type)) {
+    throw new HttpError(400, "approval_type is invalid");
+  }
+  if (!COMMERCIAL_APPROVER_ROLES.includes(body.approver_role)) {
+    throw new HttpError(400, "approver_role is invalid");
+  }
+  if (!["pending", "approved", "rejected"].includes(body.approval_status)) {
+    throw new HttpError(400, "approval_status is invalid");
+  }
+  if (
+    ["pricing_discount", "pricing_exception", "partner_payout_exception"].includes(body.approval_type) &&
+    !["founder", "product_owner"].includes(body.approver_role)
+  ) {
+    throw new HttpError(409, "Pricing and payout exceptions require founder or product owner approval");
+  }
+  for (const field of ["subject_id", "reason"]) {
+    if (field in body && body[field] != null && typeof body[field] !== "string") {
+      throw new HttpError(400, `${field} must be a string when provided`);
+    }
+  }
+  return body;
+}
+
+function validateCommercialPartnerStatusUpdateBody(body) {
+  required(body, ["update_type", "summary"]);
+  if (!COMMERCIAL_STATUS_UPDATE_TYPES.includes(body.update_type)) {
+    throw new HttpError(400, "update_type is invalid");
+  }
+  if (typeof body.summary !== "string" || body.summary.trim().length === 0) {
+    throw new HttpError(400, "summary must be a non-empty string");
+  }
+  return body;
+}
+
+function validateAdminUserCreateBody(body) {
+  required(body, ["email", "display_name", "role", "organization_id"]);
+  if (!body.email.includes("@")) {
+    throw new HttpError(400, "email must be a valid email address");
+  }
+  if (!["platform_admin", "organizer_admin", "vendor_manager", "sponsor_user", "ops_user"].includes(body.role)) {
+    throw new HttpError(400, "role is invalid");
+  }
+  if ("status" in body && !["pending_invite", "active"].includes(body.status)) {
+    throw new HttpError(400, "status must be pending_invite or active when creating a user");
+  }
+  return body;
+}
+
+function validateAdminUserUpdateBody(body) {
+  const mutableFields = [
+    "email",
+    "display_name",
+    "role",
+    "organization_id",
+    "external_identity_provider",
+    "external_subject",
+    "mfa_required"
+  ];
+  if (!mutableFields.some((field) => field in body)) {
+    throw new HttpError(400, "At least one mutable user field must be provided");
+  }
+  if ("email" in body && !body.email.includes("@")) {
+    throw new HttpError(400, "email must be a valid email address");
+  }
+  if ("role" in body && !["platform_admin", "organizer_admin", "vendor_manager", "sponsor_user", "ops_user"].includes(body.role)) {
+    throw new HttpError(400, "role is invalid");
+  }
+  if ("mfa_required" in body && typeof body.mfa_required !== "boolean") {
+    throw new HttpError(400, "mfa_required must be boolean");
+  }
+  return body;
+}
+
+function validateAdminUserActionBody(body) {
+  if ("reason" in body && body.reason != null && typeof body.reason !== "string") {
+    throw new HttpError(400, "reason must be a string when provided");
+  }
+  return body;
+}
+
+function validateAdminUserScopeBody(body) {
+  if (!body.event_id && !body.stall_id && !body.sponsor_organization_id) {
+    throw new HttpError(400, "At least one scope field must be provided");
+  }
+  if (body.stall_id && !body.event_id) {
+    throw new HttpError(400, "stall_id requires event_id");
+  }
+  if (body.stall_id && body.sponsor_organization_id) {
+    throw new HttpError(400, "stall_id and sponsor_organization_id cannot be combined");
+  }
+  return body;
+}
+
+function validatePentestFindingCreateBody(body) {
+  required(body, ["title", "severity"]);
+  validatePentestFindingFields(body, { create: true });
+  return body;
+}
+
+function validatePentestFindingUpdateBody(body) {
+  const mutableFields = [
+    "source",
+    "title",
+    "severity",
+    "category",
+    "status",
+    "affected_area",
+    "description",
+    "evidence",
+    "remediation_plan",
+    "owner_user_id",
+    "due_at",
+    "resolved_at",
+    "accepted_risk_reason"
+  ];
+  if (!mutableFields.some((field) => field in body)) {
+    throw new HttpError(400, "At least one mutable pen-test finding field must be provided");
+  }
+  validatePentestFindingFields(body, { create: false });
+  if (body.status === "accepted_risk" && !body.accepted_risk_reason) {
+    throw new HttpError(400, "accepted_risk status requires accepted_risk_reason");
+  }
+  return body;
+}
+
+function validatePentestFindingFields(body) {
+  if ("severity" in body && !["critical", "high", "medium", "low", "info"].includes(body.severity)) {
+    throw new HttpError(400, "severity must be critical, high, medium, low, or info");
+  }
+  if ("status" in body && !["open", "triaged", "in_progress", "remediated", "accepted_risk", "false_positive"].includes(body.status)) {
+    throw new HttpError(400, "status is invalid");
+  }
+  if ("evidence" in body && (typeof body.evidence !== "object" || body.evidence === null || Array.isArray(body.evidence))) {
+    throw new HttpError(400, "evidence must be an object when provided");
+  }
+  for (const field of ["title", "source", "category", "affected_area", "description", "remediation_plan", "accepted_risk_reason"]) {
+    if (field in body && body[field] != null && typeof body[field] !== "string") {
+      throw new HttpError(400, `${field} must be a string when provided`);
+    }
+  }
+}
+
+function validateFinalLaunchApprovalBody(body) {
+  required(body, ["approver_role", "approver_label", "approval_status"]);
+  if (!["platform_admin", "organizer_owner", "security_owner", "business_owner"].includes(body.approver_role)) {
+    throw new HttpError(400, "approver_role is invalid");
+  }
+  if (!["pending", "approved", "rejected"].includes(body.approval_status)) {
+    throw new HttpError(400, "approval_status is invalid");
+  }
+  for (const field of ["approver_label", "note"]) {
+    if (field in body && body[field] != null && typeof body[field] !== "string") {
+      throw new HttpError(400, `${field} must be a string when provided`);
+    }
+  }
+  return body;
+}
+
+function required(body, fields) {
+  for (const field of fields) {
+    if (!(field in body)) {
+      throw new HttpError(400, `Missing field: ${field}`);
+    }
+  }
+}
+
+function normalizeManagedUserEmail(email) {
+  return String(email).trim().toLowerCase();
+}
+
+function assertOrganizationCompatibleWithRole(role, organization) {
+  const expectedTypeByRole = {
+    platform_admin: "platform",
+    organizer_admin: "organizer",
+    vendor_manager: "vendor",
+    sponsor_user: "sponsor",
+    ops_user: "platform"
+  };
+  const expectedType = expectedTypeByRole[role];
+  if (!expectedType) {
+    throw new HttpError(400, "Unsupported user role");
+  }
+  if (organization.type !== expectedType) {
+    throw new HttpError(409, `Role ${role} requires an organization of type ${expectedType}`);
+  }
+}
+
+function validateScopeAssignmentForManagedUser(resources) {
+  const { user, organization, event, stall, sponsorOrganization } = resources;
+  if (user.role === "platform_admin") {
+    throw new HttpError(409, "Platform admins do not use scoped access assignments");
+  }
+  if (stall && event && stall.event_id !== event.id) {
+    throw new HttpError(409, "stall_id must belong to the provided event_id");
+  }
+  if (sponsorOrganization && sponsorOrganization.type !== "sponsor") {
+    throw new HttpError(409, "sponsor_organization_id must reference a sponsor organization");
+  }
+
+  switch (user.role) {
+    case "organizer_admin":
+      if (!event || stall || sponsorOrganization) {
+        throw new HttpError(409, "Organizer admins require an event-only access scope");
+      }
+      if (organization?.id !== event.organizer_organization_id) {
+        throw new HttpError(409, "Organizer admin organization must match the event organizer");
+      }
+      return;
+    case "vendor_manager":
+      if (!event || !stall || sponsorOrganization) {
+        throw new HttpError(409, "Vendor managers require event_id and stall_id access");
+      }
+      if (organization?.id !== stall.vendor_organization_id) {
+        throw new HttpError(409, "Vendor manager organization must match the stall vendor organization");
+      }
+      return;
+    case "sponsor_user":
+      if (!event || stall || !sponsorOrganization) {
+        throw new HttpError(409, "Sponsor users require event_id and sponsor_organization_id access");
+      }
+      if (organization?.id !== sponsorOrganization.id) {
+        throw new HttpError(409, "Sponsor user organization must match the sponsor organization scope");
+      }
+      return;
+    case "ops_user":
+      if (!event || stall || sponsorOrganization) {
+        throw new HttpError(409, "Ops users require an event-only access scope");
+      }
+      return;
+    default:
+      throw new HttpError(409, "Unsupported role for scoped access");
+  }
+}
+
+function buildAdminReferenceLookups({ organizations, events, stalls }) {
+  return {
+    organizations: new Map(organizations.map((entry) => [entry.id, entry])),
+    events: new Map(events.map((entry) => [entry.id, entry])),
+    stalls: new Map(stalls.map((entry) => [entry.id, entry]))
+  };
+}
+
+function formatManagedUser(user, { organization = null, accessScopes = [], lookups }) {
+  return {
+    id: user.id,
+    tenant_id: user.tenant_id,
+    organization_id: user.organization_id,
+    organization_name: organization?.name ?? null,
+    organization_type: organization?.type ?? null,
+    email: user.email,
+    display_name: user.display_name,
+    role: user.role,
+    status: user.status,
+    identity_linked: Boolean(user.external_identity_provider && user.external_subject),
+    external_identity_provider: user.external_identity_provider ?? null,
+    external_subject: user.external_subject ?? null,
+    last_login_at: user.last_login_at ?? null,
+    disabled_at: user.disabled_at ?? null,
+    disabled_reason: user.disabled_reason ?? null,
+    mfa_required: user.mfa_required ?? false,
+    invited_at: user.invited_at ?? null,
+    deleted_at: user.deleted_at ?? null,
+    created_at: user.created_at,
+    access_scope_count: accessScopes.length,
+    access_scopes: accessScopes.map((scope) => formatManagedUserScope(scope, lookups))
+  };
+}
+
+function formatManagedUserScope(scope, lookups) {
+  const event = scope.event_id ? lookups.events.get(scope.event_id) : null;
+  const stall = scope.stall_id ? lookups.stalls.get(scope.stall_id) : null;
+  const sponsorOrganization = scope.sponsor_organization_id
+    ? lookups.organizations.get(scope.sponsor_organization_id)
+    : null;
+
+  return {
+    id: scope.id,
+    event_id: scope.event_id ?? null,
+    event_name: event?.name ?? null,
+    stall_id: scope.stall_id ?? null,
+    stall_code: stall?.code ?? null,
+    stall_name: stall?.name ?? null,
+    sponsor_organization_id: scope.sponsor_organization_id ?? null,
+    sponsor_organization_name: sponsorOrganization?.name ?? null,
+    created_at: scope.created_at
+  };
+}
+
+function formatOrganizationSummary(organization) {
+  return {
+    id: organization.id,
+    tenant_id: organization.tenant_id,
+    type: organization.type,
+    name: organization.name,
+    created_at: organization.created_at
+  };
+}
+
+function formatEventSummary(event) {
+  return {
+    id: event.id,
+    tenant_id: event.tenant_id,
+    organizer_organization_id: event.organizer_organization_id,
+    name: event.name,
+    status: event.status,
+    starts_at: event.starts_at,
+    ends_at: event.ends_at
+  };
+}
+
+function formatStallSummary(stall) {
+  return {
+    id: stall.id,
+    tenant_id: stall.tenant_id,
+    event_id: stall.event_id,
+    vendor_organization_id: stall.vendor_organization_id,
+    sponsor_organization_id: stall.sponsor_organization_id,
+    code: stall.code,
+    name: stall.name
+  };
+}
+
+function normalizeNullableId(value) {
+  return value ?? null;
+}
+
+function buildConsentEvidence({ body = {}, headers = {} }) {
+  const forwardedFor = headers["x-forwarded-for"]?.split(",")[0]?.trim();
+  return {
+    locale: body.locale ?? body.consent_locale ?? headers["accept-language"]?.split(",")[0]?.trim() ?? null,
+    ip_address: body.ip_address ?? forwardedFor ?? headers["x-real-ip"] ?? null,
+    user_agent: body.user_agent ?? headers["user-agent"] ?? null
+  };
+}
+
+const COMMUNICATION_CHANNELS = ["email", "sms", "whatsapp"];
+
+function validateCommunicationChannelConsentChoices(choices) {
+  if (choices == null) {
+    return;
+  }
+  if (typeof choices !== "object" || Array.isArray(choices)) {
+    throw new HttpError(400, "communication_channel_consents must be an object");
+  }
+  for (const [channel, allowed] of Object.entries(choices)) {
+    if (!COMMUNICATION_CHANNELS.includes(channel)) {
+      throw new HttpError(400, "Unsupported communication channel consent");
+    }
+    if (typeof allowed !== "boolean") {
+      throw new HttpError(400, "Communication channel consent choices must be explicit booleans");
+    }
+  }
+}
+
+async function upsertCommunicationChannelConsents({
+  repos,
+  interaction,
+  attendee,
+  choices,
+  evidence,
+  source = "attendee_self_service"
+}) {
+  if (!choices) {
+    return [];
+  }
+  const now = new Date().toISOString();
+  const records = [];
+  for (const [channel, allowed] of Object.entries(choices)) {
+    if (allowed) {
+      await repos.communicationSuppressions.deactivateByInteractionAndChannel(
+        interaction.tenant_id,
+        interaction.id,
+        channel,
+        now
+      );
+    }
+    records.push(await repos.communicationChannelConsents.upsert({
+      id: nextId("channel-consent"),
+      tenant_id: interaction.tenant_id,
+      interaction_id: interaction.id,
+      attendee_id: attendee?.id ?? interaction.attendee_id ?? null,
+      channel,
+      allowed,
+      source,
+      evidence,
+      created_at: now,
+      updated_at: now
+    }));
+  }
+  return records;
+}
+
+async function revokeCommunicationChannelConsents({ repos, interaction, evidence }) {
+  const existing = await repos.communicationChannelConsents.listByInteraction(interaction.tenant_id, interaction.id);
+  const now = new Date().toISOString();
+  const records = [];
+  const channels = existing.length ? existing.map((record) => record.channel) : COMMUNICATION_CHANNELS;
+  for (const channel of channels) {
+    const record = existing.find((entry) => entry.channel === channel);
+    const activeSuppression = await repos.communicationSuppressions.findActiveByInteractionAndChannel(
+      interaction.tenant_id,
+      interaction.id,
+      channel
+    );
+    if (!activeSuppression) {
+      await repos.communicationSuppressions.create({
+        id: nextId("communication-suppression"),
+        tenant_id: interaction.tenant_id,
+        event_id: interaction.event_id,
+        interaction_id: interaction.id,
+        attendee_id: interaction.attendee_id ?? null,
+        channel,
+        status: "active",
+        reason: "Attendee revoked communication channel consent",
+        source: "consent_revoke",
+        created_at: now,
+        updated_at: now
+      });
+    }
+    if (!record) {
+      continue;
+    }
+    records.push(await repos.communicationChannelConsents.upsert({
+      ...record,
+      allowed: false,
+      source: "consent_revoke",
+      evidence,
+      updated_at: now
+    }));
+  }
+  return records;
+}
+
+async function cancelQueuedFollowupsForInteraction({ repos, interaction, channels }) {
+  const followups = await repos.followupMessages.listByInteraction(interaction.tenant_id, interaction.id);
+  const now = new Date().toISOString();
+  const cancelled = [];
+  for (const followup of followups) {
+    if (!channels.includes(followup.channel) || followup.status !== "queued") {
+      continue;
+    }
+    followup.status = "cancelled";
+    followup.updated_at = now;
+    const updatedFollowup = await repos.followupMessages.update(followup);
+    let updatedNotification = null;
+    if (followup.notification_id) {
+      const notification = await repos.notifications.findById(interaction.tenant_id, followup.notification_id);
+      if (!["sent", "cancelled"].includes(notification.status)) {
+        notification.status = "cancelled";
+        notification.updated_at = now;
+        updatedNotification = await repos.notifications.update(notification);
+      }
+    }
+    cancelled.push({
+      followup: updatedFollowup,
+      notification: updatedNotification
+    });
+  }
+  return cancelled;
+}
+
+async function estimateRows(repos, tenantId, exportType, eventId) {
+  if (exportType === "organizer_event_report" || exportType === "sponsor_dashboard_snapshot") {
+    return 1;
+  }
+  if (exportType === "vendor_leads" || exportType === "sponsor_leads") {
+    const interactions = await repos.interactions.listByEvent(tenantId, eventId);
+    return interactions.filter((interaction) => leadExportConsentAllowed(interaction, exportType)).length;
+  }
+  return (await repos.interactions.listByEvent(tenantId, eventId)).length;
+}
+
+function exportDownloadPath(exportRequest) {
+  return `/exports/${exportRequest.id}/download`;
+}
+
+function inHours(hours) {
+  return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+}
+
+function average(values) {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function matchesIncidentFilters(incident, filters) {
+  if (filters.severity && incident.severity !== filters.severity) {
+    return false;
+  }
+  if (filters.status && incident.status !== filters.status) {
+    return false;
+  }
+  if (filters.deviceId && incident.device_id !== filters.deviceId) {
+    return false;
+  }
+  if (filters.stallId && incident.stall_id !== filters.stallId) {
+    return false;
+  }
+  if (filters.area) {
+    const haystack = `${incident.stall_id ?? ""} ${incident.code ?? ""} ${incident.message ?? ""}`.toLowerCase();
+    if (!haystack.includes(String(filters.area).toLowerCase())) {
+      return false;
+    }
+  }
+  if (filters.recentHours) {
+    const recentHours = Number(filters.recentHours);
+    if (Number.isFinite(recentHours) && recentHours > 0) {
+      const timestamp = incident.occurred_at ?? incident.created_at;
+      if (!timestamp || Date.now() - Date.parse(timestamp) > recentHours * 60 * 60 * 1000) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+async function buildIncidentSummary(repos, tenantId, eventId, incident, alerts) {
+  const device = await repos.devices.findById(tenantId, incident.device_id);
+  const stall = incident.stall_id ? await repos.stalls.findById(tenantId, incident.stall_id) : null;
+  const relatedAlerts = alerts.filter((alert) => incidentMatchesAlert(incident, alert));
+  return {
+    id: incident.id,
+    device_id: incident.device_id,
+    serial_number: device.serial_number,
+    stall_id: incident.stall_id,
+    stall_name: stall?.name ?? null,
+    severity: incident.severity,
+    code: incident.code,
+    message: incident.message ?? null,
+    status: incident.status,
+    occurred_at: incident.occurred_at ?? incident.created_at,
+    resolved_at: incident.resolved_at ?? null,
+    assignment_checksum: incident.assignment_checksum ?? null,
+    area_label: stall?.name ?? incident.stall_id ?? "Event-wide",
+    related_alerts: relatedAlerts.map(formatAlertEvent)
+  };
+}
+
+async function buildIncidentInvestigation(repos, tenantId, eventId, incident) {
+  const [device, stall, alerts, snapshots, auditLogs, exportRequests, breakGlassRequests, heartbeats, deviceIncidents] = await Promise.all([
+    repos.devices.findById(tenantId, incident.device_id),
+    incident.stall_id ? repos.stalls.findById(tenantId, incident.stall_id) : Promise.resolve(null),
+    repos.iotAlertEvents.listByEvent(tenantId, eventId, { limit: 200 }),
+    repos.iotDeviceStatusSnapshots.listByEvent(tenantId, eventId),
+    repos.auditLogs.listByTenant(tenantId),
+    repos.exportRequests.listByEvent(tenantId, eventId),
+    repos.breakGlassAccess.listByTenant(tenantId),
+    repos.heartbeats.listByDevice(tenantId, incident.device_id),
+    repos.incidents.listByDevice(tenantId, incident.device_id)
+  ]);
+
+  const snapshot = snapshots.find((entry) => entry.device_id === incident.device_id) ?? null;
+  const relatedAlerts = alerts
+    .filter((alert) => incidentMatchesAlert(incident, alert))
+    .map(formatAlertEvent);
+  const relatedAuditLogs = auditLogs
+    .filter((entry) => incidentMatchesAuditLog(incident, entry))
+    .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+    .slice(0, 20);
+  const relatedExports = exportRequests
+    .filter((entry) => incidentMatchesExport(incident, entry))
+    .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+    .slice(0, 10);
+  const relatedBreakGlass = breakGlassRequests
+    .filter((entry) => incidentMatchesBreakGlass(incident, entry))
+    .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+    .slice(0, 10);
+
+  return {
+    item: {
+      id: incident.id,
+      device_id: incident.device_id,
+      serial_number: device.serial_number,
+      stall_id: incident.stall_id,
+      stall_name: stall?.name ?? null,
+      severity: incident.severity,
+      code: incident.code,
+      message: incident.message ?? null,
+      status: incident.status,
+      occurred_at: incident.occurred_at ?? incident.created_at,
+      resolved_at: incident.resolved_at ?? null,
+      assignment_checksum: incident.assignment_checksum ?? null,
+      metadata: incident.metadata ?? {}
+    },
+    fleet_context: snapshot
+      ? {
+          assignment_status: snapshot.assignment_status,
+          diagnostics_status: snapshot.diagnostics_status,
+          connectivity_status: snapshot.connectivity_status,
+          reader_status: snapshot.reader_status,
+          app_version: snapshot.app_version,
+          firmware_version: snapshot.firmware_version,
+          local_queue_depth: snapshot.local_queue_depth,
+          last_heartbeat_at: snapshot.last_heartbeat_at,
+          checked_at: snapshot.checked_at
+        }
+      : null,
+    related_alerts: relatedAlerts,
+    timeline: buildIncidentTimeline(incident, relatedAlerts, relatedAuditLogs),
+    related_audit_logs: relatedAuditLogs,
+    related_exports: relatedExports,
+    related_break_glass_requests: relatedBreakGlass
+      .map((entry) => ({
+        ...entry,
+        access_scope: entry.access_scope
+      })),
+    annotations: incident.metadata?.annotations ?? [],
+    runbook_tracking: incident.metadata?.runbook_tracking ?? null,
+    device_history: {
+      heartbeats: heartbeats
+        .filter((entry) => entry.event_id === eventId)
+        .slice(0, 10),
+      incidents: deviceIncidents
+        .filter((entry) => entry.event_id === eventId)
+        .slice(0, 10)
+    }
+  };
+}
+
+function buildIncidentTimeline(incident, relatedAlerts, relatedAuditLogs) {
+  const items = [
+    {
+      type: "incident",
+      label: `Incident opened: ${incident.code}`,
+      timestamp: incident.occurred_at ?? incident.created_at,
+      details: incident.message ?? null
+    },
+    ...relatedAlerts.map((alert) => ({
+      type: "alert",
+      label: `Alert ${alert.status}: ${alert.code}`,
+      timestamp: alert.created_at,
+      details: alert.message
+    })),
+    ...((incident.metadata?.state_history ?? []).map((entry) => ({
+      type: "state",
+      label: `Status changed to ${entry.next_status}`,
+      timestamp: entry.created_at,
+      details: entry.note ?? `Updated by ${entry.actor_user_id ?? "organizer"}`
+    }))),
+    ...((incident.metadata?.runbook_updates ?? []).map((entry) => ({
+      type: "runbook",
+      label: "Runbook/workaround updated",
+      timestamp: entry.created_at,
+      details: entry.note ?? entry.workaround_summary ?? entry.next_action ?? null
+    }))),
+    ...relatedAuditLogs.map((entry) => ({
+      type: "audit",
+      label: entry.event_type,
+      timestamp: entry.created_at,
+      details: entry.target_id ?? entry.actor_id ?? null
+    }))
+  ];
+  if (incident.resolved_at && !(incident.metadata?.state_history ?? []).some((entry) => entry.next_status === "resolved")) {
+    items.push({
+      type: "incident",
+      label: "Incident resolved",
+      timestamp: incident.resolved_at,
+      details: null
+    });
+  }
+  return items.sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
+}
+
+function incidentMatchesAlert(incident, alert) {
+  if (alert.source_type === "device" && alert.source_id === incident.device_id) {
+    return true;
+  }
+  if (alert.code === incident.code) {
+    return true;
+  }
+  const detailDeviceId = alert.details?.device_id ?? alert.details?.deviceId ?? null;
+  return detailDeviceId === incident.device_id;
+}
+
+function incidentMatchesAuditLog(incident, auditLog) {
+  const metadataText = JSON.stringify(auditLog.metadata ?? {});
+  return [
+    auditLog.target_id,
+    auditLog.actor_id,
+    metadataText
+  ].some((value) => {
+    const text = String(value ?? "");
+    return text.includes(incident.id) || text.includes(incident.device_id) || text.includes(incident.code);
+  });
+}
+
+function incidentMatchesExport(incident, exportRequest) {
+  if (exportRequest.export_type === "organizer_event_report") {
+    return true;
+  }
+  return exportRequest.event_id === incident.event_id;
+}
+
+function incidentMatchesBreakGlass(incident, request) {
+  const accessScope = typeof request.access_scope === "string"
+    ? request.access_scope
+    : JSON.stringify(request.access_scope ?? {});
+  return accessScope.includes("audit") || accessScope.includes(incident.device_id) || accessScope.includes(incident.code);
+}
+
+async function resolveIncidentForEvent(repos, tenantId, eventId, incidentId) {
+  const incidents = await repos.incidents.listByEvent(tenantId, eventId);
+  const incident = incidents.find((entry) => entry.id === incidentId);
+  if (!incident) {
+    throw new HttpError(404, "Incident not found");
+  }
+  return incident;
+}
+
+function appendIncidentMetadataEntry(incident, key, entry) {
+  const values = [...(incident.metadata?.[key] ?? [])];
+  values.push(entry);
+  incident.metadata = {
+    ...(incident.metadata ?? {}),
+    [key]: values
+  };
+  return values;
+}
+
+function buildRunbookUpdateNote(tracking) {
+  const parts = [];
+  if (tracking.runbook_reference) {
+    parts.push(`Runbook ${tracking.runbook_reference}`);
+  }
+  if (tracking.workaround_status) {
+    parts.push(`workaround ${tracking.workaround_status}`);
+  }
+  if (tracking.workaround_summary) {
+    parts.push(tracking.workaround_summary);
+  }
+  if (tracking.next_action) {
+    parts.push(`next: ${tracking.next_action}`);
+  }
+  return parts.join(" | ") || "Runbook tracking updated.";
+}
+
+function isRecent(isoDate, seconds) {
+  if (!isoDate) {
+    return false;
+  }
+  return Date.now() - Date.parse(isoDate) <= seconds * 1000;
+}
+
+async function topStalls(repos, tenantId, eventId) {
+  const counts = new Map();
+  for (const interaction of await repos.interactions.listByEvent(tenantId, eventId)) {
+    counts.set(interaction.stall_id, (counts.get(interaction.stall_id) ?? 0) + 1);
+  }
+  const rows = [];
+  for (const [stallId, count] of counts.entries()) {
+    const stall = await repos.stalls.findById(tenantId, stallId);
+    rows.push({ stall_id: stallId, stall_name: stall?.name ?? stallId, interactions: count });
+  }
+  return rows.sort((left, right) => right.interactions - left.interactions);
+}
+
+async function buildVendorDashboardMetrics({ repos, tenantId, event, stall, query }) {
+  const period = parseMetricsPeriod(query);
+  const interactions = (await repos.interactions.listByStall(tenantId, stall.id))
+    .filter((interaction) => isWithinMetricsPeriod(interaction.created_at, period));
+  const crmRecords = (await repos.crmSyncRecords.listByEvent(tenantId, event.id))
+    .filter((record) => record.stall_id === stall.id && isWithinMetricsPeriod(record.synced_at ?? record.created_at, period));
+  const followups = (await repos.followupMessages.listByStall(tenantId, stall.id))
+    .filter((record) => record.status === "sent" && isWithinMetricsPeriod(record.updated_at ?? record.created_at, period));
+  const vendorConsentedInteractions = interactions.filter((interaction) =>
+    ["vendor_only", "vendor_and_sponsor"].includes(interaction.consent_status)
+  );
+  const crmPushedInteractionIds = new Set(
+    crmRecords
+      .filter((record) => record.synced_at)
+      .map((record) => record.interaction_id)
+  );
+  const followupSentInteractionIds = new Set(followups.map((record) => record.interaction_id));
+  const respondedInteractionIds = new Set([...crmPushedInteractionIds, ...followupSentInteractionIds]);
+  const denominator = vendorConsentedInteractions.length;
+
+  return {
+    event_id: event.id,
+    stall_id: stall.id,
+    stall_name: stall.name,
+    period,
+    total_taps: interactions.length,
+    vendor_consented_leads: denominator,
+    crm_pushed_leads: crmPushedInteractionIds.size,
+    followup_sent_leads: followupSentInteractionIds.size,
+    response_rate: denominator === 0 ? 0 : Number((respondedInteractionIds.size / denominator).toFixed(4)),
+    response_rate_formula: "(distinct CRM pushed or followup sent) / distinct vendor-consented leads; if denominator = 0 then 0",
+    classification_breakdown: interactions.reduce((acc, interaction) => {
+      const key = interaction.classification ?? "cold";
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, { hot: 0, warm: 0, cold: 0 })
+  };
+}
+
+function validateFollowupBody(body) {
+  required(body, ["channel", "body"]);
+  if (!COMMUNICATION_CHANNELS.includes(body.channel)) {
+    throw new HttpError(400, "Unsupported follow-up channel");
+  }
+  if (body.status && !["draft", "queued"].includes(body.status)) {
+    throw new HttpError(400, "Follow-up status must be draft or queued at creation");
+  }
+  if (body.status === "queued" && body.human_approved !== true) {
+    throw new HttpError(400, "Human approval is required before a follow-up can be queued");
+  }
+  if (typeof body.body !== "string" || !body.body.trim()) {
+    throw new HttpError(400, "Follow-up body is required");
+  }
+  return {
+    ...body,
+    body: body.body.trim(),
+    subject: body.subject?.trim() || null,
+    status: body.status ?? "draft"
+  };
+}
+
+function validateWalletPassRequestBody(body) {
+  required(body, ["session_token"]);
+  if ("pass_type" in body && body.pass_type != null && !["apple", "google", "generic"].includes(body.pass_type)) {
+    throw new HttpError(400, "pass_type must be apple, google, or generic");
+  }
+  return body;
+}
+
+function validateWalletPassRetryBody(body) {
+  if (body?.pass_type != null && !["apple", "google", "generic"].includes(body.pass_type)) {
+    throw new HttpError(400, "pass_type must be apple, google, or generic");
+  }
+  return body ?? {};
+}
+
+async function resolveInteractionFollowupResources({ repos, principal, params }) {
+  const interaction = await repos.interactions.findById(principal.tenant_id, params.interactionId);
+  const stall = await repos.stalls.findById(principal.tenant_id, interaction.stall_id);
+  const event = await repos.events.findById(principal.tenant_id, interaction.event_id);
+  const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+  return { interaction, stall, event, eventPolicy };
+}
+
+async function resolveNotificationOperationResources({ repos, principal, params }) {
+  const notification = await repos.notifications.findById(principal.tenant_id, params.notificationId);
+  const event = await repos.events.findById(principal.tenant_id, notification.event_id);
+  const interaction = notification.interaction_id
+    ? await repos.interactions.findById(principal.tenant_id, notification.interaction_id)
+    : null;
+  const stall = interaction ? await repos.stalls.findById(principal.tenant_id, interaction.stall_id) : null;
+  const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+  const followup = await repos.followupMessages.findByNotificationId(principal.tenant_id, notification.id);
+  return { notification, event, interaction, stall, eventPolicy, followup };
+}
+
+async function buildNotificationDeadLetterSummary(repos, tenantId, env = {}) {
+  const policy = resolveNotificationRetryPolicy(env);
+  const events = await repos.events.listByTenant(tenantId);
+  let total = 0;
+  let eventsWithDeadLetter = 0;
+  const topEvents = [];
+
+  for (const event of events) {
+    const metrics = await buildNotificationQueueMetrics({
+      repos,
+      tenantId,
+      eventId: event.id
+    });
+    const deadLetterCount = Number(metrics.counts.dead_letter ?? 0);
+    if (!deadLetterCount) {
+      continue;
+    }
+    total += deadLetterCount;
+    eventsWithDeadLetter += 1;
+    topEvents.push({
+      event_id: event.id,
+      event_name: event.name ?? null,
+      dead_letter_count: deadLetterCount
+    });
+  }
+
+  return {
+    total,
+    threshold: policy.dead_letter_alert_threshold,
+    events_with_dead_letter: eventsWithDeadLetter,
+    top_events: topEvents
+      .sort((left, right) => right.dead_letter_count - left.dead_letter_count)
+      .slice(0, 10)
+  };
+}
+
+async function resolveWalletPassResources({ repos, principal, params }) {
+  const walletPass = await repos.walletPasses.findById(principal.tenant_id, params.walletPassId);
+  const interaction = await repos.interactions.findById(principal.tenant_id, walletPass.interaction_id);
+  const stall = await repos.stalls.findById(principal.tenant_id, walletPass.stall_id);
+  const event = await repos.events.findById(principal.tenant_id, walletPass.event_id);
+  const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+  return { walletPass, interaction, stall, event, eventPolicy };
+}
+
+async function createWalletPassSafely({ repos, resources, passType, requestedByUserId, env }) {
+  const now = new Date().toISOString();
+  const walletPass = await repos.walletPasses.create({
+    id: nextId("wallet-pass"),
+    tenant_id: resources.interaction.tenant_id,
+    event_id: resources.interaction.event_id,
+    stall_id: resources.interaction.stall_id,
+    interaction_id: resources.interaction.id,
+    pass_type: passType,
+    status: "disabled",
+    artifact_ref: null,
+    short_link_id: null,
+    failure_code: null,
+    failure_message: null,
+    requested_by_user_id: requestedByUserId,
+    delivered_at: null,
+    created_at: now,
+    updated_at: now
+  });
+  return applyWalletPassProviderOutcome({
+    repos,
+    walletPass,
+    env,
+    reason: "create"
+  });
+}
+
+async function retryWalletPassSafely({ repos, resources, passType, requestedByUserId, env }) {
+  const walletPass = await repos.walletPasses.update({
+    ...resources.walletPass,
+    pass_type: passType,
+    requested_by_user_id: requestedByUserId,
+    status: "disabled",
+    artifact_ref: null,
+    short_link_id: null,
+    failure_code: null,
+    failure_message: null,
+    delivered_at: null,
+    updated_at: new Date().toISOString()
+  });
+  return applyWalletPassProviderOutcome({
+    repos,
+    walletPass,
+    env,
+    reason: "retry"
+  });
+}
+
+async function applyWalletPassProviderOutcome({ repos, walletPass, env, reason }) {
+  const outcome = resolveWalletPassProviderOutcome(env);
+  const now = new Date().toISOString();
+  if (outcome.status !== "generated") {
+    const updated = await repos.walletPasses.update({
+      ...walletPass,
+      status: outcome.status,
+      artifact_ref: null,
+      short_link_id: null,
+      failure_code: outcome.failure_code,
+      failure_message: outcome.failure_message,
+      delivered_at: null,
+      updated_at: now
+    });
+    const attempt = await recordWalletPassAttempt(repos, updated, {
+      provider: "wallet-pass",
+      status: outcome.status,
+      reason,
+      failureCode: outcome.failure_code,
+      failureMessage: outcome.failure_message
+    });
+    return {
+      wallet_pass: serializeWalletPass(updated),
+      attempts: attempt ? [attempt] : [],
+      non_blocking: true,
+      provider_result: outcome.status,
+      reason
+    };
+  }
+
+  try {
+    const artifactRef = `mock-wallet-pass://${walletPass.pass_type}/${walletPass.id}`;
+    const shortLink = await createShortLinkRecord({
+      repos,
+      tenantId: walletPass.tenant_id,
+      targetType: "wallet_pass",
+      targetId: walletPass.id,
+      targetPayload: {
+        wallet_pass_id: walletPass.id,
+        pass_type: walletPass.pass_type,
+        artifact_ref: artifactRef
+      },
+      expiresAt: inHours(24)
+    });
+    const updated = await repos.walletPasses.update({
+      ...walletPass,
+      status: "generated",
+      artifact_ref: artifactRef,
+      short_link_id: shortLink.id,
+      failure_code: null,
+      failure_message: null,
+      delivered_at: null,
+      updated_at: now
+    });
+    const attempt = await recordWalletPassAttempt(repos, updated, {
+      provider: "mock-wallet-pass",
+      status: "generated",
+      reason,
+      artifactRef,
+      shortLinkId: shortLink.id
+    });
+    return {
+      wallet_pass: serializeWalletPass(updated),
+      short_link: serializeShortLink(shortLink),
+      attempts: attempt ? [attempt] : [],
+      non_blocking: true,
+      provider_result: "generated",
+      reason
+    };
+  } catch (error) {
+    const updated = await repos.walletPasses.update({
+      ...walletPass,
+      status: "failed",
+      artifact_ref: null,
+      short_link_id: null,
+      failure_code: "wallet_short_link_failed",
+      failure_message: error.message,
+      delivered_at: null,
+      updated_at: new Date().toISOString()
+    });
+    const attempt = await recordWalletPassAttempt(repos, updated, {
+      provider: "wallet-pass",
+      status: "failed",
+      reason,
+      failureCode: "wallet_short_link_failed",
+      failureMessage: error.message
+    });
+    return {
+      wallet_pass: serializeWalletPass(updated),
+      attempts: attempt ? [attempt] : [],
+      non_blocking: true,
+      provider_result: "failed",
+      reason
+    };
+  }
+}
+
+async function recordWalletPassAttempt(repos, walletPass, {
+  provider,
+  status,
+  reason,
+  artifactRef = null,
+  shortLinkId = null,
+  failureCode = null,
+  failureMessage = null
+}) {
+  if (typeof repos.walletPassAttempts?.create !== "function") {
+    return null;
+  }
+  return repos.walletPassAttempts.create({
+    id: nextId("wallet-pass-attempt"),
+    tenant_id: walletPass.tenant_id,
+    event_id: walletPass.event_id,
+    stall_id: walletPass.stall_id,
+    interaction_id: walletPass.interaction_id,
+    wallet_pass_id: walletPass.id,
+    provider,
+    status,
+    reason,
+    pass_type: walletPass.pass_type,
+    artifact_ref: artifactRef,
+    short_link_id: shortLinkId,
+    failure_code: failureCode,
+    failure_message: failureMessage,
+    attempted_by_user_id: walletPass.requested_by_user_id ?? null,
+    attempted_at: new Date().toISOString()
+  });
+}
+
+function resolveWalletPassProviderOutcome(env = {}) {
+  if (env.WALLET_PASS_ENABLED !== "true") {
+    return {
+      status: "disabled",
+      failure_code: "wallet_pass_feature_disabled",
+      failure_message: "Wallet pass generation is safely disabled for this environment."
+    };
+  }
+  if (env.WALLET_PASS_PROVIDER_MODE === "mock_success") {
+    return { status: "generated" };
+  }
+  return {
+    status: "failed",
+    failure_code: "wallet_pass_provider_not_configured",
+    failure_message: "Wallet pass provider is enabled but no production provider is configured."
+  };
+}
+
+async function updateWalletPassStatus({ repos, walletPass, status, failureCode, failureMessage }) {
+  if (["delivered", "cancelled"].includes(walletPass.status) && walletPass.status !== status) {
+    throw new HttpError(409, "Wallet pass is already in a final state");
+  }
+  if (status === "delivered" && !["generated", "delivered"].includes(walletPass.status)) {
+    throw new HttpError(409, "Only generated wallet passes can be marked delivered");
+  }
+  const updated = await repos.walletPasses.update({
+    ...walletPass,
+    status,
+    failure_code: status === "failed" ? failureCode ?? "wallet_pass_manual_failure" : null,
+    failure_message: status === "failed" ? failureMessage ?? "Wallet pass delivery was marked failed." : null,
+    delivered_at: status === "delivered" ? walletPass.delivered_at ?? new Date().toISOString() : walletPass.delivered_at,
+    updated_at: new Date().toISOString()
+  });
+  return {
+    wallet_pass: serializeWalletPass(updated)
+  };
+}
+
+function serializeWalletPass(walletPass) {
+  return {
+    id: walletPass.id,
+    event_id: walletPass.event_id,
+    stall_id: walletPass.stall_id,
+    interaction_id: walletPass.interaction_id,
+    pass_type: walletPass.pass_type,
+    status: walletPass.status,
+    artifact_ref: walletPass.artifact_ref,
+    short_link_id: walletPass.short_link_id,
+    failure_code: walletPass.failure_code,
+    failure_message: walletPass.failure_message,
+    requested_by_user_id: walletPass.requested_by_user_id,
+    delivered_at: walletPass.delivered_at,
+    created_at: walletPass.created_at,
+    updated_at: walletPass.updated_at
+  };
+}
+
+async function serializeWalletPassWithAttempts(repos, walletPass) {
+  const attempts = typeof repos.walletPassAttempts?.listByWalletPass === "function"
+    ? await repos.walletPassAttempts.listByWalletPass(walletPass.tenant_id, walletPass.id)
+    : [];
+  return {
+    ...serializeWalletPass(walletPass),
+    attempts: attempts.map(serializeWalletPassAttempt),
+    attempts_count: attempts.length,
+    latest_attempt_status: attempts.at(-1)?.status ?? null
+  };
+}
+
+function serializeWalletPassAttempt(attempt) {
+  return {
+    id: attempt.id,
+    wallet_pass_id: attempt.wallet_pass_id,
+    provider: attempt.provider,
+    status: attempt.status,
+    reason: attempt.reason,
+    pass_type: attempt.pass_type,
+    artifact_ref: attempt.artifact_ref,
+    short_link_id: attempt.short_link_id,
+    failure_code: attempt.failure_code,
+    failure_message: attempt.failure_message,
+    attempted_by_user_id: attempt.attempted_by_user_id,
+    attempted_at: attempt.attempted_at
+  };
+}
+
+async function queueFollowupMessage({ repos, followup, resources, principal, humanApproved }) {
+  if (!humanApproved) {
+    throw new HttpError(400, "Human approval is required before a follow-up can be queued");
+  }
+  if (followup.status !== "draft") {
+    throw new HttpError(409, "Only draft follow-ups can be queued");
+  }
+  if (!["vendor_only", "vendor_and_sponsor"].includes(resources.interaction.consent_status)) {
+    throw new HttpError(403, "Vendor consent is required before follow-up messaging");
+  }
+  const channelConsent = await repos.communicationChannelConsents.findByInteractionAndChannel(
+    resources.interaction.tenant_id,
+    resources.interaction.id,
+    followup.channel
+  );
+  if (!channelConsent?.allowed) {
+    throw new HttpError(403, "Communication channel consent is required before follow-up messaging");
+  }
+  const suppression = await repos.communicationSuppressions.findActiveByInteractionAndChannel(
+    resources.interaction.tenant_id,
+    resources.interaction.id,
+    followup.channel
+  );
+  if (suppression) {
+    throw new HttpError(403, "Communication is suppressed for this attendee and channel");
+  }
+  const attendeeProfile = resources.interaction.attendee_id
+    ? await repos.attendeeProfiles.findByAttendeeId(resources.interaction.attendee_id)
+    : null;
+  const recipient = resolveFollowupRecipient(attendeeProfile, followup.channel);
+  if (!recipient) {
+    throw new HttpError(409, "Follow-up recipient is missing for the selected channel");
+  }
+
+  const now = new Date().toISOString();
+  const notification = await repos.notifications.create({
+    id: nextId("notification"),
+    tenant_id: followup.tenant_id,
+    event_id: followup.event_id,
+    interaction_id: followup.interaction_id,
+    channel: followup.channel,
+    message_type: "followup",
+    status: "queued",
+    provider: null,
+    recipient_hash: hashNotificationRecipient(followup.channel, recipient),
+    consent_checked_at: now,
+    sending_started_at: null,
+    last_attempt_at: null,
+    next_attempt_at: now,
+    attempts_count: 0,
+    provider_message_id: null,
+    final_error: null,
+    created_by_user_id: followup.created_by_user_id,
+    approved_by_user_id: principal.user_id,
+    created_at: now,
+    updated_at: now
+  });
+
+  followup.status = "queued";
+  followup.approved_by_user_id = principal.user_id;
+  followup.notification_id = notification.id;
+  followup.updated_at = now;
+  const updatedFollowup = await repos.followupMessages.update(followup);
+  return {
+    followup: updatedFollowup,
+    notification
+  };
+}
+
+async function assertNotificationConsentStillValid(repos, resources) {
+  if (!resources.interaction || !resources.followup) {
+    return;
+  }
+  if (!["vendor_only", "vendor_and_sponsor"].includes(resources.interaction.consent_status)) {
+    throw new HttpError(403, "Vendor consent is required before resending follow-up messaging");
+  }
+  const channelConsent = await repos.communicationChannelConsents.findByInteractionAndChannel(
+    resources.interaction.tenant_id,
+    resources.interaction.id,
+    resources.followup.channel
+  );
+  if (!channelConsent?.allowed) {
+    throw new HttpError(403, "Communication channel consent is required before resending follow-up messaging");
+  }
+  const suppression = await repos.communicationSuppressions.findActiveByInteractionAndChannel(
+    resources.interaction.tenant_id,
+    resources.interaction.id,
+    resources.followup.channel
+  );
+  if (suppression) {
+    throw new HttpError(
+      403,
+      `Communication is suppressed for this attendee and channel${suppression.reason ? ` (${suppression.reason})` : ""}`
+    );
+  }
+  if (resources.notification) {
+    const receiptGovernance = await buildNotificationReceiptGovernance({
+      repos,
+      tenantId: resources.notification.tenant_id,
+      notification: resources.notification
+    });
+    if (receiptGovernance.resend_blocked_reason) {
+      throw new HttpError(403, receiptGovernance.resend_blocked_reason);
+    }
+  }
+}
+
+function resolveFollowupRecipient(attendeeProfile, channel) {
+  if (channel === "email") {
+    return attendeeProfile?.email ?? null;
+  }
+  if (channel === "sms" || channel === "whatsapp") {
+    return attendeeProfile?.phone ?? null;
+  }
+  return null;
+}
+
+function hashNotificationRecipient(channel, value) {
+  return createHash("sha256")
+    .update(`${channel}:${String(value).trim().toLowerCase()}`)
+    .digest("hex");
+}
+
+function parseMetricsPeriod(query = {}) {
+  const recentHours = query.recent_hours ? Number(query.recent_hours) : null;
+  if (recentHours != null && (!Number.isFinite(recentHours) || recentHours <= 0)) {
+    throw new HttpError(400, "recent_hours must be a positive number");
+  }
+  const from = query.from ? parseMetricDate(query.from, "from") : null;
+  const to = query.to ? parseMetricDate(query.to, "to") : null;
+  if (from && to && from > to) {
+    throw new HttpError(400, "from must be before to");
+  }
+  return {
+    from: from?.toISOString() ?? (recentHours ? new Date(Date.now() - recentHours * 60 * 60 * 1000).toISOString() : null),
+    to: to?.toISOString() ?? null,
+    recent_hours: recentHours
+  };
+}
+
+function parseMetricDate(value, field) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new HttpError(400, `${field} must be a valid date-time`);
+  }
+  return parsed;
+}
+
+function isWithinMetricsPeriod(value, period) {
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return false;
+  }
+  if (period.from && timestamp < Date.parse(period.from)) {
+    return false;
+  }
+  if (period.to && timestamp > Date.parse(period.to)) {
+    return false;
+  }
+  return true;
+}
+
+const LEADERBOARD_SNAPSHOT_INTERVAL_MINUTES = 5;
+
+async function buildPublicLeaderboard({ repos, tenantId, event, eventPolicy, query }) {
+  const limit = Math.min(parsePositiveInteger(query.limit ?? "5", "limit"), 20);
+  const [stalls, interactions] = await Promise.all([
+    repos.stalls.listByEvent(tenantId, event.id),
+    repos.interactions.listByEvent(tenantId, event.id)
+  ]);
+  const stallById = new Map(stalls.map((stall) => [stall.id, stall]));
+  const counts = new Map();
+  for (const interaction of interactions) {
+    counts.set(interaction.stall_id, (counts.get(interaction.stall_id) ?? 0) + 1);
+  }
+
+  const rankings = stalls
+    .map((stall) => ({
+      stall_id: stall.id,
+      stall_name: stall.name,
+      connection_count: counts.get(stall.id) ?? 0
+    }))
+    .sort((left, right) => right.connection_count - left.connection_count || left.stall_name.localeCompare(right.stall_name));
+
+  const latest_connections = [];
+  const latestInteractions = [...interactions]
+    .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+    .slice(0, limit);
+  for (const interaction of latestInteractions) {
+    const stall = stallById.get(interaction.stall_id);
+    if (!stall) {
+      continue;
+    }
+    const profile = interaction.attendee_id
+      ? await repos.attendeeProfiles.findByAttendeeId(interaction.attendee_id)
+      : null;
+    const companyDescriptor = buildPublicCompanyDescriptor(profile, eventPolicy);
+    latest_connections.push({
+      interaction_id: interaction.id,
+      stall_id: stall.id,
+      stall_name: stall.name,
+      created_at: interaction.created_at,
+      company_descriptor: companyDescriptor,
+      text: `Someone from ${companyDescriptor} connected with ${stall.name}`,
+      pii_redacted: true
+    });
+  }
+
+  return {
+    event_id: event.id,
+    generated_at: new Date().toISOString(),
+    privacy: {
+      personal_data_included: false,
+      exact_company_names_enabled: canShowExactCompanyOnPublicLeaderboard(eventPolicy),
+      rule: "Latest connection ticker is generalized; personal names, emails, and exact companies are excluded unless explicitly enabled with legal basis."
+    },
+    rankings,
+    latest_connections
+  };
+}
+
+function buildLeaderboardSnapshotPayload({ event, leaderboard, snapshotVersion }) {
+  return {
+    snapshot_type: "public_leaderboard",
+    authoritative_scope: "leaderboard_snapshots",
+    event_id: event.id,
+    snapshot_version: snapshotVersion,
+    snapshot_interval_minutes: LEADERBOARD_SNAPSHOT_INTERVAL_MINUTES,
+    calculation_version: Number(event.metrics_definition_version ?? 1),
+    formula: {
+      ranking: "Count all event interactions per stall; sort by connection_count descending, then stall_name ascending.",
+      latest_connection_ticker: "Use latest event interactions and generalized organization descriptors only.",
+      privacy: "No attendee name, email, phone, title, or raw attendee profile fields are stored in leaderboard snapshots."
+    },
+    leaderboard
+  };
+}
+
+function serializeLeaderboardSnapshot(snapshot) {
+  return {
+    id: snapshot.id,
+    tenant_id: snapshot.tenant_id,
+    event_id: snapshot.event_id,
+    snapshot_version: snapshot.snapshot_version,
+    calculation_version: snapshot.calculation_version,
+    snapshot_interval_minutes: snapshot.snapshot_interval_minutes,
+    created_by_user_id: snapshot.created_by_user_id ?? null,
+    created_at: snapshot.created_at,
+    payload: snapshot.payload
+  };
+}
+
+function enforceLeaderboardSnapshotCadence(existingSnapshots, force) {
+  if (force || existingSnapshots.length === 0) {
+    return;
+  }
+  const latestCreatedAt = Date.parse(existingSnapshots[0].created_at);
+  if (Number.isNaN(latestCreatedAt)) {
+    return;
+  }
+  const nextAllowedAt = latestCreatedAt + LEADERBOARD_SNAPSHOT_INTERVAL_MINUTES * 60 * 1000;
+  if (Date.now() < nextAllowedAt) {
+    throw new HttpError(409, "Latest leaderboard snapshot is still inside the 5-minute cadence window", {
+      latest_snapshot_id: existingSnapshots[0].id,
+      latest_snapshot_created_at: existingSnapshots[0].created_at,
+      next_allowed_at: new Date(nextAllowedAt).toISOString(),
+      force_supported: true
+    });
+  }
+}
+
+function nextLeaderboardSnapshotVersion(existingSnapshots) {
+  return existingSnapshots.reduce(
+    (highest, snapshot) => Math.max(highest, Number(snapshot.snapshot_version ?? 0)),
+    0
+  ) + 1;
+}
+
+function buildPublicCompanyDescriptor(profile, eventPolicy) {
+  if (canShowExactCompanyOnPublicLeaderboard(eventPolicy) && profile?.company_name) {
+    return profile.company_name;
+  }
+  return inferGeneralizedCompanyDescriptor(profile?.company_name);
+}
+
+function canShowExactCompanyOnPublicLeaderboard(eventPolicy) {
+  return Boolean(
+    eventPolicy?.public_leaderboard_company_names_enabled === true &&
+      eventPolicy?.public_leaderboard_company_legal_basis
+  );
+}
+
+function inferGeneralizedCompanyDescriptor(companyName) {
+  const normalized = String(companyName ?? "").toLowerCase();
+  if (!normalized) {
+    return "an attendee organization";
+  }
+  if (/\b(enterprise|group|global|international|holdings|capital|bank|pharma|medical|industries|manufacturing)\b/.test(normalized)) {
+    return "a large enterprise";
+  }
+  if (/\b(university|college|school|institute|academy)\b/.test(normalized)) {
+    return "an education organization";
+  }
+  if (/\b(hospital|clinic|health|care)\b/.test(normalized)) {
+    return "a healthcare organization";
+  }
+  return "an attendee organization";
+}
+
+const EVENT_POLICY_RETENTION_DAYS = [30, 60, 90, 180, 365];
+
+function validateEventDataControlInput(body) {
+  const value = body ?? {};
+  for (const field of [
+    "vendor_exports_enabled",
+    "sponsor_pii_enabled",
+    "require_export_approval",
+    "allow_crm_push",
+    "allow_cross_event_identity_graph"
+  ]) {
+    if (typeof value[field] !== "boolean") {
+      throw new HttpError(400, `${field} must be an explicit boolean`);
+    }
+  }
+  const retentionDays = parsePositiveInteger(value.retention_days, "retention_days");
+  if (!EVENT_POLICY_RETENTION_DAYS.includes(retentionDays)) {
+    throw new HttpError(
+      400,
+      `retention_days must be one of ${EVENT_POLICY_RETENTION_DAYS.join(", ")}`
+    );
+  }
+  return {
+    vendor_exports_enabled: value.vendor_exports_enabled,
+    sponsor_pii_enabled: value.sponsor_pii_enabled,
+    require_export_approval: value.require_export_approval,
+    allow_crm_push: value.allow_crm_push,
+    retention_days: retentionDays,
+    allow_cross_event_identity_graph: value.allow_cross_event_identity_graph
+  };
+}
+
+function buildEventPublishReadiness(event, eventPolicy) {
+  const blockers = [];
+  if (eventPolicy?.missing_policy_row) {
+    blockers.push({
+      code: "missing_policy_row",
+      message: "No persisted event data-control policy row exists yet. Secure defaults are active until saved."
+    });
+  }
+  if (!EVENT_POLICY_RETENTION_DAYS.includes(Number(eventPolicy?.retention_days))) {
+    blockers.push({
+      code: "invalid_retention_days",
+      message: `Retention must be one of ${EVENT_POLICY_RETENTION_DAYS.join(", ")} days.`
+    });
+  }
+  return {
+    ready: blockers.length === 0,
+    blockers
+  };
+}
+
+function serializeEventDataControl(event, eventPolicy) {
+  const publishReadiness = buildEventPublishReadiness(event, eventPolicy);
+  return {
+    event_id: event.id,
+    event_name: event.name,
+    event_status: event.status,
+    policy: {
+      vendor_exports_enabled: Boolean(eventPolicy?.vendor_exports_enabled),
+      sponsor_pii_enabled: Boolean(eventPolicy?.sponsor_pii_enabled),
+      require_export_approval: Boolean(eventPolicy?.require_export_approval ?? true),
+      allow_crm_push: Boolean(eventPolicy?.allow_crm_push),
+      retention_days: Number(eventPolicy?.retention_days ?? EVENT_POLICY_RETENTION_DAYS[0]),
+      allow_cross_event_identity_graph: Boolean(eventPolicy?.allow_cross_event_identity_graph)
+    },
+    consent_privacy_masking: {
+      sponsor_pii_exposed: Boolean(eventPolicy?.sponsor_pii_enabled),
+      vendor_exports_enabled: Boolean(eventPolicy?.vendor_exports_enabled),
+      break_glass_required_for_platform_unmask: true
+    },
+    vendor_dashboard_crm: {
+      crm_push_allowed: Boolean(eventPolicy?.allow_crm_push),
+      export_approval_required: Boolean(eventPolicy?.require_export_approval ?? true)
+    },
+    database_persistence: {
+      policy_row_present: !eventPolicy?.missing_policy_row,
+      secure_defaults_applied: Boolean(eventPolicy?.missing_policy_row),
+      created_at: eventPolicy?.created_at ?? null,
+      updated_at: eventPolicy?.updated_at ?? null,
+      allowed_retention_days: EVENT_POLICY_RETENTION_DAYS
+    },
+    ui_states: {
+      publish_ready: publishReadiness.ready,
+      publish_blockers: publishReadiness.blockers,
+      publish_action_enabled: event.status === "draft" && publishReadiness.ready,
+      save_action_enabled: true
+    }
+  };
+}
+
+const LEAD_INBOX_COLUMNS = [
+  "created_at",
+  "interaction_id",
+  "full_name",
+  "company_name",
+  "title",
+  "classification",
+  "consent_status",
+  "next_action",
+  "crm_eligibility",
+  "crm_sync_status",
+  "notes_count"
+];
+
+const LEAD_INBOX_FILTERS = {
+  classification: ["hot", "warm", "cold"],
+  consent_status: ["pending", "vendor_only", "vendor_and_sponsor", "declined"],
+  crm_eligibility: ["eligible", "blocked_by_policy", "blocked_by_consent"]
+};
+
+function parseLeadInboxQuery(query = {}) {
+  const limit = parsePositiveInteger(query.limit ?? query.per_page ?? "50", "limit");
+  const offset = parseNonNegativeInteger(query.offset ?? "0", "offset");
+  if (limit > 100) {
+    throw new HttpError(400, "limit must be 100 or less");
+  }
+
+  const filters = {};
+  for (const [field, allowedValues] of Object.entries(LEAD_INBOX_FILTERS)) {
+    if (!(field in query) || query[field] === "") {
+      continue;
+    }
+    if (!allowedValues.includes(query[field])) {
+      throw new HttpError(400, `${field} filter is invalid`);
+    }
+    filters[field] = query[field];
+  }
+
+  return { limit, offset, filters };
+}
+
+function parseArtifactInventoryPagination(query = {}) {
+  const limit = parsePositiveInteger(query.limit ?? query.per_page ?? "50", "limit");
+  const offset = parseNonNegativeInteger(query.offset ?? "0", "offset");
+  if (limit > 200) {
+    throw new HttpError(400, "limit must be 200 or less");
+  }
+  return { limit, offset };
+}
+
+function buildPaginationEnvelope(total, pageLength, pagination) {
+  return {
+    limit: pagination.limit,
+    offset: pagination.offset,
+    total,
+    has_more: pagination.offset + pageLength < total,
+    next_offset:
+      pagination.offset + pageLength < total
+        ? pagination.offset + pageLength
+        : null
+  };
+}
+
+function parsePositiveInteger(value, fieldName) {
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new HttpError(400, `${fieldName} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function parseNonNegativeInteger(value, fieldName) {
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new HttpError(400, `${fieldName} must be a non-negative integer`);
+  }
+  return parsed;
+}
+
+function applyLeadInboxFilters(items, filters) {
+  return items.filter((item) => {
+    for (const [field, expected] of Object.entries(filters)) {
+      if (item[field] !== expected) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+async function buildLeadItem(repos, tenantId, interaction, eventPolicy) {
+  const profile = (interaction.attendee_id
+    ? await repos.attendeeProfiles.findByAttendeeId(interaction.attendee_id)
+    : null) ?? {};
+  const consent =
+    (await repos.consents.findByInteractionId(tenantId, interaction.id)) ?? {
+      vendor_release_allowed: false,
+      sponsor_release_allowed: false
+    };
+  const notes = await repos.interactionNotes.listByInteraction(tenantId, interaction.id);
+  const scoreHistory = await repos.leadScores.listByInteraction(tenantId, interaction.id);
+  const communicationChannelConsents = await repos.communicationChannelConsents.listByInteraction(tenantId, interaction.id);
+  const communicationSuppressions = await repos.communicationSuppressions.listByInteraction(tenantId, interaction.id);
+  const followups = await repos.followupMessages.listByInteraction(tenantId, interaction.id);
+  const walletPasses = await repos.walletPasses.listByInteraction(tenantId, interaction.id);
+  const walletPassIds = new Set(walletPasses.map((walletPass) => walletPass.id));
+  const shortLinks = typeof repos.shortLinks?.listByTenant === "function"
+    ? (await repos.shortLinks.listByTenant(tenantId)).filter((shortLink) => (
+      (shortLink.target_type === "attendee_session" && shortLink.target_id === interaction.id) ||
+      (shortLink.target_type === "wallet_pass" && walletPassIds.has(shortLink.target_id))
+    ))
+    : [];
+  const crmSync = await repos.crmSyncRecords.findByInteractionAndProvider(
+    tenantId,
+    interaction.id,
+    PILOT_CRM_PROVIDER
+  );
+  const crmEligibility = deriveCrmEligibility(interaction, eventPolicy);
+
+  return {
+    interaction_id: interaction.id,
+    full_name: profile.full_name ?? null,
+    company_name: profile.company_name ?? null,
+    title: profile.title ?? null,
+    email: profile.email ?? null,
+    phone: profile.phone ?? null,
+    consent_status: interaction.consent_status,
+    consent,
+    classification: interaction.classification ?? "cold",
+    next_action: buildLeadNextAction({ consent, crmEligibility, crmSync }),
+    crm_eligibility: crmEligibility,
+    status: interaction.status,
+    sponsor_click_count: interaction.sponsor_click_count,
+    crm_sync: buildCrmSyncResponse(crmSync),
+    crm_sync_status: crmSync?.status ?? "not_synced",
+    created_at: interaction.created_at,
+    updated_at: interaction.updated_at,
+    notes_count: notes.length,
+    communication_channel_consents: communicationChannelConsents,
+    communication_suppressions: communicationSuppressions,
+    followups: await Promise.all(followups.map(async (entry) => {
+      const notification = entry.notification_id
+        ? await repos.notifications.findById(tenantId, entry.notification_id)
+        : null;
+      const attempts = entry.notification_id
+        ? await repos.notificationAttempts.listByNotification(tenantId, entry.notification_id)
+        : [];
+      const receipts = entry.notification_id
+        ? await repos.notificationReceipts.listByNotification(tenantId, entry.notification_id)
+        : [];
+      const receiptGovernance = notification
+        ? await buildNotificationReceiptGovernance({
+            repos,
+            tenantId,
+            notification
+          })
+        : {
+            latest_receipt_type: receipts[0]?.receipt_type ?? null,
+            resend_blocked_reason: null,
+            resend_review_reason: null
+          };
+      return {
+        id: entry.id,
+        channel: entry.channel,
+        subject: entry.subject,
+        body: entry.body,
+        status: entry.status,
+        notification_id: entry.notification_id,
+        notification_status: notification?.status ?? null,
+        queue_state: notification ? deriveNotificationQueueState(notification) : entry.status,
+        provider: notification?.provider ?? attempts.at(-1)?.provider ?? null,
+        next_attempt_at: notification?.next_attempt_at ?? null,
+        sending_started_at: notification?.sending_started_at ?? null,
+        last_error: notification?.final_error ?? attempts.at(-1)?.error_message ?? null,
+        retry_exhausted_at: notification?.retry_exhausted_at ?? null,
+        retry_exhausted_reason: notification?.retry_exhausted_reason ?? null,
+        provider_message_id: notification?.provider_message_id ?? attempts.at(-1)?.provider_message_id ?? null,
+        attempts: attempts.map((attempt) => ({
+          id: attempt.id,
+          provider: attempt.provider,
+          status: attempt.status,
+          attempt_number: attempt.attempt_number ?? null,
+          provider_message_id: attempt.provider_message_id,
+          http_status: attempt.http_status ?? null,
+          duration_ms: attempt.duration_ms ?? null,
+          response_excerpt: attempt.response_excerpt ?? null,
+          error_message: attempt.error_message,
+          attempted_at: attempt.attempted_at
+        })),
+        attempts_count: attempts.length,
+        latest_attempt_status: attempts.at(-1)?.status ?? null,
+        latest_attempt_http_status: attempts.at(-1)?.http_status ?? null,
+        latest_attempt_duration_ms: attempts.at(-1)?.duration_ms ?? null,
+        latest_attempt_response_excerpt: attempts.at(-1)?.response_excerpt ?? null,
+        receipts: receipts.map((receipt) => ({
+          id: receipt.id,
+          provider: receipt.provider,
+          receipt_type: receipt.receipt_type,
+          provider_message_id: receipt.provider_message_id ?? null,
+          provider_event_id: receipt.provider_event_id ?? null,
+          summary: receipt.summary ?? null,
+          occurred_at: receipt.occurred_at ?? null,
+          received_at: receipt.received_at
+        })),
+        receipts_count: receipts.length,
+        latest_receipt_type: receiptGovernance.latest_receipt_type,
+        resend_blocked_reason: receiptGovernance.resend_blocked_reason,
+        resend_review_reason: receiptGovernance.resend_review_reason,
+        created_by_user_id: entry.created_by_user_id,
+        approved_by_user_id: entry.approved_by_user_id,
+        created_at: entry.created_at,
+        updated_at: entry.updated_at
+      };
+    })),
+    followups_count: followups.length,
+    wallet_passes: await Promise.all(walletPasses.map((walletPass) => serializeWalletPassWithAttempts(repos, walletPass))),
+    wallet_passes_count: walletPasses.length,
+    short_links: shortLinks.map((shortLink) => ({
+      id: shortLink.id,
+      target_type: shortLink.target_type,
+      target_id: shortLink.target_id,
+      status: shortLink.status,
+      expires_at: shortLink.expires_at,
+      created_at: shortLink.created_at,
+      expired: Boolean(shortLink.expires_at && Date.parse(shortLink.expires_at) < Date.now()),
+      revocable: shortLink.status === "active"
+    })),
+    short_links_count: shortLinks.length,
+    score_history: scoreHistory,
+    score_history_count: scoreHistory.length,
+    latest_score_at: scoreHistory[0]?.created_at ?? null,
+    latest_note_at: notes.at(-1)?.created_at ?? null
+  };
+}
+
+function buildLeadNextAction({ consent, crmEligibility, crmSync }) {
+  if (!consent.vendor_release_allowed) {
+    return "Collect vendor consent before outreach";
+  }
+  if (crmSync?.status === "synced") {
+    return "Follow up from CRM";
+  }
+  if (crmSync?.status === "failed") {
+    return "Review failed CRM sync";
+  }
+  if (crmEligibility === "eligible") {
+    return "Review lead and push to CRM";
+  }
+  return "Review event policy before outreach";
+}
+
+function buildCrmSyncResponse(record) {
+  if (!record) {
+    return null;
+  }
+  return {
+    id: record.id,
+    provider: record.provider,
+    status: record.status,
+    external_record_id: record.external_record_id,
+    last_error: record.last_error,
+    synced_at: record.synced_at,
+    deleted_at: record.deleted_at,
+    updated_at: record.updated_at
+  };
+}
+
+function bucketHourly(interactions) {
+  const buckets = new Map();
+  for (const interaction of interactions) {
+    const hour = new Date(interaction.created_at).toISOString().slice(0, 13) + ":00:00Z";
+    buckets.set(hour, (buckets.get(hour) ?? 0) + 1);
+  }
+  return [...buckets.entries()]
+    .map(([hour, impressions]) => ({ hour, impressions }))
+    .sort((left, right) => left.hour.localeCompare(right.hour));
+}
+
+async function resolveSponsorDashboardResources({ repos, principal, params, query }) {
+  const sponsorOrganization = await repos.organizations.findById(principal.tenant_id, params.sponsorId);
+  const event = await repos.events.findById(principal.tenant_id, query.event_id);
+  const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+  return { sponsorOrganization, event, eventPolicy };
+}
+
+async function buildSponsorDashboardResponse(repos, sponsorOrganization, event) {
+  const stalls = (await repos.stalls.listByEvent(event.tenant_id, event.id))
+    .filter((stall) => stall.sponsor_organization_id === sponsorOrganization.id);
+  const stallById = new Map(stalls.map((stall) => [stall.id, stall]));
+  const stallIds = stalls.map((stall) => stall.id);
+  const interactions = (await repos.interactions.listByEvent(event.tenant_id, event.id))
+    .filter((interaction) => stallIds.includes(interaction.stall_id));
+  const snapshots = await listSponsorReportSnapshots(repos, event.tenant_id, event.id, sponsorOrganization.id);
+  const reportFreeze = await buildReportFreezeStatus(repos, event.tenant_id, event);
+
+  const impressions = interactions.length;
+  const clickInteractions = interactions.filter((interaction) => (interaction.sponsor_click_count ?? 0) > 0);
+  const clicks = clickInteractions.length;
+  const totalClicks = interactions.reduce((sum, interaction) => sum + Number(interaction.sponsor_click_count ?? 0), 0);
+  const ctr = impressions === 0 ? 0 : Number(((clicks / impressions) * 100).toFixed(2));
+  const uniqueAttendees = new Set(interactions.map((interaction) => interaction.attendee_id ?? interaction.id)).size;
+  const optedInLeads = interactions.filter((interaction) => interaction.consent_status === "vendor_and_sponsor").length;
+  const consentBreakdown = {
+    sponsor_opt_in: optedInLeads,
+    vendor_only: interactions.filter((interaction) => interaction.consent_status === "vendor_only").length,
+    pending_or_masked: interactions.filter((interaction) => interaction.consent_status !== "vendor_and_sponsor" && interaction.consent_status !== "vendor_only").length
+  };
+  const classificationCounts = interactions.reduce((acc, interaction) => {
+    const key = interaction.classification || "unclassified";
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const stallBreakdown = stalls.map((stall) => {
+    const stallInteractions = interactions.filter((interaction) => interaction.stall_id === stall.id);
+    const stallClicks = stallInteractions.filter((interaction) => (interaction.sponsor_click_count ?? 0) > 0).length;
+    return {
+      stall_id: stall.id,
+      stall_name: stall.name,
+      impressions: stallInteractions.length,
+      clicks: stallClicks,
+      ctr: stallInteractions.length === 0 ? 0 : Number(((stallClicks / stallInteractions.length) * 100).toFixed(2)),
+      opted_in_leads: stallInteractions.filter((interaction) => interaction.consent_status === "vendor_and_sponsor").length
+    };
+  }).sort((left, right) => right.impressions - left.impressions);
+
+  return {
+    sponsor_id: sponsorOrganization.id,
+    sponsor_name: sponsorOrganization.name,
+    event_id: event.id,
+    event_name: event.name,
+    event_status: event.status,
+    metrics_definition_version: event.metrics_definition_version,
+    report_snapshot_version: event.report_snapshot_version,
+    impressions,
+    clicks,
+    total_clicks: totalClicks,
+    ctr,
+    opted_in_leads: optedInLeads,
+    unique_attendees: uniqueAttendees,
+    top_zone: stalls[0]?.name ?? "No sponsored zones yet",
+    hourly_trend: bucketHourly(interactions),
+    consent_breakdown: consentBreakdown,
+    classification_breakdown: classificationCounts,
+    stall_breakdown: stallBreakdown,
+    latest_snapshot: snapshots[0] ?? null,
+    snapshot_count: snapshots.length,
+    report_freeze: reportFreeze,
+    privacy: {
+      personal_data_included: false,
+      pii_rule: "Sponsor dashboard metrics are aggregate-only; lead PII is available only through sponsor lead export when event policy and sponsor consent allow it."
+    }
+  };
+}
+
+async function listSponsorReportSnapshots(repos, tenantId, eventId, sponsorId) {
+  const snapshots = await repos.reportSnapshots.listByEvent(tenantId, eventId);
+  return snapshots
+    .filter((snapshot) =>
+      snapshot.payload?.snapshot_type === "sponsor_dashboard" &&
+      snapshot.payload?.sponsor_id === sponsorId
+    )
+    .map((snapshot) => ({
+      id: snapshot.id,
+      event_id: snapshot.event_id,
+      report_snapshot_version: snapshot.report_snapshot_version,
+      created_at: snapshot.created_at,
+      note: snapshot.payload?.note ?? null,
+      created_by_user_id: snapshot.payload?.created_by_user_id ?? null,
+      dashboard: snapshot.payload?.dashboard ?? null
+    }));
+}
+
+async function listSponsorOrganizationsForEvent(repos, tenantId, eventId) {
+  const stalls = await repos.stalls.listByEvent(tenantId, eventId);
+  const ids = [...new Set(stalls.map((stall) => stall.sponsor_organization_id).filter(Boolean))];
+  const organizations = [];
+  for (const id of ids) {
+    organizations.push(await repos.organizations.findById(tenantId, id));
+  }
+  return organizations;
+}
+
+async function buildOrganizerOverviewPayload(repos, event) {
+  const assignments = await repos.deviceAssignments.listByEvent(event.tenant_id, event.id);
+  const latestHeartbeats = await Promise.all(
+    assignments.map(async (assignment) => {
+      const records = await repos.heartbeats.listByDevice(event.tenant_id, assignment.device_id);
+      return records.sort((left, right) => Date.parse(right.recorded_at) - Date.parse(left.recorded_at))[0] ?? null;
+    })
+  );
+  const onlineDevices = latestHeartbeats.filter((entry) => isRecent(entry?.recorded_at, 120)).length;
+  const queueDepths = latestHeartbeats.filter(Boolean).map((entry) => entry.local_queue_depth);
+  const avgQueueDepth = queueDepths.length === 0 ? 0 : average(queueDepths);
+  const relevantTapEvents = await repos.tapEvents.listByEvent(event.tenant_id, event.id);
+  const syncLatencies = relevantTapEvents
+    .filter((entry) => entry.cloud_received_at)
+    .map((entry) => Date.parse(entry.cloud_received_at) - Date.parse(entry.occurred_at));
+  const avgSyncLatencyMs = syncLatencies.length === 0 ? 0 : average(syncLatencies);
+  const interactions = await repos.interactions.listByEvent(event.tenant_id, event.id);
+  const incidents = await repos.incidents.listByEvent(event.tenant_id, event.id);
+  return {
+    event_id: event.id,
+    event_status: event.status,
+    metrics_definition_version: event.metrics_definition_version,
+    report_snapshot_version: event.report_snapshot_version,
+    total_interactions: interactions.length,
+    online_devices: onlineDevices,
+    offline_devices: assignments.length - onlineDevices,
+    average_queue_depth: Number(avgQueueDepth.toFixed(2)),
+    average_sync_latency_ms: Number(avgSyncLatencyMs.toFixed(2)),
+    open_incidents: incidents.filter((entry) => entry.status !== "resolved").length,
+    top_stalls: await topStalls(repos, event.tenant_id, event.id)
+  };
+}
+
+async function buildReportFreezeStatus(repos, tenantId, event) {
+  const snapshots = await repos.reportSnapshots.listByEvent(tenantId, event.id);
+  const officialSnapshots = snapshots
+    .filter((entry) => entry.payload?.snapshot_type === "official_event_report")
+    .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+  const sponsorSnapshots = snapshots.filter((entry) => entry.payload?.snapshot_type === "sponsor_dashboard");
+  const exports = [...await repos.exportRequests.listByEvent(tenantId, event.id)]
+    .filter((entry) => entry.export_type === "organizer_event_report")
+    .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+  const incidents = await repos.incidents.listByEvent(tenantId, event.id);
+  const unresolvedIncidents = incidents.filter((entry) => entry.status !== "resolved").length;
+  const latestOfficial = officialSnapshots[0] ?? null;
+  const artifactFreezeChecks = await buildArtifactFreezeChecks(repos, event);
+  return {
+    event_id: event.id,
+    event_status: event.status,
+    report_snapshot_version: event.report_snapshot_version,
+    latest_official_snapshot: latestOfficial
+      ? {
+          id: latestOfficial.id,
+          created_at: latestOfficial.created_at,
+          note: latestOfficial.payload?.note ?? null
+        }
+      : null,
+    sponsor_snapshot_count: sponsorSnapshots.length,
+    latest_official_export: exports[0] ?? null,
+    unresolved_incidents: unresolvedIncidents,
+    artifact_freeze_checks: artifactFreezeChecks,
+    frozen: event.status === "closed" && Boolean(latestOfficial)
+  };
+}
+
+async function buildArtifactFreezeChecks(repos, event) {
+  const [alerts, walletPasses, allShortLinks] = await Promise.all([
+    buildOperationalArtifactAlerts(repos, event),
+    typeof repos.walletPasses?.listByEvent === "function"
+      ? repos.walletPasses.listByEvent(event.tenant_id, event.id)
+      : [],
+    typeof repos.shortLinks?.listByTenant === "function"
+      ? repos.shortLinks.listByTenant(event.tenant_id)
+      : []
+  ]);
+  let activeShortLinks = 0;
+  for (const shortLink of allShortLinks) {
+    if (!["export_download", "wallet_pass"].includes(shortLink.target_type)) {
+      continue;
+    }
+    if (shortLink.status !== "active" || (shortLink.expires_at && Date.parse(shortLink.expires_at) < Date.now())) {
+      continue;
+    }
+    const resources = await resolveShortLinkTargetResources(repos, shortLink);
+    if (resources.event?.id === event.id) {
+      activeShortLinks += 1;
+    }
+  }
+  const pendingWalletDelivery = walletPasses.filter((walletPass) => walletPass.status === "generated").length;
+  const failedArtifacts = alerts.counts.warning;
+  const unresolvedArtifacts = failedArtifacts + activeShortLinks + pendingWalletDelivery;
+  return {
+    ready: unresolvedArtifacts === 0,
+    unresolved_artifacts: unresolvedArtifacts,
+    failed_or_cancelled_artifacts: failedArtifacts,
+    active_short_links: activeShortLinks,
+    pending_wallet_delivery: pendingWalletDelivery,
+    generated_at: new Date().toISOString()
+  };
+}
+
+async function buildComplianceCloseoutReadiness(repos, event, eventPolicy) {
+  const [complianceOverview, reportFreeze, exports] = await Promise.all([
+    buildComplianceOverview({ repos, event, eventPolicy }),
+    buildReportFreezeStatus(repos, event.tenant_id, event),
+    repos.exportRequests.listByEvent(event.tenant_id, event.id)
+  ]);
+
+  const items = [];
+  const blockers = [];
+  const warnings = [];
+
+  const officialFreezePackageReady =
+    reportFreeze.frozen && reportFreeze.latest_official_export?.status === "generated";
+  pushReadinessItem(items, blockers, {
+    key: "report_freeze",
+    label: "Official event report is frozen and the final organizer package is generated",
+    passed: officialFreezePackageReady,
+    blockerMessage: "Freeze the official event report before closing out compliance operations"
+  });
+
+  pushReadinessItem(items, blockers, {
+    key: "artifact_freeze_checks",
+    label: "Wallet, notification, and signed-link artifacts are clear for event close",
+    passed: reportFreeze.artifact_freeze_checks?.ready === true,
+    blockerMessage: "Resolve failed artifacts, pending wallet delivery, and active signed links before closeout"
+  });
+
+  const dsrQueueClear =
+    Number(complianceOverview.dsr_counts.requested ?? 0) === 0 &&
+    Number(complianceOverview.dsr_counts.in_progress ?? 0) === 0;
+  pushReadinessItem(items, blockers, {
+    key: "dsr_queue",
+    label: "No requested or in-progress data-subject requests remain",
+    passed: dsrQueueClear,
+    blockerMessage: "Complete or reject all open data-subject requests before compliance closeout"
+  });
+
+  const downstreamQueueClear =
+    Number(complianceOverview.downstream_deletion_counts.pending ?? 0) === 0 &&
+    Number(complianceOverview.downstream_deletion_counts.failed ?? 0) === 0;
+  pushReadinessItem(items, blockers, {
+    key: "downstream_deletions",
+    label: "No pending or failed downstream deletion records remain",
+    passed: downstreamQueueClear,
+    blockerMessage: "Resolve downstream deletion retries and failures before compliance closeout"
+  });
+
+  const crmCleanupClear =
+    Number(complianceOverview.crm_sync_counts.delete_pending ?? 0) === 0 &&
+    Number(complianceOverview.crm_sync_counts.failed ?? 0) === 0;
+  pushReadinessItem(items, blockers, {
+    key: "crm_cleanup",
+    label: "CRM sync cleanup has no pending-delete or failed records",
+    passed: crmCleanupClear,
+    blockerMessage: "Clear pending or failed CRM cleanup records before compliance closeout"
+  });
+
+  const latestRetentionRun = complianceOverview.latest_retention_run;
+  const retentionReviewed = Boolean(latestRetentionRun);
+  pushReadinessItem(items, blockers, {
+    key: "retention_review",
+    label: event.status === "archived"
+      ? "Retention apply has been executed for the archived event"
+      : "Retention posture has been reviewed for the event",
+    passed: event.status === "archived"
+      ? latestRetentionRun?.run_type === "retention_apply"
+      : retentionReviewed,
+    blockerMessage: event.status === "archived"
+      ? "Archived events must have a completed retention apply run recorded"
+      : "Run at least a retention preview before compliance closeout"
+  });
+
+  const complianceAuditExports = [...exports]
+    .filter((entry) =>
+      entry.export_type === "organizer_event_report" &&
+      entry.filters?.report_variant === "compliance_audit"
+    )
+    .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+  const latestComplianceAuditExport = complianceAuditExports[0] ?? null;
+  const complianceAuditReady = latestComplianceAuditExport?.status === "generated";
+  pushReadinessItem(items, blockers, {
+    key: "compliance_audit_export",
+    label: "A compliance audit export is generated and ready to download",
+    passed: complianceAuditReady,
+    blockerMessage: "Generate and approve the compliance audit export before compliance closeout"
+  });
+
+  if (latestComplianceAuditExport?.status === "requested") {
+    warnings.push("COMPLIANCE_AUDIT_EXPORT_PENDING_APPROVAL");
+  }
+  if (complianceOverview.retention_due && event.status !== "archived") {
+    warnings.push("RETENTION_DUE_NOT_APPLIED");
+  }
+  if (reportFreeze.unresolved_incidents > 0) {
+    warnings.push("UNRESOLVED_INCIDENTS_AT_CLOSEOUT");
+  }
+
+  return {
+    ready: blockers.length === 0,
+    checked_from: {
+      event_id: event.id,
+      event_status: event.status,
+      retention_due_at: complianceOverview.retention_due_at,
+      latest_retention_run_at: latestRetentionRun?.created_at ?? null,
+      latest_compliance_audit_export_at: latestComplianceAuditExport?.created_at ?? null,
+      latest_official_report_at: reportFreeze.latest_official_snapshot?.created_at ?? null
+    },
+    blockers,
+    warnings,
+    checklist: items,
+    summary: {
+      dsr_counts: complianceOverview.dsr_counts,
+      downstream_deletion_counts: complianceOverview.downstream_deletion_counts,
+      crm_sync_counts: complianceOverview.crm_sync_counts,
+      unresolved_incidents: reportFreeze.unresolved_incidents
+    },
+    latest_compliance_audit_export: latestComplianceAuditExport,
+    runbook_links: {
+      staging_runbook: "/Users/kishore/Codex Development/deploy/staging/README.md",
+      compliance_closeout_runbook: "/Users/kishore/Codex Development/deploy/staging/PILOT_COMPLIANCE_CLOSEOUT_RUNBOOK.md",
+      downstream_integrations_runbook: "/Users/kishore/Codex Development/deploy/staging/PILOT_DOWNSTREAM_INTEGRATIONS_RUNBOOK.md"
+    },
+    recommended_actions: [
+      {
+        label: "View compliance report",
+        endpoint: `/organizer/events/${event.id}/compliance/report`
+      },
+      {
+        label: "View DSR queue",
+        endpoint: `/organizer/events/${event.id}/dsr`
+      },
+      {
+        label: "View report freeze status",
+        endpoint: `/organizer/events/${event.id}/report-freeze`
+      },
+      {
+        label: "Request compliance audit export",
+        endpoint: `/organizer/events/${event.id}/compliance/audit-export`
+      },
+      {
+        label: "Run retention workflow",
+        endpoint: `/organizer/events/${event.id}/compliance/retention`
+      }
+    ]
+  };
+}
+
+async function buildExportDownloadPayload(repos, tenantId, eventId, exportRequest) {
+  if (exportRequest.export_type === "sponsor_dashboard_snapshot") {
+    const snapshotId = exportRequest.filters?.snapshot_id;
+    const sponsorId = exportRequest.filters?.sponsor_id;
+    const snapshots = await repos.reportSnapshots.listByEvent(tenantId, eventId);
+    const snapshot = snapshots.find((entry) => entry.id === snapshotId && entry.payload?.sponsor_id === sponsorId);
+    if (!snapshot) {
+      throw new HttpError(404, "Sponsor snapshot export payload not found");
+    }
+    return {
+      file_name: `${sponsorId}-snapshot-${snapshot.report_snapshot_version}.json`,
+      payload: snapshot.payload
+    };
+  }
+
+  if (exportRequest.export_type === "organizer_event_report") {
+    if (exportRequest.filters?.report_variant === "compliance_audit") {
+      const event = await repos.events.findById(tenantId, eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(tenantId, eventId);
+      return {
+        file_name: `event-${eventId}-compliance-audit.json`,
+        payload: await buildComplianceOperationalReport({
+          repos,
+          event,
+          eventPolicy
+        })
+      };
+    }
+    if (exportRequest.filters?.report_variant === "pilot_signoff") {
+      const event = await repos.events.findById(tenantId, eventId);
+      const eventPolicy = await repos.eventPolicies.findByEventId(tenantId, eventId);
+      return {
+        file_name: `event-${eventId}-pilot-signoff.json`,
+        payload: await buildPilotSignoffPack(repos, event, eventPolicy)
+      };
+    }
+    const snapshotId = exportRequest.filters?.report_snapshot_id ?? null;
+    const snapshots = await repos.reportSnapshots.listByEvent(tenantId, eventId);
+    const snapshot = snapshots
+      .filter((entry) => entry.payload?.snapshot_type === "official_event_report")
+      .find((entry) => !snapshotId || entry.id === snapshotId);
+    const payload = snapshot
+      ? snapshot.payload
+      : {
+          snapshot_type: "organizer_event_report_live",
+          overview: await buildOrganizerOverviewPayload(repos, await repos.events.findById(tenantId, eventId))
+        };
+    return {
+      file_name: `event-${eventId}-report.json`,
+      payload
+    };
+  }
+
+  if (exportRequest.export_type === "vendor_leads" || exportRequest.export_type === "sponsor_leads") {
+    return buildLeadExportPayload(repos, tenantId, eventId, exportRequest);
+  }
+
+  return {
+    file_name: `${exportRequest.export_type}-${eventId}.json`,
+    payload: {
+      export_type: exportRequest.export_type,
+      event_id: eventId
+    }
+  };
+}
+
+async function buildLeadExportPayload(repos, tenantId, eventId, exportRequest) {
+  const eventPolicy = await repos.eventPolicies.findByEventId(tenantId, eventId);
+  if (exportRequest.export_type === "vendor_leads" && !eventPolicy.vendor_exports_enabled) {
+    throw new HttpError(403, "Vendor exports disabled by event policy");
+  }
+  if (exportRequest.export_type === "sponsor_leads" && !eventPolicy.sponsor_pii_enabled) {
+    throw new HttpError(403, "Sponsor PII disabled by event policy");
+  }
+
+  const [interactions, stalls] = await Promise.all([
+    repos.interactions.listByEvent(tenantId, eventId),
+    repos.stalls.listByEvent(tenantId, eventId)
+  ]);
+  const stallById = new Map(stalls.map((stall) => [stall.id, stall]));
+  const allowedStallIds = scopedLeadExportStallIds(stalls, exportRequest);
+  const eligibleInteractions = interactions
+    .filter((interaction) => allowedStallIds.has(interaction.stall_id))
+    .filter((interaction) => leadExportConsentAllowed(interaction, exportRequest.export_type));
+  const leads = await Promise.all(
+    eligibleInteractions.map(async (interaction) => {
+      const profile = interaction.attendee_id
+        ? await repos.attendeeProfiles.findByAttendeeId(interaction.attendee_id)
+        : null;
+      const stall = stallById.get(interaction.stall_id);
+      return {
+        interaction_id: interaction.id,
+        stall_id: interaction.stall_id,
+        stall_name: stall?.name ?? null,
+        consent_status: interaction.consent_status,
+        classification: interaction.classification ?? "cold",
+        created_at: interaction.created_at,
+        profile: {
+          full_name: profile?.full_name ?? null,
+          company_name: profile?.company_name ?? null,
+          title: profile?.title ?? null,
+          email: profile?.email ?? null,
+          phone: profile?.phone ?? null
+        }
+      };
+    })
+  );
+
+  return {
+    file_name: `${exportRequest.export_type}-${eventId}.json`,
+    payload: {
+      export_type: exportRequest.export_type,
+      event_id: eventId,
+      privacy: {
+        personal_data_included: true,
+        consent_rule:
+          exportRequest.export_type === "sponsor_leads"
+            ? "Only interactions with vendor_and_sponsor consent are included; sponsor_pii_enabled must remain true at download time."
+            : "Only interactions with vendor_only or vendor_and_sponsor consent are included; revoked, declined, and pending interactions are excluded at download time.",
+        scope_rule: "Rows are limited to the requesting vendor or sponsor organization when the export is organization-scoped."
+      },
+      leads
+    }
+  };
+}
+
+function scopedLeadExportStallIds(stalls, exportRequest) {
+  const organizationId = exportRequest.requested_for_organization_id;
+  if (!organizationId) {
+    return new Set(stalls.map((stall) => stall.id));
+  }
+  if (exportRequest.export_type === "vendor_leads") {
+    return new Set(
+      stalls
+        .filter((stall) => stall.vendor_organization_id === organizationId)
+        .map((stall) => stall.id)
+    );
+  }
+  if (exportRequest.export_type === "sponsor_leads") {
+    return new Set(
+      stalls
+        .filter((stall) => stall.sponsor_organization_id === organizationId)
+        .map((stall) => stall.id)
+    );
+  }
+  return new Set(stalls.map((stall) => stall.id));
+}
+
+function leadExportConsentAllowed(interaction, exportType) {
+  if (exportType === "sponsor_leads") {
+    return interaction.consent_status === "vendor_and_sponsor";
+  }
+  if (exportType === "vendor_leads") {
+    return ["vendor_only", "vendor_and_sponsor"].includes(interaction.consent_status);
+  }
+  return false;
+}
+
+function buildAttendeeSessionPayload(interaction, tenantId) {
+  return {
+    purpose: "attendee_session",
+    tenant_id: tenantId,
+    interaction_id: interaction.id,
+    event_id: interaction.event_id,
+    expires_at: inHours(8)
+  };
+}
+
+async function buildIotIntegrationStatus(repos, tenantId, eventId) {
+  const integrationName = "iot_platform";
+  const certification = await repos.iotCertificationStatuses.findByIntegration(integrationName);
+  const health = await repos.iotIntegrationHealthStatuses.findByEvent(tenantId, integrationName, eventId);
+  const latestRun = await repos.iotIntegrationRuns.findLatestByEvent(tenantId, integrationName, eventId);
+  const parity = await repos.iotEnvironmentParityStatuses.findByEvent(tenantId, integrationName, eventId);
+  const alerts = await repos.iotAlertEvents.listByEvent(tenantId, eventId, {
+    status: "open",
+    limit: 10
+  });
+  const [tapCheckpoint, heartbeatCheckpoint, incidentCheckpoint] = await Promise.all([
+    repos.iotSyncCheckpoints.findByIntegrationAndStream(integrationName, "taps"),
+    repos.iotSyncCheckpoints.findByIntegrationAndStream(integrationName, "heartbeats"),
+    repos.iotSyncCheckpoints.findByIntegrationAndStream(integrationName, "incidents")
+  ]);
+
+  return {
+    certification: certification
+      ? {
+          status: certification.status,
+          contract_version: certification.contract_version,
+          environment: certification.environment,
+          build_version: certification.build_version,
+          last_checked_at: certification.last_checked_at,
+          last_certified_at: certification.last_certified_at,
+          last_failure_at: certification.last_failure_at,
+          last_failure_message: certification.last_failure_message,
+          certification_pack: certification.metadata?.certification_pack ?? null,
+          consecutive_failure_count: certification.metadata?.consecutive_failure_count ?? 0,
+          metadata: certification.metadata ?? {}
+        }
+      : {
+          status: "unknown",
+          contract_version: null,
+          environment: null,
+          build_version: null,
+          last_checked_at: null,
+          last_certified_at: null,
+          last_failure_at: null,
+          last_failure_message: null,
+          metadata: {}
+        },
+    health: formatHealthStatus(health),
+    parity: formatParityStatus(parity),
+    alerts: {
+      open_count: await repos.iotAlertEvents.countOpenByEvent(tenantId, eventId),
+      items: alerts.map(formatAlertEvent)
+    },
+    latest_run: formatIntegrationRun(latestRun),
+    streams: {
+      taps: formatStreamCheckpoint(tapCheckpoint),
+      heartbeats: formatStreamCheckpoint(heartbeatCheckpoint),
+      incidents: formatStreamCheckpoint(incidentCheckpoint)
+    }
+  };
+}
+
+function buildGoLiveReadiness(eventId, iotIntegration) {
+  const items = [];
+  const blockers = [];
+  const warnings = [];
+
+  const certificationReady =
+    iotIntegration.certification.status === "certified" &&
+    !!iotIntegration.certification.contract_version;
+  pushReadinessItem(items, blockers, {
+    key: "staging_certification",
+    label: "Staging certification is current",
+    passed: certificationReady,
+    blockerMessage: "Staging contract certification must pass before pilot go-live"
+  });
+
+  const healthReady =
+    ["healthy", "warning"].includes(iotIntegration.health.status) && !iotIntegration.health.is_stale;
+  pushReadinessItem(items, blockers, {
+    key: "operational_health",
+    label: "Operational health is fresh and non-critical",
+    passed: healthReady,
+    blockerMessage: "Operational health must be fresh and not critical before pilot go-live"
+  });
+
+  const parityReady = iotIntegration.parity.status === "passed";
+  pushReadinessItem(items, blockers, {
+    key: "release_parity",
+    label: "Staging and production match the approved release manifest",
+    passed: parityReady,
+    blockerMessage: "Staging-to-production parity must pass against the approved release manifest"
+  });
+
+  const latestRunReady = ["completed", "completed_with_warnings"].includes(
+    iotIntegration.latest_run?.status ?? "unknown"
+  );
+  pushReadinessItem(items, blockers, {
+    key: "latest_run",
+    label: "Latest integration orchestration run completed",
+    passed: latestRunReady,
+    blockerMessage: "Run a successful integration orchestration before pilot go-live"
+  });
+
+  const openCriticalAlerts = iotIntegration.alerts.items.filter((entry) => entry.severity === "critical").length;
+  pushReadinessItem(items, blockers, {
+    key: "critical_alerts",
+    label: "No open critical IoT alerts remain",
+    passed: openCriticalAlerts === 0,
+    blockerMessage: "Critical IoT alerts must be resolved before pilot go-live"
+  });
+
+  if (iotIntegration.health.warning_count > 0) {
+    warnings.push(...iotIntegration.health.warnings.map((entry) => entry.code));
+  }
+  if (iotIntegration.latest_run?.status === "completed_with_warnings") {
+    warnings.push("LATEST_RUN_COMPLETED_WITH_WARNINGS");
+  }
+
+  return {
+    ready: blockers.length === 0,
+    checked_from: {
+      event_id: eventId,
+      certification_checked_at: iotIntegration.certification.last_checked_at,
+      health_checked_at: iotIntegration.health.checked_at,
+      parity_checked_at: iotIntegration.parity.checked_at,
+      latest_run_started_at: iotIntegration.latest_run?.started_at ?? null
+    },
+    blockers,
+    warnings,
+    checklist: items,
+    runbook_links: {
+      staging_runbook: "/Users/kishore/Codex Development/deploy/staging/README.md",
+      pilot_go_live_runbook: "/Users/kishore/Codex Development/deploy/staging/PILOT_GO_LIVE_RUNBOOK.md",
+      pilot_go_live_checklist: "/Users/kishore/Codex Development/deploy/staging/PILOT_GO_LIVE_CHECKLIST.md"
+    },
+    recommended_actions: [
+      {
+        label: "View IoT health",
+        endpoint: `/organizer/events/${eventId}/iot-health`
+      },
+      {
+        label: "View IoT alerts",
+        endpoint: `/organizer/events/${eventId}/iot-alerts`
+      },
+      {
+        label: "Trigger integration run",
+        endpoint: `/organizer/events/${eventId}/iot-runs/trigger`
+      },
+      {
+        label: "Trigger parity check",
+        endpoint: `/organizer/events/${eventId}/iot-parity/trigger`
+      }
+    ]
+  };
+}
+
+async function buildPilotRehearsalReport(repos, event, eventPolicy) {
+  const [auditLogs, dsrRequests, downstreamRecords, exports, incidents, reportFreeze, breakGlassRequests] = await Promise.all([
+    repos.auditLogs.listByTenant(event.tenant_id),
+    repos.dataSubjectRequests.listByEvent(event.tenant_id, event.id),
+    repos.downstreamDeletionRecords.listByEvent(event.tenant_id, event.id),
+    repos.exportRequests.listByEvent(event.tenant_id, event.id),
+    repos.incidents.listByEvent(event.tenant_id, event.id),
+    buildReportFreezeStatus(repos, event.tenant_id, event),
+    repos.breakGlassAccess.listByTenant(event.tenant_id)
+  ]);
+
+  const incidentIds = new Set(incidents.map((entry) => entry.id));
+  const relevantExports = exports.filter((entry) => entry.event_id === event.id);
+  const generatedComplianceAuditExport = [...relevantExports]
+    .filter((entry) =>
+      entry.export_type === "organizer_event_report" &&
+      entry.filters?.report_variant === "compliance_audit" &&
+      entry.status === "generated"
+    )
+    .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))[0] ?? null;
+
+  const incidentStateEvidence = auditLogs.filter(
+    (entry) => entry.event_type === "organizer.incident_state.updated" && incidentIds.has(entry.target_id)
+  );
+  const incidentRunbookEvidence = auditLogs.filter(
+    (entry) => entry.event_type === "organizer.incident_runbook.updated" && incidentIds.has(entry.target_id)
+  );
+  const breakGlassApprovals = auditLogs.filter((entry) => entry.event_type === "break_glass.approved");
+  const incidentResponseExercised = incidents.some((entry) => ["escalated", "resolved"].includes(entry.status));
+  const incidentRunbookExercised = incidents.some((entry) => Boolean(entry.metadata?.runbook_tracking));
+
+  const accessCompleted = dsrRequests.some(
+    (entry) => entry.request_type === "access" && entry.status === "completed"
+  );
+  const deleteCompleted = dsrRequests.some(
+    (entry) => entry.request_type === "delete" && entry.status === "completed"
+  );
+  const downstreamConfirmed = downstreamRecords.some((entry) => entry.status === "confirmed");
+  const generatedExportExists = relevantExports.some((entry) => entry.status === "generated");
+  const breakGlassExercised = breakGlassRequests.some((entry) =>
+    ["partially_approved", "active", "revoked", "expired"].includes(entry.status)
+  );
+  const unresolvedIncidents = incidents.filter((entry) => entry.status !== "resolved");
+
+  const items = [];
+  const blockers = [];
+
+  pushReadinessItem(items, blockers, {
+    key: "incident_response",
+    label: "Incident escalation or resolution was exercised during rehearsal",
+    passed: incidentResponseExercised,
+    blockerMessage: "Rehearsal must include an incident escalation or resolution exercise"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "incident_runbook",
+    label: "Incident runbook/workaround tracking was exercised during rehearsal",
+    passed: incidentRunbookExercised,
+    blockerMessage: "Rehearsal must include runbook and workaround tracking"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "break_glass",
+    label: "Break-glass approval flow was exercised",
+    passed: breakGlassExercised,
+    blockerMessage: "Rehearsal must include a break-glass approval exercise"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "dsr_access",
+    label: "Access-request packaging was exercised",
+    passed: accessCompleted,
+    blockerMessage: "Rehearsal must include a completed access DSR workflow"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "dsr_delete",
+    label: "Delete-request workflow was exercised",
+    passed: deleteCompleted,
+    blockerMessage: "Rehearsal must include a completed delete DSR workflow"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "downstream_dispatch",
+    label: "Downstream deletion dispatch was exercised",
+    passed: downstreamConfirmed,
+    blockerMessage: "Rehearsal must include a confirmed downstream deletion dispatch"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "export_controls",
+    label: "Controlled export generation was exercised",
+    passed: generatedExportExists,
+    blockerMessage: "Rehearsal must include a generated export through the controlled export flow"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "report_freeze",
+    label: "Official report freeze workflow was exercised",
+    passed: reportFreeze.frozen,
+    blockerMessage: "Rehearsal must include the official report freeze workflow"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "compliance_audit_export",
+    label: "Compliance audit export was generated",
+    passed: Boolean(generatedComplianceAuditExport),
+    blockerMessage: "Rehearsal must include a generated compliance audit export"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "incident_backlog",
+    label: "No unresolved rehearsal incidents remain open",
+    passed: unresolvedIncidents.length === 0,
+    blockerMessage: "Resolve open rehearsal incidents before final pilot readiness review"
+  });
+
+  return {
+    ready: blockers.length === 0,
+    checked_at: new Date().toISOString(),
+    blockers,
+    checklist: items,
+    evidence: {
+      incident_state_updates: incidentStateEvidence.length,
+      incident_runbook_updates: incidentRunbookEvidence.length,
+      break_glass_approvals: breakGlassApprovals.length,
+      completed_access_dsrs: dsrRequests.filter((entry) => entry.request_type === "access" && entry.status === "completed").length,
+      completed_delete_dsrs: dsrRequests.filter((entry) => entry.request_type === "delete" && entry.status === "completed").length,
+      confirmed_downstream_dispatches: downstreamRecords.filter((entry) => entry.status === "confirmed").length,
+      generated_exports: relevantExports.filter((entry) => entry.status === "generated").length,
+      unresolved_incidents: unresolvedIncidents.length
+    },
+    latest_compliance_audit_export: generatedComplianceAuditExport,
+    runbook_links: {
+      pilot_rehearsal_runbook: "/Users/kishore/Codex Development/deploy/staging/PILOT_REHEARSAL_RUNBOOK.md",
+      pilot_go_live_runbook: "/Users/kishore/Codex Development/deploy/staging/PILOT_GO_LIVE_RUNBOOK.md",
+      compliance_closeout_runbook: "/Users/kishore/Codex Development/deploy/staging/PILOT_COMPLIANCE_CLOSEOUT_RUNBOOK.md"
+    },
+    recommended_actions: [
+      {
+        label: "View incidents",
+        endpoint: `/organizer/events/${event.id}/incidents`
+      },
+      {
+        label: "View exports",
+        endpoint: `/organizer/events/${event.id}/exports`
+      },
+      {
+        label: "View compliance report",
+        endpoint: `/organizer/events/${event.id}/compliance/report`
+      },
+      {
+        label: "View report freeze status",
+        endpoint: `/organizer/events/${event.id}/report-freeze`
+      }
+    ]
+  };
+}
+
+async function buildPilotSignoffPack(repos, event, eventPolicy) {
+  const [iotIntegration, complianceReadiness, rehearsal, reportFreeze, exports] = await Promise.all([
+    buildIotIntegrationStatus(repos, event.tenant_id, event.id),
+    buildComplianceCloseoutReadiness(repos, event, eventPolicy),
+    buildPilotRehearsalReport(repos, event, eventPolicy),
+    buildReportFreezeStatus(repos, event.tenant_id, event),
+    repos.exportRequests.listByEvent(event.tenant_id, event.id)
+  ]);
+
+  const goLiveReadiness = buildGoLiveReadiness(event.id, iotIntegration);
+  const latestPilotSignoffExport =
+    [...exports]
+      .filter(
+        (entry) =>
+          entry.export_type === "organizer_event_report" &&
+          entry.filters?.report_variant === "pilot_signoff"
+      )
+      .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))[0] ?? null;
+
+  const items = [];
+  const blockers = [];
+  const warnings = [];
+
+  pushReadinessItem(items, blockers, {
+    key: "iot_go_live",
+    label: "IoT go-live readiness gate is clear",
+    passed: goLiveReadiness.ready,
+    blockerMessage: "Clear IoT go-live readiness blockers before final pilot signoff"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "pilot_rehearsal",
+    label: "Pilot rehearsal evidence gate is complete",
+    passed: rehearsal.ready,
+    blockerMessage: "Complete the pilot rehearsal evidence gate before final pilot signoff"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "compliance_closeout",
+    label: "Compliance closeout readiness gate is clear",
+    passed: complianceReadiness.ready,
+    blockerMessage: "Clear compliance closeout blockers before final pilot signoff"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "official_package",
+    label: "Official event report package is frozen and generated",
+    passed: reportFreeze.frozen && reportFreeze.latest_official_export?.status === "generated",
+    blockerMessage: "Freeze the official event report package before final pilot signoff"
+  });
+
+  warnings.push(
+    ...(goLiveReadiness.warnings ?? []).map((entry) => `IOT:${entry}`),
+    ...(complianceReadiness.warnings ?? []).map((entry) => `COMPLIANCE:${entry}`)
+  );
+
+  return {
+    ready: blockers.length === 0,
+    checked_at: new Date().toISOString(),
+    blockers,
+    warnings,
+    checklist: items,
+    summary: {
+      event_status: event.status,
+      report_snapshot_version: reportFreeze.report_snapshot_version,
+      unresolved_incidents: reportFreeze.unresolved_incidents,
+      iot_blocker_count: goLiveReadiness.blockers.length,
+      rehearsal_blocker_count: rehearsal.blockers.length,
+      compliance_blocker_count: complianceReadiness.blockers.length
+    },
+    latest_pilot_signoff_export: latestPilotSignoffExport,
+    sections: {
+      iot_go_live: goLiveReadiness,
+      pilot_rehearsal: rehearsal,
+      compliance_closeout: complianceReadiness,
+      report_freeze: reportFreeze
+    },
+    runbook_links: {
+      staging_runbook: "/Users/kishore/Codex Development/deploy/staging/README.md",
+      pilot_go_live_runbook: "/Users/kishore/Codex Development/deploy/staging/PILOT_GO_LIVE_RUNBOOK.md",
+      pilot_go_live_checklist: "/Users/kishore/Codex Development/deploy/staging/PILOT_GO_LIVE_CHECKLIST.md",
+      pilot_rehearsal_runbook: "/Users/kishore/Codex Development/deploy/staging/PILOT_REHEARSAL_RUNBOOK.md",
+      compliance_closeout_runbook: "/Users/kishore/Codex Development/deploy/staging/PILOT_COMPLIANCE_CLOSEOUT_RUNBOOK.md",
+      pilot_signoff_pack: "/Users/kishore/Codex Development/deploy/staging/PILOT_SIGNOFF_PACK.md"
+    },
+    recommended_actions: [
+      {
+        label: "View IoT go-live readiness",
+        endpoint: `/organizer/events/${event.id}/iot-go-live-readiness`
+      },
+      {
+        label: "View rehearsal report",
+        endpoint: `/organizer/events/${event.id}/pilot-rehearsal-report`
+      },
+      {
+        label: "View compliance closeout readiness",
+        endpoint: `/organizer/events/${event.id}/compliance/closeout-readiness`
+      },
+      {
+        label: "Request pilot signoff export",
+        endpoint: `/organizer/events/${event.id}/pilot-signoff-export`
+      }
+    ]
+  };
+}
+
+async function buildPilotGoLiveExecution(repos, event, eventPolicy) {
+  const [signoffPack, latestDryRun, approvals] = await Promise.all([
+    buildPilotSignoffPack(repos, event, eventPolicy),
+    repos.pilotDryRunRecords.findLatestByEvent(event.tenant_id, event.id),
+    repos.pilotSignoffApprovals.listByEvent(event.tenant_id, event.id)
+  ]);
+
+  const approvalMap = new Map(approvals.map((entry) => [entry.approver_role, entry]));
+  const approvalItems = ["organizer", "platform", "iot"].map((role) => {
+    const existing = approvalMap.get(role);
+    return existing ?? {
+      approver_role: role,
+      approver_label: role === "iot" ? "IoT team" : `${capitalize(role)} owner`,
+      approval_status: "pending",
+      note: null,
+      approved_at: null,
+      updated_at: null
+    };
+  });
+
+  const dryRunPassed =
+    latestDryRun?.status === "completed" &&
+    (latestDryRun.summary?.all_checks_passed === true || (latestDryRun.blockers ?? []).length === 0);
+
+  const items = [];
+  const blockers = [];
+  const warnings = [];
+
+  pushReadinessItem(items, blockers, {
+    key: "pilot_signoff_pack",
+    label: "Pilot signoff pack is ready",
+    passed: signoffPack.ready,
+    blockerMessage: "Pilot signoff pack must be ready before the joint go-live execution can be approved"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "staging_dry_run",
+    label: "Latest staging go-live dry run completed with all checks passing",
+    passed: dryRunPassed,
+    blockerMessage: "Record a successful staging go-live dry run before final pilot signoff"
+  });
+
+  for (const approval of approvalItems) {
+    pushReadinessItem(items, blockers, {
+      key: `approval_${approval.approver_role}`,
+      label: `${capitalize(approval.approver_role)} approval is recorded`,
+      passed: approval.approval_status === "approved",
+      blockerMessage: `Record an approved ${approval.approver_role} signoff before final pilot go-live`
+    });
+    if (approval.approval_status === "rejected") {
+      warnings.push(`SIGNOFF_REJECTED_${approval.approver_role.toUpperCase()}`);
+    }
+  }
+
+  if (latestDryRun?.status === "failed") {
+    warnings.push("STAGING_DRY_RUN_FAILED");
+  }
+
+  return {
+    ready: blockers.length === 0,
+    checked_at: new Date().toISOString(),
+    blockers,
+    warnings,
+    checklist: items,
+    signoff_pack: signoffPack,
+    latest_dry_run: latestDryRun,
+    approvals: approvalItems,
+    runbook_links: {
+      staging_runbook: "/Users/kishore/Codex Development/deploy/staging/README.md",
+      pilot_go_live_runbook: "/Users/kishore/Codex Development/deploy/staging/PILOT_GO_LIVE_RUNBOOK.md",
+      pilot_signoff_pack: "/Users/kishore/Codex Development/deploy/staging/PILOT_SIGNOFF_PACK.md",
+      joint_execution_runbook: "/Users/kishore/Codex Development/deploy/staging/JOINT_PILOT_SIGNOFF_EXECUTION.md"
+    },
+    recommended_actions: [
+      {
+        label: "View pilot signoff pack",
+        endpoint: `/organizer/events/${event.id}/pilot-signoff-pack`
+      },
+      {
+        label: "Record staging dry run",
+        endpoint: `/organizer/events/${event.id}/pilot-go-live-dry-run`
+      },
+      {
+        label: "Record joint approvals",
+        endpoint: `/organizer/events/${event.id}/pilot-go-live-approvals`
+      }
+    ]
+  };
+}
+
+async function buildFinalGoLivePackage(ctx, event, eventPolicy) {
+  const [
+    deploymentReadiness,
+    securityReadiness,
+    auditLogs,
+    breakGlassRequests,
+    users,
+    pentestFindings,
+    pilotSignoff,
+    jointExecution,
+    finalApprovals
+  ] = await Promise.all([
+    buildDeploymentReadiness(ctx),
+    Promise.resolve(buildSecurityReadiness(ctx)),
+    ctx.repos.auditLogs.listByTenant(event.tenant_id),
+    ctx.repos.breakGlassAccess.listByTenant(event.tenant_id),
+    ctx.repos.users.listByTenant(event.tenant_id),
+    ctx.repos.pentestFindings.listByTenant(event.tenant_id),
+    buildPilotSignoffPack(ctx.repos, event, eventPolicy),
+    buildPilotGoLiveExecution(ctx.repos, event, eventPolicy),
+    ctx.repos.finalLaunchApprovals.listByEvent(event.tenant_id, event.id)
+  ]);
+
+  const securityAlerts = buildSecurityAlerts({
+    readiness: securityReadiness,
+    auditLogs,
+    breakGlassRequests,
+    users,
+    pentestFindings,
+    notificationProviderReadiness: buildNotificationChannelsReadiness(ctx.env),
+    notificationWorkerSchedule: resolveNotificationWorkerSchedule(ctx.env),
+    notificationDeadLetterSummary: await buildNotificationDeadLetterSummary(ctx.repos, event.tenant_id, ctx.env)
+  });
+  const findingSummary = summarizePentestFindings(pentestFindings);
+  const approvalItems = buildFinalLaunchApprovalItems(finalApprovals);
+  const blockingSecurityAlerts = securityAlerts.items.filter((entry) =>
+    ["critical", "high"].includes(entry.severity) &&
+    ["security_readiness", "pentest", "break_glass"].includes(entry.source)
+  );
+  const securityControlFailures = securityReadiness.summary.fail ?? 0;
+  const items = [];
+  const blockers = [];
+  const warnings = [];
+
+  pushReadinessItem(items, blockers, {
+    key: "deployment_readiness",
+    label: "Production deployment readiness has zero blockers",
+    passed: deploymentReadiness.ready,
+    blockerMessage: "Clear deployment readiness blockers before final production launch"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "security_readiness",
+    label: "Security readiness has no failed controls",
+    passed: securityControlFailures === 0,
+    blockerMessage: "Clear failed security readiness controls before final production launch"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "security_alerts",
+    label: "No active high or critical security blockers remain",
+    passed: blockingSecurityAlerts.length === 0,
+    blockerMessage: "Resolve active high/critical security blockers before launch"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "pentest_findings",
+    label: "No blocking high or critical penetration-test findings remain",
+    passed: findingSummary.blocking === 0,
+    blockerMessage: "Remediate or formally accept blocking penetration-test findings before launch"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "pilot_signoff",
+    label: "Pilot signoff pack is ready",
+    passed: pilotSignoff.ready,
+    blockerMessage: "Complete the pilot signoff pack before final production launch"
+  });
+  pushReadinessItem(items, blockers, {
+    key: "joint_go_live_execution",
+    label: "Joint staging dry run and cross-team approvals are complete",
+    passed: jointExecution.ready,
+    blockerMessage: "Complete joint go-live execution approvals before production launch"
+  });
+
+  for (const approval of approvalItems) {
+    pushReadinessItem(items, blockers, {
+      key: `final_approval_${approval.approver_role}`,
+      label: `${finalLaunchApprovalLabel(approval.approver_role)} approval is recorded`,
+      passed: approval.approval_status === "approved",
+      blockerMessage: `Record final ${finalLaunchApprovalLabel(approval.approver_role)} approval before launch`
+    });
+    if (approval.approval_status === "rejected") {
+      warnings.push(`FINAL_APPROVAL_REJECTED_${approval.approver_role.toUpperCase()}`);
+    }
+  }
+
+  if ((deploymentReadiness.summary.manual ?? 0) > 0) {
+    warnings.push("DEPLOYMENT_MANUAL_GATES_REMAIN");
+  }
+  if ((securityReadiness.summary.manual ?? 0) > 0) {
+    warnings.push("SECURITY_MANUAL_GATES_REMAIN");
+  }
+
+  return {
+    ready: blockers.length === 0,
+    generated_at: new Date().toISOString(),
+    event: formatEventSummary(event),
+    blockers,
+    warnings,
+    checklist: items,
+    approvals: approvalItems,
+    sections: {
+      deployment_readiness: deploymentReadiness,
+      security_readiness: securityReadiness,
+      security_alerts: securityAlerts,
+      pentest_findings: {
+        summary: findingSummary,
+        items: pentestFindings
+      },
+      pilot_signoff: pilotSignoff,
+      joint_go_live_execution: jointExecution
+    },
+    runbook_links: {
+      production_deployment: "/Users/kishore/Codex Development/deploy/production/README.md",
+      final_launch_checklist: "/Users/kishore/Codex Development/deploy/production/FINAL_GO_LIVE_CHECKLIST.md",
+      post_launch_monitoring: "/Users/kishore/Codex Development/deploy/production/POST_LAUNCH_MONITORING.md",
+      pentest_support: "/Users/kishore/Codex Development/docs/spec-closure-pack/external-pentest-support.md"
+    },
+    post_launch_monitoring: [
+      "Watch /ready, API error rate, and latency continuously for the first 24 hours.",
+      "Review platform-admin security alerts every hour for the first 24 hours.",
+      "Review IoT health, parity, and critical alert queues every hour during event opening.",
+      "Confirm export, audit, break-glass, DSR, and downstream deletion flows remain operational.",
+      "Run a 24-hour and 72-hour launch review before declaring production steady state."
+    ],
+    recommended_actions: [
+      {
+        label: "View deployment readiness",
+        endpoint: "/admin/deployment/readiness"
+      },
+      {
+        label: "View security alerts",
+        endpoint: "/admin/security/alerts"
+      },
+      {
+        label: "View penetration-test findings",
+        endpoint: "/admin/security/pentest/findings"
+      },
+      {
+        label: "Export final launch package",
+        endpoint: `/admin/events/${event.id}/final-go-live/export`
+      }
+    ]
+  };
+}
+
+function buildFinalLaunchApprovalItems(approvals) {
+  const approvalMap = new Map(approvals.map((entry) => [entry.approver_role, entry]));
+  return ["platform_admin", "organizer_owner", "security_owner", "business_owner"].map((role) => {
+    const existing = approvalMap.get(role);
+    return existing ?? {
+      approver_role: role,
+      approver_label: finalLaunchApprovalLabel(role),
+      approval_status: "pending",
+      note: null,
+      approved_at: null,
+      updated_at: null
+    };
+  });
+}
+
+function finalLaunchApprovalLabel(role) {
+  const labels = {
+    platform_admin: "Platform admin",
+    organizer_owner: "Organizer owner",
+    security_owner: "Security owner",
+    business_owner: "Business owner"
+  };
+  return labels[role] ?? role;
+}
+
+function formatIntegrationRun(run) {
+  if (!run) {
+    return null;
+  }
+  return {
+    id: run.id,
+    integration_name: run.integration_name,
+    trigger_mode: run.trigger_mode,
+    initiated_by: run.initiated_by,
+    status: run.status,
+    step_count: run.step_count,
+    failed_step_count: run.failed_step_count,
+    warning_count: run.warning_count,
+    started_at: run.started_at,
+    finished_at: run.finished_at,
+    error_summary: run.error_summary,
+    summary: run.summary ?? {},
+    steps: run.steps ?? []
+  };
+}
+
+function formatHealthStatus(health) {
+  if (!health) {
+    return {
+      status: "unknown",
+      certification_status: "unknown",
+      checked_at: null,
+      stale_after_seconds: null,
+      is_stale: false,
+      warning_count: 0,
+      warnings: [],
+      metrics: {}
+    };
+  }
+
+  const warningItems = [...(health.warnings ?? [])];
+  const isStale =
+    health.checked_at && health.stale_after_seconds
+      ? Date.now() - Date.parse(health.checked_at) > health.stale_after_seconds * 1000
+      : false;
+
+  if (isStale) {
+    warningItems.push({
+      code: "HEALTH_CHECK_STALE",
+      severity: "warning",
+      message: "IoT health check is stale and should be rerun",
+      details: {
+        checked_at: health.checked_at,
+        stale_after_seconds: health.stale_after_seconds
+      }
+    });
+  }
+
+  return {
+    status: isStale ? escalateHealthStatus(health.overall_status, "warning") : health.overall_status,
+    certification_status: health.certification_status,
+    contract_version: health.contract_version,
+    environment: health.environment,
+    build_version: health.build_version,
+    checked_at: health.checked_at,
+    stale_after_seconds: health.stale_after_seconds,
+    is_stale: isStale,
+    warning_count: warningItems.length,
+    warnings: warningItems,
+    metrics: health.metrics ?? {}
+  };
+}
+
+function escalateHealthStatus(currentStatus, nextStatus) {
+  const ranking = {
+    unknown: 0,
+    healthy: 1,
+    warning: 2,
+    critical: 3,
+    failed: 4
+  };
+  return ranking[nextStatus] > ranking[currentStatus] ? nextStatus : currentStatus;
+}
+
+function formatStreamCheckpoint(checkpoint) {
+  if (!checkpoint) {
+    return {
+      status: "never_synced",
+      last_cursor: null,
+      last_synced_at: null,
+      contract_version: null,
+      environment: null,
+      build_version: null,
+      metadata: {}
+    };
+  }
+
+  return {
+    status: checkpoint.last_synced_at ? "synced" : "pending",
+    last_cursor: checkpoint.last_cursor,
+    last_synced_at: checkpoint.last_synced_at,
+    contract_version: checkpoint.last_contract_version,
+    environment: checkpoint.last_environment,
+    build_version: checkpoint.last_build_version,
+    consecutive_failure_count: checkpoint.metadata?.consecutive_failure_count ?? 0,
+    last_failure_code: checkpoint.metadata?.last_failure_code ?? null,
+    last_failure_retryable: checkpoint.metadata?.last_failure_retryable ?? null,
+    metadata: checkpoint.metadata ?? {}
+  };
+}
+
+function formatAlertEvent(alert) {
+  if (!alert) {
+    return null;
+  }
+  return {
+    id: alert.id,
+    source_type: alert.source_type,
+    source_id: alert.source_id,
+    severity: alert.severity,
+    status: alert.status,
+    code: alert.code,
+    message: alert.message,
+    details: alert.details ?? {},
+    delivery_status: alert.delivery_status,
+    routed_destinations: alert.routed_destinations ?? [],
+    last_delivery_at: alert.last_delivery_at,
+    delivery_error: alert.delivery_error,
+    created_at: alert.created_at,
+    updated_at: alert.updated_at
+  };
+}
+
+function formatParityStatus(status) {
+  if (!status) {
+    return {
+      status: "unknown",
+      checked_at: null,
+      staging: null,
+      production: null,
+      issues: []
+    };
+  }
+
+  return {
+    status: status.status,
+    checked_at: status.checked_at,
+    staging: {
+      contract_version: status.staging_contract_version,
+      environment: status.staging_environment,
+      build_version: status.staging_build_version
+    },
+    production: {
+      contract_version: status.production_contract_version,
+      environment: status.production_environment,
+      build_version: status.production_build_version
+    },
+    issues: status.issues ?? [],
+    details: status.details ?? {}
+  };
+}
+
+function pushReadinessItem(items, blockers, { key, label, passed, blockerMessage }) {
+  items.push({
+    key,
+    label,
+    passed
+  });
+  if (!passed) {
+    blockers.push(blockerMessage);
+  }
+}
+
+function capitalize(value) {
+  if (!value) {
+    return "";
+  }
+  return `${value[0].toUpperCase()}${value.slice(1)}`;
+}

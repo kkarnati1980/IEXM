@@ -1,0 +1,36 @@
+{
+  "name": "physical-world-interaction-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "pg": "^8.13.1"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "api:dev": "node apps/api/src/server.mjs",
+    "api:iot:sync-taps": "node apps/api/src/scripts/sync-iot-taps.mjs",
+    "api:iot:sync-heartbeats": "node apps/api/src/scripts/sync-iot-heartbeats.mjs",
+    "api:iot:sync-incidents": "node apps/api/src/scripts/sync-iot-incidents.mjs",
+    "api:iot:sync-device-ops": "node apps/api/src/scripts/sync-iot-device-ops.mjs",
+    "api:iot:certify-contract": "node apps/api/src/scripts/run-iot-contract-certification.mjs",
+    "api:iot:orchestrate": "node apps/api/src/scripts/run-iot-integration-orchestrator.mjs",
+    "api:iot:health-check": "node apps/api/src/scripts/run-iot-certification-health.mjs",
+    "api:notifications:process-queue": "node apps/api/src/scripts/run-notification-queue.mjs",
+    "api:notifications:scheduler": "node apps/api/src/scripts/run-notification-worker-scheduler.mjs",
+    "api:migrate": "node apps/api/src/scripts/migrate.mjs",
+    "api:seed": "node apps/api/src/scripts/seed-demo.mjs",
+    "api:validate-production-config": "node apps/api/src/scripts/validate-production-config.mjs",
+    "db:local:start": "bash scripts/postgres-local-start.sh",
+    "db:local:stop": "bash scripts/postgres-local-stop.sh",
+    "db:backup": "bash scripts/postgres-local-backup.sh",
+    "test": "node --test apps/api/test/*.test.mjs packages/runtime/test/*.test.mjs",
+    "test:e2e": "node --test apps/web/test/*.test.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.59.1"
+  }
+}

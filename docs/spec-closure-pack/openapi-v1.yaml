@@ -1,0 +1,269 @@
+openapi: 3.1.0
+info:
+  title: Physical-World Interaction Platform API
+  version: 0.1.0
+servers:
+  - url: http://localhost:3000
+paths:
+  /health:
+    get:
+      summary: Health status
+      responses:
+        "200":
+          description: OK
+  /device/config/{deviceId}:
+    get:
+      summary: Fetch signed device config
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Device configuration
+  /device/heartbeat:
+    post:
+      summary: Record device heartbeat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_id, event_id, stall_id, local_queue_depth, battery_level]
+              properties:
+                device_id:
+                  type: string
+                event_id:
+                  type: string
+                stall_id:
+                  type: string
+                local_queue_depth:
+                  type: integer
+                battery_level:
+                  type: integer
+      responses:
+        "202":
+          description: Accepted
+  /device/sync:
+    post:
+      summary: Upload ordered tap events
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_id, items]
+              properties:
+                device_id:
+                  type: string
+                items:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/LocalTapEvent"
+      responses:
+        "200":
+          description: Sync result
+  /interactions/tap:
+    post:
+      summary: Create interaction from a device tap
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalTapEvent"
+      responses:
+        "200":
+          description: Interaction created or deduplicated
+  /consents/capture:
+    post:
+      summary: Capture attendee consent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [interaction_id, vendor_release_allowed, sponsor_release_allowed]
+              properties:
+                interaction_id:
+                  type: string
+                vendor_release_allowed:
+                  type: boolean
+                sponsor_release_allowed:
+                  type: boolean
+      responses:
+        "200":
+          description: Consent stored
+  /consents/revoke:
+    post:
+      summary: Revoke attendee consent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [interaction_id]
+              properties:
+                interaction_id:
+                  type: string
+      responses:
+        "200":
+          description: Consent revoked
+  /stalls/{stallId}/leads:
+    get:
+      summary: View scoped stall leads
+      parameters:
+        - in: path
+          name: stallId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Lead list
+  /sponsors/{sponsorId}/metrics:
+    get:
+      summary: Sponsor aggregate metrics
+      parameters:
+        - in: path
+          name: sponsorId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: event_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sponsor metrics
+  /exports/request:
+    post:
+      summary: Request a controlled export
+      responses:
+        "200":
+          description: Export requested
+  /exports/{exportId}/approve:
+    post:
+      summary: Approve an export
+      responses:
+        "200":
+          description: Export approved
+  /exports/{exportId}/reject:
+    post:
+      summary: Reject an export
+      responses:
+        "200":
+          description: Export rejected
+  /exports/{exportId}/status:
+    get:
+      summary: Inspect export status
+      responses:
+        "200":
+          description: Export status
+  /break-glass/request:
+    post:
+      summary: Request privileged emergency access
+      responses:
+        "200":
+          description: Break-glass request created
+  /break-glass/{requestId}/approve:
+    post:
+      summary: Approve a break-glass request
+      responses:
+        "200":
+          description: Break-glass approved or activated
+  /admin/events/{eventId}/final-go-live:
+    get:
+      summary: Build the platform-admin final go-live package
+      parameters:
+        - in: path
+          name: eventId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Final launch package with readiness, blockers, approvals, and evidence sections
+  /admin/events/{eventId}/final-go-live/approvals:
+    post:
+      summary: Record a final go-live approval decision
+      parameters:
+        - in: path
+          name: eventId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approver_role, approver_label, approval_status]
+              properties:
+                approver_role:
+                  type: string
+                  enum: [platform_admin, organizer_owner, security_owner, business_owner]
+                approver_label:
+                  type: string
+                approval_status:
+                  type: string
+                  enum: [pending, approved, rejected]
+                note:
+                  type: string
+                  nullable: true
+      responses:
+        "200":
+          description: Approval recorded
+  /admin/events/{eventId}/final-go-live/export:
+    post:
+      summary: Export final launch package evidence
+      parameters:
+        - in: path
+          name: eventId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Final launch package export payload
+components:
+  schemas:
+    LocalTapEvent:
+      type: object
+      required:
+        - device_id
+        - event_id
+        - stall_id
+        - local_event_id
+        - tap_type
+        - occurred_at
+      properties:
+        device_id:
+          type: string
+        event_id:
+          type: string
+        stall_id:
+          type: string
+        local_event_id:
+          type: string
+        tap_type:
+          type: string
+          enum: [phone_ndef, card_uid, qr]
+        reader_uid:
+          type: string
+          nullable: true
+        ndef_payload:
+          type: string
+          nullable: true
+        occurred_at:
+          type: string
+          format: date-time

@@ -1,0 +1,519 @@
+openapi: 3.1.0
+info:
+  title: IoT Platform Integration Contract
+  version: 2026-04-17.1
+servers:
+  - url: https://iot-staging.example.com
+    description: Staging
+  - url: https://iot.example.com
+    description: Production
+paths:
+  /iot/v1/meta/contract:
+    get:
+      summary: Report contract and build metadata
+      responses:
+        "200":
+          description: Contract metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContractMetadata"
+  /iot/v1/device-credentials/provision:
+    post:
+      summary: Provision a device credential
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProvisionCredentialRequest"
+      responses:
+        "201":
+          description: Credential provisioned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProvisionCredentialResponse"
+        "409":
+          description: Device not provisionable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /iot/v1/device-credentials/{credentialId}/revoke:
+    post:
+      summary: Revoke a device credential
+      parameters:
+        - in: path
+          name: credentialId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Credential revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevokeCredentialResponse"
+        "404":
+          description: Credential not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /iot/v1/devices/{deviceId}/assignment:
+    get:
+      summary: Fetch active assignment for a device
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Active assignment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentResponse"
+        "404":
+          description: No active assignment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /iot/v1/devices/{deviceId}/diagnostics:
+    get:
+      summary: Fetch current diagnostics snapshot for organizer operations
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Diagnostics snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiagnosticsResponse"
+        "404":
+          description: Device not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /iot/v1/streams/taps:
+    get:
+      summary: Read normalized tap events
+      parameters:
+        - in: query
+          name: after_cursor
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: Tap stream page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TapStreamPage"
+        "400":
+          description: Cursor invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /iot/v1/streams/heartbeats:
+    get:
+      summary: Read normalized heartbeat events
+      parameters:
+        - in: query
+          name: after_cursor
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: Heartbeat stream page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeartbeatStreamPage"
+        "400":
+          description: Cursor invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /iot/v1/streams/incidents:
+    get:
+      summary: Read normalized device incidents
+      parameters:
+        - in: query
+          name: after_cursor
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: Incident stream page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentStreamPage"
+        "400":
+          description: Cursor invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+components:
+  schemas:
+    ContractMetadata:
+      type: object
+      required: [contract_version, environment, build_version]
+      properties:
+        contract_version:
+          type: string
+        environment:
+          type: string
+          enum: [staging, production]
+        build_version:
+          type: string
+    Assignment:
+      type: object
+      required:
+        - tenant_id
+        - device_id
+        - event_id
+        - stall_id
+        - assignment_checksum
+        - lease_expires_at
+      properties:
+        tenant_id:
+          type: string
+        device_id:
+          type: string
+        event_id:
+          type: string
+        stall_id:
+          type: string
+        assignment_checksum:
+          type: string
+        lease_expires_at:
+          type: string
+          format: date-time
+    AssignmentResponse:
+      allOf:
+        - $ref: "#/components/schemas/ContractMetadata"
+        - type: object
+          required: [assignment]
+          properties:
+            assignment:
+              $ref: "#/components/schemas/Assignment"
+    ProvisionCredentialRequest:
+      type: object
+      required: [tenant_id, device_id, credential_label, requested_by]
+      properties:
+        tenant_id:
+          type: string
+        device_id:
+          type: string
+        credential_label:
+          type: string
+        requested_by:
+          type: string
+    ProvisionCredentialResponse:
+      allOf:
+        - $ref: "#/components/schemas/ContractMetadata"
+        - type: object
+          required: [credential_id, device_id, bearer_token, issued_at]
+          properties:
+            credential_id:
+              type: string
+            device_id:
+              type: string
+            bearer_token:
+              type: string
+            issued_at:
+              type: string
+              format: date-time
+    RevokeCredentialResponse:
+      allOf:
+        - $ref: "#/components/schemas/ContractMetadata"
+        - type: object
+          required: [credential_id, device_id, status, revoked_at]
+          properties:
+            credential_id:
+              type: string
+            device_id:
+              type: string
+            status:
+              type: string
+              enum: [revoked]
+            revoked_at:
+              type: string
+              format: date-time
+    TapEvent:
+      type: object
+      required:
+        - stream_cursor
+        - tenant_id
+        - device_id
+        - event_id
+        - stall_id
+        - assignment_checksum
+        - local_event_id
+        - queue_sequence_number
+        - tap_type
+        - delivery_mode
+        - occurred_at
+        - cloud_received_at
+      properties:
+        stream_cursor:
+          type: string
+        tenant_id:
+          type: string
+        device_id:
+          type: string
+        event_id:
+          type: string
+        stall_id:
+          type: string
+        assignment_checksum:
+          type: string
+        local_event_id:
+          type: string
+        queue_sequence_number:
+          type: integer
+        tap_type:
+          type: string
+          enum: [phone_ndef, card_uid, qr]
+        reader_uid:
+          type: string
+          nullable: true
+        ndef_payload:
+          type: string
+          nullable: true
+        delivery_mode:
+          type: string
+          enum: [online_single, offline_replay]
+        occurred_at:
+          type: string
+          format: date-time
+        cloud_received_at:
+          type: string
+          format: date-time
+    HeartbeatEvent:
+      type: object
+      required:
+        - stream_cursor
+        - tenant_id
+        - device_id
+        - event_id
+        - stall_id
+        - assignment_checksum
+        - battery_level
+        - local_queue_depth
+        - connectivity_status
+        - reader_status
+        - app_version
+        - firmware_version
+        - recorded_at
+      properties:
+        stream_cursor:
+          type: string
+        tenant_id:
+          type: string
+        device_id:
+          type: string
+        event_id:
+          type: string
+        stall_id:
+          type: string
+        assignment_checksum:
+          type: string
+        battery_level:
+          type: integer
+        local_queue_depth:
+          type: integer
+        connectivity_status:
+          type: string
+          enum: [online, degraded, offline]
+        reader_status:
+          type: string
+          enum: [connected, disconnected, degraded]
+        app_version:
+          type: string
+        firmware_version:
+          type: string
+        recorded_at:
+          type: string
+          format: date-time
+    IncidentEvent:
+      type: object
+      required:
+        - stream_cursor
+        - tenant_id
+        - device_id
+        - severity
+        - code
+        - message
+        - status
+        - occurred_at
+      properties:
+        stream_cursor:
+          type: string
+        tenant_id:
+          type: string
+        device_id:
+          type: string
+        event_id:
+          type: string
+          nullable: true
+        stall_id:
+          type: string
+          nullable: true
+        assignment_checksum:
+          type: string
+          nullable: true
+        severity:
+          type: string
+          enum: [P0, P1, P2, P3]
+        code:
+          type: string
+        message:
+          type: string
+        status:
+          type: string
+          enum: [open, resolved]
+        metadata:
+          type: object
+          additionalProperties: true
+        occurred_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+    DiagnosticsResponse:
+      allOf:
+        - $ref: "#/components/schemas/ContractMetadata"
+        - type: object
+          required: [device_id, assignment, connectivity_status, reader_status, app_version, firmware_version, local_queue_depth, last_heartbeat_at]
+          properties:
+            device_id:
+              type: string
+            assignment:
+              $ref: "#/components/schemas/Assignment"
+            connectivity_status:
+              type: string
+              enum: [online, degraded, offline]
+            reader_status:
+              type: string
+              enum: [connected, disconnected, degraded]
+            app_version:
+              type: string
+            firmware_version:
+              type: string
+            local_queue_depth:
+              type: integer
+            last_heartbeat_at:
+              type: string
+              format: date-time
+            open_incident:
+              $ref: "#/components/schemas/IncidentEvent"
+    TapStreamPage:
+      allOf:
+        - $ref: "#/components/schemas/ContractMetadata"
+        - type: object
+          required: [items]
+          properties:
+            next_cursor:
+              type: string
+              nullable: true
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/TapEvent"
+    HeartbeatStreamPage:
+      allOf:
+        - $ref: "#/components/schemas/ContractMetadata"
+        - type: object
+          required: [items]
+          properties:
+            next_cursor:
+              type: string
+              nullable: true
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/HeartbeatEvent"
+    IncidentStreamPage:
+      allOf:
+        - $ref: "#/components/schemas/ContractMetadata"
+        - type: object
+          required: [items]
+          properties:
+            next_cursor:
+              type: string
+              nullable: true
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/IncidentEvent"
+    ErrorEnvelope:
+      type: object
+      required: [contract_version, environment, build_version, error]
+      properties:
+        contract_version:
+          type: string
+        environment:
+          type: string
+          enum: [staging, production]
+        build_version:
+          type: string
+        error:
+          type: object
+          required: [code, message, retryable]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            retryable:
+              type: boolean
+            details:
+              type: object
+              additionalProperties: true
+
