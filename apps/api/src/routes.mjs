@@ -9075,7 +9075,7 @@ function capitalize(value) {
   // Minimal HMAC helper for webhook secret hashing.
   // Replace with your existing crypto util if one exists.
   function hashSecret(secret) {
-    const crypto = await import("node:crypto");
+    const crypto = require("node:crypto");
     return crypto.createHash("sha256").update(secret).digest("hex");
   }
 
@@ -9665,7 +9665,7 @@ function capitalize(value) {
   // Minimal HMAC helper for webhook secret hashing.
   // Replace with your existing crypto util if one exists.
   function hashSecret(secret) {
-    const crypto = await import("node:crypto");
+    const crypto = require("node:crypto");
     return crypto.createHash("sha256").update(secret).digest("hex");
   }
 

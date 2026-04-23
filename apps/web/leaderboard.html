@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Event Leaderboard</title>
+    <style>
+      :root{
+        --ink:#112233;--muted:#5f6f7f;--panel:rgba(255,255,255,0.10);
+        --line:rgba(255,255,255,0.15);--accent:#f5a623;--good:#0fba7a;
+        --bg1:#0d1b2a;--bg2:#112233;--bg3:#1a3048;
+      }
+      *{box-sizing:border-box;margin:0;padding:0;}
+      html,body{width:100%;height:100%;font-family:"IBM Plex Sans",system-ui,sans-serif;color:white;background:linear-gradient(145deg,var(--bg1),var(--bg2) 55%,var(--bg3));}
+
+      /* ── LAYOUT ──────────────────────────────────── */
+      .page{display:grid;grid-template-rows:auto 1fr auto;min-height:100vh;padding:0;}
+      header{padding:28px 40px 20px;display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid var(--line);backdrop-filter:blur(10px);background:rgba(17,34,51,.4);}
+      .header-left{display:flex;align-items:center;gap:18px;}
+      .event-logo{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,var(--accent),rgba(245,166,35,.4));display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;}
+      .event-name{font-size:1.4rem;font-weight:700;letter-spacing:.01em;}
+      .event-sub{font-size:13px;color:rgba(255,255,255,.55);margin-top:3px;}
+      .live-pill{display:flex;align-items:center;gap:8px;background:rgba(15,186,122,.15);border:1px solid rgba(15,186,122,.3);border-radius:999px;padding:8px 14px;font-size:13px;color:var(--good);}
+      .live-dot{width:8px;height:8px;border-radius:50%;background:var(--good);animation:pulse 1.5s infinite;}
+      @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.2)}}
+      .header-stats{display:flex;gap:28px;align-items:center;}
+      .hstat{text-align:right;}
+      .hstat .val{font-size:1.6rem;font-weight:300;line-height:1;}
+      .hstat .lbl{font-size:11px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.08em;margin-top:2px;}
+
+      main{display:grid;grid-template-columns:1.4fr 0.6fr;gap:0;overflow:hidden;}
+
+      /* ── LEADERBOARD LEFT ────────────────────────── */
+      .lb-panel{padding:32px 40px;overflow-y:auto;}
+      .section-label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.4);margin-bottom:20px;}
+      .lb-list{display:grid;gap:12px;}
+
+      .lb-item{
+        display:grid;
+        grid-template-columns:52px 1fr auto;
+        align-items:center;
+        gap:16px;
+        padding:18px 20px;
+        border-radius:18px;
+        border:1px solid var(--line);
+        background:rgba(255,255,255,.06);
+        position:relative;
+        overflow:hidden;
+        transition:transform .2s,background .2s;
+        cursor:default;
+      }
+      .lb-item.top1{background:linear-gradient(135deg,rgba(245,166,35,.18),rgba(255,255,255,.06));border-color:rgba(245,166,35,.35);}
+      .lb-item.top2{background:linear-gradient(135deg,rgba(200,200,220,.12),rgba(255,255,255,.05));border-color:rgba(200,200,220,.25);}
+      .lb-item.top3{background:linear-gradient(135deg,rgba(200,140,80,.12),rgba(255,255,255,.05));border-color:rgba(200,140,80,.25);}
+      .lb-item::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;border-radius:18px 0 0 18px;}
+      .lb-item.top1::before{background:var(--accent);}
+      .lb-item.top2::before{background:rgba(192,192,220,.8);}
+      .lb-item.top3::before{background:rgba(210,160,100,.8);}
+      .lb-item:hover{transform:translateX(4px);background:rgba(255,255,255,.1);}
+
+      .lb-rank{font-size:1.5rem;font-weight:700;text-align:center;opacity:.6;}
+      .lb-item.top1 .lb-rank{opacity:1;color:var(--accent);}
+      .lb-item.top2 .lb-rank{opacity:.9;color:rgba(210,210,240,1);}
+      .lb-item.top3 .lb-rank{opacity:.85;color:rgba(220,170,110,1);}
+
+      .lb-info{}
+      .lb-name{font-size:1.05rem;font-weight:600;margin-bottom:4px;}
+      .lb-meta{font-size:12px;color:rgba(255,255,255,.45);display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
+      .lb-tag{background:rgba(255,255,255,.08);border-radius:999px;padding:3px 9px;font-size:11px;}
+      .lb-tag.hot{background:rgba(245,166,35,.2);color:var(--accent);}
+      .lb-tag.trending{background:rgba(15,186,122,.15);color:var(--good);}
+
+      .lb-score-col{text-align:right;}
+      .lb-count{font-size:1.8rem;font-weight:300;line-height:1;}
+      .lb-count-lbl{font-size:11px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.07em;}
+      .lb-bar{height:3px;border-radius:3px;background:linear-gradient(90deg,rgba(245,166,35,.7),rgba(245,166,35,.2));margin-top:8px;min-width:40px;}
+
+      /* ── TREND + TICKER RIGHT ────────────────────── */
+      .right-panel{border-left:1px solid var(--line);display:grid;grid-template-rows:auto 1fr;overflow:hidden;}
+
+      .trending-section{padding:24px 24px 16px;}
+      .trending-list{display:grid;gap:8px;}
+      .trend-item{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.05);}
+      .trend-rank{width:24px;height:24px;border-radius:50%;background:rgba(15,186,122,.2);color:var(--good);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+      .trend-name{flex:1;font-size:13px;font-weight:500;}
+      .trend-score{font-size:13px;color:var(--good);font-weight:600;}
+      .trend-arrow{font-size:10px;color:var(--good);}
+
+      .ticker-section{padding:0;border-top:1px solid var(--line);overflow:hidden;display:flex;flex-direction:column;}
+      .ticker-header{padding:16px 24px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.4);display:flex;align-items:center;justify-content:space-between;}
+      .ticker-list{flex:1;overflow:hidden;position:relative;}
+      .ticker-items{display:grid;gap:0;}
+      .ticker-item{padding:12px 24px;border-bottom:1px solid rgba(255,255,255,.05);display:flex;align-items:center;gap:12px;animation:slideIn .4s ease;}
+      @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+      .ticker-dot{width:8px;height:8px;border-radius:50%;background:var(--good);flex-shrink:0;opacity:.7;}
+      .ticker-text{font-size:12px;color:rgba(255,255,255,.65);line-height:1.4;}
+      .ticker-time{font-size:11px;color:rgba(255,255,255,.3);margin-left:auto;white-space:nowrap;}
+
+      /* ── FOOTER ──────────────────────────────────── */
+      footer{padding:14px 40px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:20px;backdrop-filter:blur(10px);background:rgba(17,34,51,.4);}
+      .footer-left{font-size:12px;color:rgba(255,255,255,.35);}
+      .footer-right{display:flex;align-items:center;gap:16px;font-size:12px;color:rgba(255,255,255,.35);}
+      .refresh-indicator{display:flex;align-items:center;gap:6px;}
+      .refresh-dot{width:6px;height:6px;border-radius:50%;background:var(--good);animation:pulse 2s infinite;}
+      .qr-placeholder{width:48px;height:48px;border-radius:10px;background:white;display:flex;align-items:center;justify-content:center;font-size:22px;}
+
+      /* ── CONFIG OVERLAY ──────────────────────────── */
+      .config-bar{position:fixed;top:0;left:0;right:0;background:rgba(13,27,42,.95);padding:12px 24px;display:flex;gap:10px;align-items:center;z-index:100;flex-wrap:wrap;border-bottom:1px solid var(--line);}
+      .config-bar input{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:8px 10px;color:white;font:inherit;font-size:13px;min-width:160px;}
+      .config-bar input::placeholder{color:rgba(255,255,255,.3);}
+      .config-bar button{border:0;border-radius:8px;padding:8px 12px;cursor:pointer;font:inherit;font-size:13px;}
+      .config-bar .btn-load{background:var(--accent);color:var(--bg1);font-weight:600;}
+      .config-bar .btn-close{background:rgba(255,255,255,.1);color:white;}
+      .config-bar label{font-size:12px;color:rgba(255,255,255,.5);}
+      #config-toggle{position:fixed;bottom:20px;right:20px;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.1);border:1px solid var(--line);color:white;font-size:18px;cursor:pointer;z-index:99;display:flex;align-items:center;justify-content:center;}
+
+      @media(max-width:900px){
+        main{grid-template-columns:1fr;}
+        .right-panel{border-left:0;border-top:1px solid var(--line);}
+        header{padding:16px 20px;}
+        .lb-panel{padding:20px;}
+        footer{padding:10px 20px;}
+        .header-stats{display:none;}
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Config overlay (hidden by default — press ⚙ to show) -->
+    <div class="config-bar" id="config-bar" style="display:none;">
+      <label>Event ID</label>
+      <input id="cfg-event" value="event-demo" placeholder="event-demo">
+      <label>API base</label>
+      <input id="cfg-api" placeholder="http://127.0.0.1:3000">
+      <label>Refresh (s)</label>
+      <input id="cfg-interval" value="5" style="max-width:70px;">
+      <button class="btn-load" onclick="applyConfig()">Apply</button>
+      <button class="btn-close" onclick="toggleConfig()">✕ Close</button>
+    </div>
+    <button id="config-toggle" onclick="toggleConfig()" title="Configure">⚙</button>
+
+    <div class="page">
+      <header>
+        <div class="header-left">
+          <div class="event-logo">🏆</div>
+          <div>
+            <div class="event-name" id="event-name">Loading…</div>
+            <div class="event-sub" id="event-sub">Live event leaderboard · No personal data shown</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:20px;">
+          <div class="header-stats">
+            <div class="hstat">
+              <div class="val" id="stat-connections">—</div>
+              <div class="lbl">Connections today</div>
+            </div>
+            <div class="hstat">
+              <div class="val" id="stat-stalls">—</div>
+              <div class="lbl">Active stalls</div>
+            </div>
+          </div>
+          <div class="live-pill"><div class="live-dot"></div>Live</div>
+        </div>
+      </header>
+
+      <main>
+        <!-- LEFT: Full leaderboard -->
+        <div class="lb-panel">
+          <div class="section-label">🏅 Top stalls by interactions</div>
+          <div class="lb-list" id="lb-list">
+            <!-- Populated by JS -->
+            <div style="text-align:center;padding:40px;color:rgba(255,255,255,.3);font-size:14px;">Loading leaderboard…</div>
+          </div>
+        </div>
+
+        <!-- RIGHT: Trending + ticker -->
+        <div class="right-panel">
+          <div class="trending-section">
+            <div class="section-label">🔥 Trending now (last 60 min)</div>
+            <div class="trending-list" id="trending-list">
+              <div style="color:rgba(255,255,255,.3);font-size:13px;padding:8px 0;">Loading trending stalls…</div>
+            </div>
+          </div>
+          <div class="ticker-section">
+            <div class="ticker-header">
+              <span>Latest connections</span>
+              <span id="ticker-count" style="color:rgba(255,255,255,.25);">—</span>
+            </div>
+            <div class="ticker-list">
+              <div class="ticker-items" id="ticker-items">
+                <div class="ticker-item"><div class="ticker-dot"></div><div class="ticker-text" style="color:rgba(255,255,255,.3);">Waiting for connections…</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <div class="footer-left" id="footer-time">Last updated: —</div>
+        <div class="footer-right">
+          <div class="refresh-indicator"><div class="refresh-dot"></div><span>Updates every <span id="interval-display">5</span>s</span></div>
+          <div class="qr-placeholder">📱</div>
+          <span style="font-size:11px;max-width:120px;line-height:1.4;opacity:.6;">Scan to connect with exhibitors</span>
+        </div>
+      </footer>
+    </div>
+
+    <script type="module">
+      const params   = new URLSearchParams(location.search);
+      let apiBase    = params.get("apiBase") || (location.protocol==="file:" ? "http://127.0.0.1:3000" : location.origin);
+      let eventId    = params.get("eventId") || "event-demo";
+      let intervalMs = (parseInt(params.get("refresh") || "5", 10)) * 1000;
+      let timer      = null;
+      let tickerLog  = [];
+
+      const $  = id => document.getElementById(id);
+      window.toggleConfig = toggleConfig;
+      window.applyConfig  = applyConfig;
+
+      $("cfg-event").value    = eventId;
+      $("cfg-api").value      = apiBase !== location.origin ? apiBase : "";
+      $("cfg-interval").value = intervalMs / 1000;
+      $("interval-display").textContent = intervalMs / 1000;
+
+      // Boot
+      load();
+      startTimer();
+
+      function startTimer() {
+        if (timer) clearInterval(timer);
+        timer = setInterval(load, intervalMs);
+      }
+
+      /* ── LOAD ────────────────────────────────────── */
+      async function load() {
+        try {
+          const [lb, overview] = await Promise.all([
+            api(`/events/${enc(eventId)}/leaderboard`),
+            api(`/organizer/events/${enc(eventId)}/overview`).catch(() => null)
+          ]);
+
+          renderHeader(lb, overview);
+          renderLeaderboard(lb.stalls || lb.items || []);
+          renderTrending(lb.trending || []);
+          renderTicker(lb.latest_connections || []);
+          $("footer-time").textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        } catch(e) {
+          // Graceful degradation — show demo data
+          renderDemo();
+        }
+      }
+
+      /* ── HEADER ──────────────────────────────────── */
+      function renderHeader(lb, overview) {
+        $("event-name").textContent = lb.event_name || overview?.event_name || "Event Leaderboard";
+        $("stat-connections").textContent = num(lb.connections_today || overview?.total_interactions || 0);
+        $("stat-stalls").textContent = num(lb.active_stalls || overview?.active_stalls || 0);
+      }
+
+      /* ── LEADERBOARD ─────────────────────────────── */
+      function renderLeaderboard(stalls) {
+        const el = $("lb-list");
+        if (!stalls.length) { el.innerHTML = `<div style="text-align:center;padding:40px;color:rgba(255,255,255,.3);font-size:14px;">No stall data yet.</div>`; return; }
+        const maxCount = Math.max(...stalls.map(s => s.interactions || s.total_interactions || 0), 1);
+        el.innerHTML = "";
+        stalls.forEach((stall, i) => {
+          const rank    = i + 1;
+          const count   = stall.interactions || stall.total_interactions || 0;
+          const barPct  = Math.max(8, Math.round((count / maxCount) * 100));
+          const topCls  = rank === 1 ? "top1" : rank === 2 ? "top2" : rank === 3 ? "top3" : "";
+          const medal   = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `${rank}`;
+          const isTrend = stall.trend_score > 0 || stall.is_trending;
+          const hotLeads = stall.hot_leads || 0;
+
+          const item = document.createElement("div");
+          item.className = `lb-item ${topCls}`;
+          item.innerHTML = `
+            <div class="lb-rank">${medal}</div>
+            <div class="lb-info">
+              <div class="lb-name">${esc(stall.stall_name || stall.name || `Stall ${rank}`)}</div>
+              <div class="lb-meta">
+                ${stall.hall_name ? `<span>${esc(stall.hall_name)}</span>` : ""}
+                ${isTrend ? `<span class="lb-tag trending">↑ Trending</span>` : ""}
+                ${hotLeads > 0 ? `<span class="lb-tag hot">🔥 ${hotLeads} hot</span>` : ""}
+                ${stall.unique_attendees ? `<span>${num(stall.unique_attendees)} unique</span>` : ""}
+              </div>
+              <div class="lb-bar" style="width:${barPct}%"></div>
+            </div>
+            <div class="lb-score-col">
+              <div class="lb-count">${num(count)}</div>
+              <div class="lb-count-lbl">connections</div>
+            </div>`;
+          el.appendChild(item);
+        });
+      }
+
+      /* ── TRENDING ────────────────────────────────── */
+      function renderTrending(trending) {
+        const el = $("trending-list");
+        if (!trending.length) { el.innerHTML = `<div style="color:rgba(255,255,255,.3);font-size:13px;padding:8px 0;">No trending data yet.</div>`; return; }
+        el.innerHTML = "";
+        trending.slice(0, 5).forEach((stall, i) => {
+          const item = document.createElement("div");
+          item.className = "trend-item";
+          item.innerHTML = `
+            <div class="trend-rank">${i+1}</div>
+            <div class="trend-name">${esc(stall.stall_name || stall.name)}</div>
+            <span class="trend-arrow">↑</span>
+            <div class="trend-score">+${num(stall.trend_score || stall.interactions_last_60min || 0)}</div>`;
+          el.appendChild(item);
+        });
+      }
+
+      /* ── TICKER ──────────────────────────────────── */
+      function renderTicker(connections) {
+        // Merge new connections into tickerLog (dedup by id)
+        for (const conn of connections) {
+          if (!tickerLog.find(t => t.id === conn.id)) tickerLog.unshift(conn);
+        }
+        tickerLog = tickerLog.slice(0, 30); // keep last 30
+
+        const el = $("ticker-items");
+        $("ticker-count").textContent = `${tickerLog.length} recent`;
+
+        if (!tickerLog.length) {
+          el.innerHTML = `<div class="ticker-item"><div class="ticker-dot"></div><div class="ticker-text" style="color:rgba(255,255,255,.3);">Waiting for connections…</div></div>`;
+          return;
+        }
+
+        el.innerHTML = "";
+        for (const conn of tickerLog.slice(0, 12)) {
+          // Spec §18E.3: only anonymised/public-safe form, NO personal names
+          const text = buildTickerText(conn);
+          const item = document.createElement("div");
+          item.className = "ticker-item";
+          item.innerHTML = `
+            <div class="ticker-dot"></div>
+            <div class="ticker-text">${esc(text)}</div>
+            <div class="ticker-time">${fmtRelTime(conn.occurred_at)}</div>`;
+          el.appendChild(item);
+        }
+      }
+
+      // Spec §18E.3: "A visitor connected with [Stall Name]" — NO PII
+      function buildTickerText(conn) {
+        const stall = conn.stall_name || "a stall";
+        const size  = conn.company_size_band; // ok to show if generalised
+        if (size && ["large","enterprise"].includes(size.toLowerCase())) {
+          return `A visitor from a large enterprise connected with ${stall}`;
+        }
+        return `A visitor connected with ${stall}`;
+      }
+
+      /* ── DEMO DATA (when API unavailable) ────────── */
+      function renderDemo() {
+        $("event-name").textContent = "Demo Event Leaderboard";
+        $("stat-connections").textContent = "1,247";
+        $("stat-stalls").textContent = "18";
+
+        const demoStalls = [
+          { stall_name:"Northfield Estates", interactions:284, hot_leads:12, is_trending:true, hall_name:"Hall A" },
+          { stall_name:"Orbit Capital",       interactions:241, hot_leads:8,  is_trending:true, hall_name:"Hall A" },
+          { stall_name:"TechForge Labs",       interactions:198, hot_leads:5,  is_trending:false,hall_name:"Hall B" },
+          { stall_name:"GreenPath Ventures",   interactions:176, hot_leads:7,  is_trending:true, hall_name:"Hall B" },
+          { stall_name:"Momentum Analytics",   interactions:152, hot_leads:3,  is_trending:false,hall_name:"Hall C" },
+          { stall_name:"BlueSky Innovations",  interactions:134, hot_leads:4,  is_trending:false,hall_name:"Hall C" },
+          { stall_name:"CoreData Systems",      interactions:118, hot_leads:2,  is_trending:false,hall_name:"Hall A" },
+          { stall_name:"Apex Solutions",        interactions:97,  hot_leads:1,  is_trending:false,hall_name:"Hall B" },
+        ];
+        const demoTrending = [
+          { stall_name:"Northfield Estates", trend_score:47 },
+          { stall_name:"GreenPath Ventures", trend_score:38 },
+          { stall_name:"Orbit Capital",      trend_score:31 },
+          { stall_name:"TechForge Labs",     trend_score:24 },
+          { stall_name:"Momentum Analytics", trend_score:17 },
+        ];
+        const now = Date.now();
+        const demoConnections = Array.from({length:8}, (_,i) => ({
+          id: `demo-${i}`,
+          stall_name: demoStalls[i % demoStalls.length].stall_name,
+          occurred_at: new Date(now - i * 45000).toISOString(),
+          company_size_band: i===0 ? "enterprise" : "mid"
+        }));
+
+        renderLeaderboard(demoStalls);
+        renderTrending(demoTrending);
+        renderTicker(demoConnections);
+        $("footer-time").textContent = `Demo mode · ${new Date().toLocaleTimeString()}`;
+      }
+
+      /* ── CONFIG ──────────────────────────────────── */
+      function toggleConfig() {
+        const bar = $("config-bar");
+        bar.style.display = bar.style.display === "none" ? "flex" : "none";
+      }
+      function applyConfig() {
+        eventId    = $("cfg-event").value.trim() || "event-demo";
+        const raw  = $("cfg-api").value.trim();
+        apiBase    = raw || location.origin;
+        intervalMs = Math.max(2, parseInt($("cfg-interval").value, 10) || 5) * 1000;
+        $("interval-display").textContent = intervalMs / 1000;
+        toggleConfig();
+        load();
+        startTimer();
+        const u = new URL(location.href);
+        u.searchParams.set("eventId", eventId);
+        if (raw) u.searchParams.set("apiBase", raw); else u.searchParams.delete("apiBase");
+        u.searchParams.set("refresh", intervalMs/1000);
+        history.replaceState({}, "", u);
+      }
+
+      /* ── HELPERS ─────────────────────────────────── */
+      function fmtRelTime(v) {
+        if (!v) return "";
+        const diff = Math.round((Date.now() - new Date(v).getTime()) / 1000);
+        if (diff < 60)  return `${diff}s ago`;
+        if (diff < 3600) return `${Math.round(diff/60)}m ago`;
+        return `${Math.round(diff/3600)}h ago`;
+      }
+      function num(v) { return new Intl.NumberFormat("en-US").format(Number(v||0)); }
+      function enc(v) { return encodeURIComponent(v); }
+      function esc(v) { return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"); }
+
+      async function api(path) {
+        const resp = await fetch(`${apiBase}${path}`, {
+          headers: { "x-tenant-id": "tenant-demo" },
+          cache:   "no-store"
+        });
+        const payload = await resp.json().catch(()=>({}));
+        if (!resp.ok) throw new Error(payload.error || `${resp.status}`);
+        return payload;
+      }
+    </script>
+  </body>
+</html>

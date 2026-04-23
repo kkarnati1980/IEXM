@@ -553,10 +553,10 @@
       function renderDashboard() {
         if (!OVERVIEW) return;
         const O = OVERVIEW;
-        $id("page-title").textContent = `${O.event_name} ops`;
-        $id("page-subtitle").textContent = `${O.event_name} · ${humanize(O.event_status)} · Organizer ops`;
-        $id("hero-title").textContent = O.event_name;
-        $id("hero-body").textContent = `Event ID: ${O.event_id} · Status: ${humanize(O.event_status)} · Report v${O.report_snapshot_version}`;
+        $id("page-title").textContent = `${O.event_name || O.event_id || 'Event'} ops`;
+        $id("page-subtitle").textContent = `${O.event_name || O.event_id || 'Event'} · ${humanize(O.report_freeze?.event_status || O.event_status || 'live')} · Organizer ops`;
+        $id("hero-title").textContent = O.event_name || O.event_id || "Event";
+        $id("hero-body").textContent = `Event ID: ${O.event_id} · Status: ${humanize(O.report_freeze?.event_status || O.event_status || 'live')} · Report v${O.report_snapshot_version}`;
 
         // Context cards
         const cc = $id("context-cards");
@@ -580,7 +580,7 @@
         const ft = freezeTag(O.freeze_detail);
         const fb = $id("freeze-banner");
         fb.className = `banner ${ft.tone}`;
-        fb.innerHTML = `<strong>${esc(ft.title)}</strong><span class="mini-note">${esc(ft.body)}</span><div class="pill-row"><span class="tag ${ft.tone==="live"?"good":ft.tone==="warn"?"warn":""}">${esc(ft.tag)}</span><span class="tag">${esc(humanize(O.event_status))}</span></div>`;
+        fb.innerHTML = `<strong>${esc(ft.title)}</strong><span class="mini-note">${esc(ft.body)}</span><div class="pill-row"><span class="tag ${ft.tone==="live"?"good":ft.tone==="warn"?"warn":""}">${esc(ft.tag)}</span><span class="tag">${esc(humanize(O.report_freeze?.event_status || O.event_status || 'live'))}</span></div>`;
 
         // Freeze detail
         $id("freeze-title").textContent = ft.title;
