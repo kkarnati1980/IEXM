@@ -121,12 +121,48 @@
       .velocity-sparkline{height:32px;display:flex;align-items:flex-end;gap:2px;margin-top:4px;}
       .vspark-bar{flex:1;border-radius:2px 2px 0 0;min-height:2px;background:linear-gradient(180deg,rgba(58,106,212,.6),rgba(58,106,212,.25));}
 
+      /* ── TAB NAVIGATION ─────────────────────────── */
+      .tab-nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px;padding:6px;background:rgba(255,255,255,.5);border-radius:16px;border:1px solid var(--line);}
+      .tab-btn{border:0;border-radius:12px;padding:10px 16px;cursor:pointer;font:inherit;font-size:13px;color:var(--muted);background:transparent;transition:all .15s;white-space:nowrap;}
+      .tab-btn.active{background:white;color:var(--ink);box-shadow:0 2px 8px rgba(17,34,51,.1);font-weight:600;}
+      .tab-pane{display:none;}
+      .tab-pane.active{display:grid;gap:18px;}
+
+      /* ── FLEET TABLE ─────────────────────────────── */
+      .fleet-table td{vertical-align:middle;}
+      .health-dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex-shrink:0;}
+      .health-dot.online{background:var(--good);}
+      .health-dot.warning{background:var(--warn);}
+      .health-dot.critical{background:var(--danger);}
+      .health-dot.offline{background:var(--muted);}
+      .battery-bar{width:48px;height:8px;border-radius:4px;background:rgba(17,34,51,.1);overflow:hidden;display:inline-block;vertical-align:middle;margin-left:4px;}
+      .battery-fill{height:100%;border-radius:4px;}
+      .battery-fill.ok{background:var(--good);}
+      .battery-fill.warn{background:var(--warn);}
+      .battery-fill.crit{background:var(--danger);}
+
+      /* ── DATA CONTROL TOGGLES ────────────────────── */
+      .policy-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+      .policy-card{border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.7);padding:14px;}
+      .policy-card h4{margin:0 0 6px;font-size:14px;}
+      .policy-card p{margin:0 0 12px;font-size:12px;color:var(--muted);}
+      .toggle-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+      .toggle{position:relative;width:44px;height:24px;flex-shrink:0;}
+      .toggle input{opacity:0;width:0;height:0;}
+      .toggle-slider{position:absolute;inset:0;border-radius:24px;background:rgba(17,34,51,.18);cursor:pointer;transition:background .2s;}
+      .toggle-slider::before{content:"";position:absolute;width:18px;height:18px;border-radius:50%;background:white;top:3px;left:3px;transition:transform .2s;box-shadow:0 1px 4px rgba(0,0,0,.2);}
+      .toggle input:checked+.toggle-slider{background:var(--accent);}
+      .toggle input:checked+.toggle-slider::before{transform:translateX(20px);}
+
+      /* ── EXPORT APPROVAL ─────────────────────────── */
+      .approval-row td{vertical-align:middle;}
+
       @media(max-width:1080px){
         main,.hero{grid-template-columns:1fr;}
         .metric-grid,.metric-grid-4{grid-template-columns:repeat(2,minmax(0,1fr));}
-        .comparison-grid,.info-grid,.velocity-kpis{grid-template-columns:1fr;}
+        .comparison-grid,.info-grid,.velocity-kpis,.policy-grid{grid-template-columns:1fr;}
       }
-      @media(max-width:640px){.metric-grid,.metric-grid-4,.velocity-kpis{grid-template-columns:1fr;}}
+      @media(max-width:640px){.metric-grid,.metric-grid-4,.velocity-kpis{grid-template-columns:1fr;}.tab-btn{padding:8px 12px;font-size:12px;}}
     </style>
   </head>
   <body>
@@ -273,6 +309,147 @@
             <thead><tr><th>Sponsor org</th><th>Snapshots</th><th>Latest snapshot</th><th>Official export</th></tr></thead>
             <tbody id="sponsor-rows"><tr><td colspan="4" class="muted">Load data to inspect sponsor posture.</td></tr></tbody>
           </table>
+        </article>
+
+
+        <!-- ── TABBED PANELS: Fleet / Data Control / Export Approval / Audit Log ── -->
+        <article class="card" style="padding-top:16px;">
+          <nav class="tab-nav" id="main-tab-nav">
+            <button class="tab-btn active" onclick="switchTab('fleet')">🖥 Fleet</button>
+            <button class="tab-btn" onclick="switchTab('data-control')">⚙ Data Control</button>
+            <button class="tab-btn" onclick="switchTab('export-approval')">📤 Export Approval</button>
+            <button class="tab-btn" onclick="switchTab('audit-log')">📋 Audit Log</button>
+          </nav>
+
+          <!-- FL-01 FLEET PAGE -->
+          <div class="tab-pane active" id="tab-fleet">
+            <div class="section-head">
+              <div><div class="eyebrow">Fleet Management — FL-01</div><h2>Per-device status</h2><p>Battery, signal, queue depth, heartbeat, reader, and incidents.</p></div>
+              <button class="secondary" style="font:inherit;border-radius:12px;border:0;padding:10px 14px;cursor:pointer;background:rgba(17,34,51,.08);" onclick="loadFleet()">↻ Refresh fleet</button>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;">
+              <div class="metric good"><span>Online</span><strong id="fl-online">—</strong></div>
+              <div class="metric warn"><span>Warning</span><strong id="fl-warning">—</strong></div>
+              <div class="metric"><span class="muted">Critical</span><strong id="fl-critical" style="color:var(--danger)">—</strong></div>
+              <div class="metric"><span class="muted">Offline</span><strong id="fl-offline">—</strong></div>
+            </div>
+            <div style="overflow-x:auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th></th><th>Device</th><th>Stall</th><th>Battery</th>
+                    <th>Signal</th><th>Queue</th><th>Reader</th>
+                    <th>App ver</th><th>Last seen</th><th>Incidents</th>
+                  </tr>
+                </thead>
+                <tbody id="fleet-rows">
+                  <tr><td colspan="10" class="muted" style="text-align:center;padding:20px;">Load data to view fleet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- DC-01 DATA CONTROL -->
+          <div class="tab-pane" id="tab-data-control">
+            <div class="section-head">
+              <div><div class="eyebrow">Data Control — DC-01</div><h2>Event data policy</h2><p>Six organizer-controlled switches for export, CRM, sponsor PII, and retention.</p></div>
+              <button class="primary" style="font:inherit;border-radius:12px;border:0;padding:10px 14px;cursor:pointer;background:var(--accent);color:white;" onclick="saveDataPolicy()" id="btn-save-policy">Save policy</button>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;" id="policy-grid">
+              <div style="border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.7);padding:14px;">
+                <strong style="display:block;margin-bottom:4px;">Vendor exports</strong>
+                <p class="mini-note" style="margin:0 0 10px;">Allow vendors to export consented leads.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                  <span id="lbl-vendor-exports" style="font-size:13px;">Enabled</span>
+                  <label class="toggle"><input type="checkbox" id="pol-vendor-exports" checked onchange="updatePolicyLabel(this,'lbl-vendor-exports')"><span class="toggle-slider"></span></label>
+                </div>
+              </div>
+              <div style="border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.7);padding:14px;">
+                <strong style="display:block;margin-bottom:4px;">Sponsor PII access</strong>
+                <p class="mini-note" style="margin:0 0 10px;">Allow sponsors to see and export sponsor-consented PII.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                  <span id="lbl-sponsor-pii" style="font-size:13px;">Disabled</span>
+                  <label class="toggle"><input type="checkbox" id="pol-sponsor-pii" onchange="updatePolicyLabel(this,'lbl-sponsor-pii')"><span class="toggle-slider"></span></label>
+                </div>
+              </div>
+              <div style="border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.7);padding:14px;">
+                <strong style="display:block;margin-bottom:4px;">Require export approval</strong>
+                <p class="mini-note" style="margin:0 0 10px;">Every export request needs organizer approval before generation.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                  <span id="lbl-require-approval" style="font-size:13px;">Disabled</span>
+                  <label class="toggle"><input type="checkbox" id="pol-require-approval" onchange="updatePolicyLabel(this,'lbl-require-approval')"><span class="toggle-slider"></span></label>
+                </div>
+              </div>
+              <div style="border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.7);padding:14px;">
+                <strong style="display:block;margin-bottom:4px;">Allow CRM push</strong>
+                <p class="mini-note" style="margin:0 0 10px;">Allow vendors to push consented leads to their CRM.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                  <span id="lbl-crm-push" style="font-size:13px;">Enabled</span>
+                  <label class="toggle"><input type="checkbox" id="pol-crm-push" checked onchange="updatePolicyLabel(this,'lbl-crm-push')"><span class="toggle-slider"></span></label>
+                </div>
+              </div>
+              <div style="border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.7);padding:14px;">
+                <strong style="display:block;margin-bottom:4px;">Cross-event identity graph</strong>
+                <p class="mini-note" style="margin:0 0 10px;">Allow this event's interactions to contribute to cross-event identity resolution.</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                  <span id="lbl-cross-event" style="font-size:13px;">Disabled</span>
+                  <label class="toggle"><input type="checkbox" id="pol-cross-event" onchange="updatePolicyLabel(this,'lbl-cross-event')"><span class="toggle-slider"></span></label>
+                </div>
+              </div>
+              <div style="border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.7);padding:14px;">
+                <strong style="display:block;margin-bottom:4px;">Retention period (days)</strong>
+                <p class="mini-note" style="margin:0 0 10px;">Days of interaction PII retention before automated anonymisation.</p>
+                <input type="number" id="pol-retention-days" value="90" min="1" max="730" style="width:100%;border-radius:10px;border:1px solid var(--line);padding:10px 12px;font:inherit;">
+              </div>
+            </div>
+            <div id="policy-status" class="status" hidden style="margin-top:14px;"></div>
+          </div>
+
+          <!-- EX-01 EXPORT APPROVAL -->
+          <div class="tab-pane" id="tab-export-approval">
+            <div class="section-head">
+              <div><div class="eyebrow">Export Approval — EX-01</div><h2>Export requests</h2><p>Approve or reject pending requests. Active when Require Export Approval is on.</p></div>
+              <button class="secondary" style="font:inherit;border-radius:12px;border:0;padding:10px 14px;cursor:pointer;background:rgba(17,34,51,.08);" onclick="loadExportApprovals()">↻ Refresh</button>
+            </div>
+            <div style="overflow-x:auto;">
+              <table>
+                <thead><tr><th>Requested</th><th>By</th><th>Type</th><th>Filters</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody id="approval-rows">
+                  <tr><td colspan="6" class="muted" style="text-align:center;padding:20px;">Load data to view export requests.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- AU-01 AUDIT LOG -->
+          <div class="tab-pane" id="tab-audit-log">
+            <div class="section-head">
+              <div><div class="eyebrow">Audit Log — AU-01</div><h2>Sensitive action history</h2><p>Every consent change, export, approval, CRM push, policy change, and privileged action.</p></div>
+              <button class="secondary" style="font:inherit;border-radius:12px;border:0;padding:10px 14px;cursor:pointer;background:rgba(17,34,51,.08);" onclick="loadAuditLog()">↻ Refresh</button>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+              <select id="audit-filter-action" style="flex:1;min-width:130px;border-radius:10px;border:1px solid var(--line);padding:9px 10px;font:inherit;">
+                <option value="">All actions</option>
+                <option value="consent">Consent events</option>
+                <option value="export">Export events</option>
+                <option value="crm_push">CRM push</option>
+                <option value="policy_change">Policy changes</option>
+                <option value="freeze">Freeze / unfreeze</option>
+                <option value="break_glass">Break-glass access</option>
+              </select>
+              <button class="secondary" style="font:inherit;border-radius:10px;border:0;padding:9px 14px;cursor:pointer;background:rgba(17,34,51,.08);" onclick="loadAuditLog()">Filter</button>
+            </div>
+            <div style="overflow-x:auto;">
+              <table>
+                <thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Target</th><th>Result</th></tr></thead>
+                <tbody id="audit-rows">
+                  <tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">Load data to view audit log.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div id="audit-pagination" style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;font-size:13px;align-items:center;"></div>
+          </div>
+
         </article>
 
       </section>
@@ -725,6 +902,234 @@
         if(fd.event_status==="closed"&&!fd.frozen) return{tone:"warn",tag:"Closed without freeze",title:"Event closed but report not frozen",body:"Run the freeze workflow to produce the official sponsor package."};
         return{tone:"live",tag:"Live reporting",title:"Live metrics — report not frozen",body:fd.unresolved_incidents?`${num(fd.unresolved_incidents)} incidents need resolution before freezing.`:"Ready to freeze when needed."};
       }
+
+      /* ── TAB SWITCHING ──────────────────────────── */
+      function switchTab(name) {
+        document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+        document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+        const pane = document.getElementById(`tab-${name}`);
+        if (pane) pane.classList.add("active");
+        const btns = document.querySelectorAll(".tab-btn");
+        btns.forEach(b => { if (b.getAttribute("onclick")?.includes(name)) b.classList.add("active"); });
+        // Lazy-load on first open
+        if (name === "fleet")           loadFleet();
+        if (name === "export-approval") loadExportApprovals();
+        if (name === "audit-log")       loadAuditLog();
+        if (name === "data-control")    loadDataPolicy();
+      }
+
+      /* ── FL-01 FLEET ────────────────────────────── */
+      async function loadFleet() {
+        const eid = $id("event-id").value.trim();
+        try {
+          const fleet = await api(`/organizer/events/${enc(eid)}/fleet`);
+          const devices = fleet.devices || fleet.items || [];
+          let online=0, warning=0, critical=0, offline=0;
+          const tbody = $id("fleet-rows"); tbody.innerHTML = "";
+
+          for (const d of devices) {
+            const hb = d.latest_heartbeat;
+            const now = Date.now();
+            const lastSeen = hb ? (now - new Date(hb.recorded_at).getTime())/1000 : Infinity;
+            const missedHB = hb ? Math.floor(lastSeen / 60) : 99;
+
+            // Fleet health: §18B.9 rules
+            let health = "online";
+            if (missedHB >= 5 || d.has_critical_incident) health = "critical";
+            else if (missedHB >= 2 || (hb?.battery_percent < 20) || (hb?.local_queue_depth > 100) || d.has_warning_incident) health = "warning";
+            else if (!hb || missedHB > 10) health = "offline";
+
+            if (health==="online")   online++;
+            else if (health==="warning")  warning++;
+            else if (health==="critical") critical++;
+            else                          offline++;
+
+            const bat = hb?.battery_percent ?? null;
+            const batClass = bat == null ? "" : bat < 10 ? "crit" : bat < 20 ? "warn" : "ok";
+            const batBar = bat != null
+              ? `<div class="battery-bar"><div class="battery-fill ${batClass}" style="width:${bat}%"></div></div> ${bat}%`
+              : "—";
+            const signal = hb?.wifi_strength ? `${hb.wifi_strength} dBm` : "—";
+            const queue = hb?.local_queue_depth ?? "—";
+            const reader = hb?.reader_status || d.reader_status || "—";
+            const incidents = d.open_incidents ?? 0;
+
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td><span class="health-dot ${health}" title="${health}"></span></td>
+              <td><strong>${esc(d.device_name||d.device_id)}</strong><br><span class="mini-note">${esc(d.serial_number||"")}</span></td>
+              <td>${esc(d.stall_name||d.stall_id||"—")}</td>
+              <td>${batBar}</td>
+              <td class="${hb?.wifi_strength < -80 ? "warn" : ""}">${signal}</td>
+              <td class="${queue > 100 ? "warn" : ""}">${queue}</td>
+              <td><span class="tag ${reader==="connected"?"good":reader==="disconnected"?"warn":"muted"}">${esc(reader)}</span></td>
+              <td class="mini-note">${esc(d.app_version||"—")}</td>
+              <td class="mini-note">${hb ? fmtDate(hb.recorded_at) : "Never"}</td>
+              <td>${incidents > 0 ? `<span class="tag warn">${incidents} open</span>` : `<span class="tag good">None</span>`}</td>`;
+            tbody.appendChild(tr);
+          }
+
+          $id("fl-online").textContent   = online;
+          $id("fl-warning").textContent  = warning;
+          $id("fl-critical").textContent = critical;
+          $id("fl-offline").textContent  = offline;
+
+          if (!devices.length) {
+            tbody.innerHTML = `<tr><td colspan="10" class="muted" style="text-align:center;padding:20px;">No devices assigned to this event.</td></tr>`;
+          }
+        } catch(e) {
+          $id("fleet-rows").innerHTML = `<tr><td colspan="10" class="muted" style="text-align:center;padding:20px;">${esc(e.message)}</td></tr>`;
+        }
+      }
+
+      /* ── DC-01 DATA CONTROL ──────────────────────── */
+      async function loadDataPolicy() {
+        const eid = $id("event-id").value.trim();
+        try {
+          const policy = await api(`/organizer/events/${enc(eid)}/data-policy`);
+          const p = policy.policy || policy;
+          setToggle("pol-vendor-exports",  "lbl-vendor-exports",  p.vendor_exports_enabled  ?? true);
+          setToggle("pol-sponsor-pii",     "lbl-sponsor-pii",     p.sponsor_pii_enabled     ?? false);
+          setToggle("pol-require-approval","lbl-require-approval",p.require_export_approval ?? false);
+          setToggle("pol-crm-push",        "lbl-crm-push",        p.allow_crm_push          ?? true);
+          setToggle("pol-cross-event",     "lbl-cross-event",     p.allow_cross_event_identity_graph ?? false);
+          $id("pol-retention-days").value = p.retention_days ?? 90;
+        } catch { /* use defaults */ }
+      }
+
+      function setToggle(inputId, labelId, value) {
+        const el = $id(inputId); if (!el) return;
+        el.checked = !!value;
+        const lbl = $id(labelId); if (lbl) lbl.textContent = value ? "Enabled" : "Disabled";
+      }
+
+      window.updatePolicyLabel = function(checkbox, labelId) {
+        const lbl = $id(labelId); if (lbl) lbl.textContent = checkbox.checked ? "Enabled" : "Disabled";
+      };
+
+      window.saveDataPolicy = async function() {
+        const eid = $id("event-id").value.trim();
+        const ps = $id("policy-status");
+        try {
+          await api(`/organizer/events/${enc(eid)}/data-policy`, {
+            method: "PUT", adminAuth: true,
+            body: {
+              vendor_exports_enabled:           $id("pol-vendor-exports").checked,
+              sponsor_pii_enabled:              $id("pol-sponsor-pii").checked,
+              require_export_approval:          $id("pol-require-approval").checked,
+              allow_crm_push:                   $id("pol-crm-push").checked,
+              allow_cross_event_identity_graph: $id("pol-cross-event").checked,
+              retention_days:                   parseInt($id("pol-retention-days").value, 10),
+            }
+          });
+          ps.hidden=false; ps.textContent="Policy saved."; ps.className="status ok";
+          setTimeout(()=>{ps.hidden=true;}, 3000);
+        } catch(e) {
+          ps.hidden=false; ps.textContent=e.message; ps.className="status error";
+        }
+      };
+
+      /* ── EX-01 EXPORT APPROVAL ───────────────────── */
+      async function loadExportApprovals() {
+        const eid = $id("event-id").value.trim();
+        const tbody = $id("approval-rows");
+        try {
+          const res = await api(`/organizer/events/${enc(eid)}/exports/pending`);
+          const items = res.items || [];
+          tbody.innerHTML = "";
+          if (!items.length) {
+            tbody.innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center;padding:20px;">No pending export requests.</td></tr>`;
+            return;
+          }
+          for (const exp of items) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td class="mini-note">${fmtDate(exp.created_at)}</td>
+              <td>${esc(exp.requested_by_user_id||"Unknown")}</td>
+              <td>${esc(humanize(exp.export_type))}</td>
+              <td class="mini-note">${esc(JSON.stringify(exp.filters||{}).slice(0,60))}</td>
+              <td><span class="tag ${exp.status==="pending"?"warn":exp.status==="approved"?"good":"muted"}">${esc(exp.status)}</span></td>
+              <td style="display:flex;gap:6px;padding:10px 8px;">
+                ${exp.status==="pending" ? `
+                  <button class="secondary" style="font:inherit;border-radius:8px;border:0;padding:6px 10px;cursor:pointer;font-size:12px;background:rgba(15,141,99,.12);color:var(--good);" onclick="approveExport('${esc(exp.id)}')">Approve</button>
+                  <button class="secondary" style="font:inherit;border-radius:8px;border:0;padding:6px 10px;cursor:pointer;font-size:12px;background:rgba(192,58,58,.1);color:var(--danger);" onclick="rejectExport('${esc(exp.id)}')">Reject</button>
+                ` : "—"}
+              </td>`;
+            tbody.appendChild(tr);
+          }
+        } catch(e) {
+          tbody.innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center;padding:20px;">${esc(e.message)}</td></tr>`;
+        }
+      }
+
+      window.approveExport = async function(id) {
+        try {
+          await api(`/exports/${enc(id)}/approve`, { method: "POST", adminAuth: true });
+          await loadExportApprovals();
+          showMsg("Export approved.", "ok");
+        } catch(e) { showMsg(e.message, "error"); }
+      };
+
+      window.rejectExport = async function(id) {
+        const reason = prompt("Rejection reason (optional):");
+        try {
+          await api(`/exports/${enc(id)}/reject`, { method: "POST", adminAuth: true, body: { reason: reason || null } });
+          await loadExportApprovals();
+          showMsg("Export rejected.", "ok");
+        } catch(e) { showMsg(e.message, "error"); }
+      };
+
+      /* ── AU-01 AUDIT LOG ─────────────────────────── */
+      let AUDIT_PAGE = 0;
+      async function loadAuditLog() {
+        const eid = $id("event-id").value.trim();
+        const action = $id("audit-filter-action")?.value || "";
+        const tbody = $id("audit-rows");
+        try {
+          const res = await api(`/organizer/events/${enc(eid)}/audit-log?limit=50&offset=${AUDIT_PAGE*50}${action?`&action_type=${enc(action)}`:""}`, { adminAuth: true });
+          const items = res.items || [];
+          tbody.innerHTML = "";
+          if (!items.length) {
+            tbody.innerHTML = `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">No audit entries found.</td></tr>`;
+            renderAuditPagination(0);
+            return;
+          }
+          for (const entry of items) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td class="mini-note" style="white-space:nowrap;">${fmtDate(entry.created_at)}</td>
+              <td><span class="tag muted">${esc(humanize(entry.action_type||entry.action||""))}</span></td>
+              <td class="mini-note">${esc(entry.actor_id||entry.actor||"system")}</td>
+              <td class="mini-note">${esc((entry.target_id||entry.target||"—").slice(0,36))}</td>
+              <td><span class="tag ${entry.result==="success"?"good":"warn"}">${esc(entry.result||"ok")}</span></td>`;
+            tbody.appendChild(tr);
+          }
+          renderAuditPagination(res.total || items.length);
+        } catch(e) {
+          tbody.innerHTML = `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">${esc(e.message)}</td></tr>`;
+        }
+      }
+
+      function renderAuditPagination(total) {
+        const pg = $id("audit-pagination"); pg.innerHTML = "";
+        if (total <= 50) return;
+        const prev = document.createElement("button");
+        prev.textContent = "← Prev"; prev.disabled = AUDIT_PAGE === 0;
+        prev.style.cssText = "font:inherit;border-radius:8px;border:0;padding:6px 10px;cursor:pointer;background:rgba(17,34,51,.08);";
+        prev.onclick = () => { AUDIT_PAGE--; loadAuditLog(); };
+        const next = document.createElement("button");
+        next.textContent = "Next →"; next.disabled = (AUDIT_PAGE + 1) * 50 >= total;
+        next.style.cssText = prev.style.cssText;
+        next.onclick = () => { AUDIT_PAGE++; loadAuditLog(); };
+        pg.innerHTML = `<span class="muted">Page ${AUDIT_PAGE + 1} of ${Math.ceil(total/50)}</span>`;
+        pg.appendChild(prev); pg.appendChild(next);
+      }
+
+      window.switchTab = switchTab;
+      window.loadFleet = loadFleet;
+      window.loadExportApprovals = loadExportApprovals;
+      window.loadAuditLog = loadAuditLog;
+
       function syncUrl(){
         const u=new URL(window.location.href);
         wp(u,"eventId",$id("event-id").value.trim());
