@@ -3,1855 +3,752 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Organizer Control</title>
+    <title>Organizer Ops</title>
     <style>
-      :root {
-        --bg: #0b0f18;
-        --panel: #111b2b;
-        --panel-2: #0d1522;
-        --border: rgba(255,255,255,0.08);
-        --text: #ecf5ff;
-        --muted: #94a7bd;
-        --accent: #6ec5ff;
-        --good: #8be9c1;
-        --warn: #ffca85;
-        --bad: #ff9c9c;
+      :root{
+        --ink:#112233;--muted:#5f6f7f;--panel:rgba(255,255,255,0.86);
+        --line:rgba(17,34,51,0.12);--accent:#3a6ad4;--accent-soft:rgba(58,106,212,0.1);
+        --good:#0f8d63;--warn:#b46c14;--danger:#c03a3a;
       }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: "IBM Plex Sans", sans-serif;
-        background:
-          radial-gradient(circle at top left, rgba(110, 197, 255, 0.14), transparent 28%),
-          linear-gradient(160deg, var(--bg), #060b12 64%);
-        color: var(--text);
+      *{box-sizing:border-box;}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--ink);background:radial-gradient(circle at top right,rgba(58,106,212,.16),transparent 28%),linear-gradient(180deg,#f0f4fc,#e8edf8 62%,#dde4f4);}
+      .shell{max-width:1400px;margin:0 auto;padding:20px 24px 0;}
+      .shell-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px;}
+      .shell-title{display:grid;gap:6px;}
+      .shell-title strong{font-size:1.2rem;letter-spacing:.01em;}
+      .shell-nav{display:flex;gap:10px;flex-wrap:wrap;}
+      .shell-nav a{text-decoration:none;color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:10px 14px;background:rgba(255,255,255,.72);}
+      .shell-nav a.active{border-color:rgba(58,106,212,.3);background:var(--accent-soft);color:var(--accent);}
+      main{max-width:1400px;margin:0 auto;padding:24px;display:grid;grid-template-columns:1.15fr 0.85fr;gap:18px;min-height:100vh;}
+      .column{display:grid;gap:18px;align-content:start;}
+      .card{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 60px rgba(17,34,51,.06);backdrop-filter:blur(14px);}
+      .card.hero-card{position:relative;overflow:hidden;}
+      .card.hero-card::before{content:"";position:absolute;inset:0 auto 0 0;width:6px;background:linear-gradient(180deg,rgba(58,106,212,.9),rgba(17,34,51,.5));}
+      .eyebrow{display:inline-block;margin-bottom:12px;padding:6px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent);text-transform:uppercase;letter-spacing:.08em;font-size:12px;}
+      .muted{color:var(--muted);}
+      .status{margin-bottom:14px;padding:12px 14px;border-radius:14px;font-size:14px;}
+      .status.ok{background:rgba(15,141,99,.1);color:var(--good);}
+      .status.error{background:rgba(192,58,58,.12);color:var(--danger);}
+      .status.warn{background:rgba(180,108,20,.12);color:var(--warn);}
+      .hero{display:grid;grid-template-columns:1.1fr 0.9fr;gap:14px;}
+      .hero h1{margin:0;font-size:2.2rem;}
+      .toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:end;}
+      .toolbar>div{min-width:180px;flex:1 1 180px;}
+      input,button,textarea{font:inherit;}
+      input,textarea{width:100%;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.8);color:var(--ink);padding:11px 12px;}
+      textarea{min-height:86px;resize:vertical;}
+      button{border:0;border-radius:12px;padding:11px 14px;cursor:pointer;}
+      button.primary{background:var(--accent);color:white;}
+      button.secondary{background:rgba(17,34,51,.08);color:var(--ink);}
+      button.danger{background:var(--danger);color:white;}
+      button:disabled{opacity:.45;cursor:default;}
+      select{font:inherit;width:100%;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.8);color:var(--ink);padding:11px 12px;}
+      .metric-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+      .metric-grid-4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;}
+      .metric{position:relative;overflow:hidden;border-radius:18px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.62));padding:16px 14px 14px;}
+      .metric::before{content:"";position:absolute;inset:0 0 auto 0;height:4px;background:linear-gradient(90deg,rgba(58,106,212,.82),rgba(17,34,51,.35));}
+      .metric span{text-transform:uppercase;letter-spacing:.08em;font-size:11px;}
+      .metric strong{display:block;margin-top:6px;font-size:1.8rem;}
+      .metric.accent::before{background:linear-gradient(90deg,rgba(58,106,212,.9),rgba(58,106,212,.4));}
+      .metric.good::before{background:linear-gradient(90deg,rgba(15,141,99,.9),rgba(15,141,99,.4));}
+      .metric.warn::before{background:linear-gradient(90deg,rgba(180,108,20,.9),rgba(180,108,20,.4));}
+      .section-head{display:flex;align-items:end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+      .section-head h2,.section-head h3{margin:0;}
+      .section-head p{margin:4px 0 0;color:var(--muted);max-width:56ch;}
+      .list{display:grid;gap:10px;}
+      .item{border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.65);padding:12px;}
+      table{width:100%;border-collapse:collapse;}
+      th,td{text-align:left;padding:11px;border-bottom:1px solid var(--line);}
+      tbody tr{cursor:pointer;}
+      tbody tr.active{background:rgba(58,106,212,.08);}
+      .tag{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:12px;border:1px solid var(--line);}
+      .tag.good{color:var(--good);background:rgba(15,141,99,.08);}
+      .tag.warn{color:var(--warn);background:rgba(180,108,20,.08);}
+      .tag.danger{color:var(--danger);background:rgba(192,58,58,.08);}
+      .banner{display:grid;gap:8px;padding:14px;border-radius:18px;border:1px solid var(--line);}
+      .banner.live{background:linear-gradient(135deg,rgba(15,141,99,.12),rgba(255,255,255,.7));}
+      .banner.frozen{background:linear-gradient(135deg,rgba(58,106,212,.12),rgba(255,255,255,.72));}
+      .banner.warn{background:linear-gradient(135deg,rgba(180,108,20,.14),rgba(255,255,255,.7));}
+      .comparison-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+      .comparison-card{border-radius:18px;border:1px solid var(--line);background:rgba(255,255,255,.72);padding:14px;}
+      .comparison-card h3{margin:0 0 8px;}
+      .info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+      .info-card{border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.7);padding:14px;display:grid;gap:6px;}
+      .info-card strong{font-size:1.05rem;}
+      .pill-row{display:flex;flex-wrap:wrap;gap:8px;}
+      .cta-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border-radius:12px;padding:10px 14px;background:rgba(17,34,51,.08);color:var(--ink);}
+      .mini-note{font-size:13px;color:var(--muted);}
+      .delta{font-weight:600;}
+      .delta.up{color:var(--good);}
+      .delta.flat{color:var(--muted);}
+      .bar-list{display:grid;gap:10px;}
+      .bar-row{display:grid;gap:6px;}
+      .bar-track{width:100%;height:10px;border-radius:999px;background:rgba(17,34,51,.08);overflow:hidden;}
+      .bar-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,rgba(58,106,212,.8),rgba(58,106,212,.4));}
+      .bar-fill.warn{background:linear-gradient(90deg,rgba(180,108,20,.8),rgba(180,108,20,.4));}
+      .stat-inline{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;}
+
+      /* ── OR-03 HOURLY CHART ──────────────────────── */
+      .hourly-card{display:grid;gap:14px;}
+      .hourly-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:end;}
+      .hourly-controls>div{min-width:140px;flex:1 1 140px;}
+      .hourly-controls label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;letter-spacing:.06em;text-transform:uppercase;}
+      .hourly-chart-container{position:relative;height:160px;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.5);padding:16px 16px 28px;overflow:hidden;}
+      .hourly-chart-bars{display:flex;align-items:flex-end;gap:3px;height:100%;position:relative;z-index:1;}
+      .hbar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;}
+      .hbar-stacked{width:100%;border-radius:3px 3px 0 0;min-height:2px;cursor:pointer;transition:opacity .15s;}
+      .hbar-stacked:hover{opacity:.8;}
+      .hbar-lbl{font-size:9px;color:var(--muted);position:absolute;bottom:-18px;white-space:nowrap;}
+      .hourly-chart-grid{position:absolute;inset:16px 16px 28px;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none;}
+      .hgrid-line{border-top:1px dashed rgba(17,34,51,.08);display:flex;align-items:flex-start;}
+      .hgrid-lbl{font-size:9px;color:var(--muted);margin-left:0;margin-top:-8px;}
+      .hourly-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);}
+      .hleg-item{display:flex;align-items:center;gap:6px;}
+      .hleg-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0;}
+      .hourly-tooltip{position:fixed;background:rgba(17,34,51,.9);color:white;border-radius:10px;padding:10px 12px;font-size:12px;pointer-events:none;display:none;z-index:100;line-height:1.5;}
+
+      /* ── OR-03 VISITOR VELOCITY ─────────────────── */
+      .velocity-card{display:grid;gap:14px;}
+      .velocity-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+      .velocity-kpi{border-radius:18px;border:1px solid var(--line);padding:14px;background:rgba(255,255,255,.7);display:grid;gap:4px;position:relative;overflow:hidden;}
+      .velocity-kpi::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;}
+      .velocity-kpi.accent::before{background:linear-gradient(90deg,rgba(58,106,212,.8),rgba(58,106,212,.3));}
+      .velocity-kpi.good::before{background:linear-gradient(90deg,rgba(15,141,99,.8),rgba(15,141,99,.3));}
+      .velocity-kpi.warn::before{background:linear-gradient(90deg,rgba(180,108,20,.8),rgba(180,108,20,.3));}
+      .velocity-kpi span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+      .velocity-kpi strong{font-size:1.6rem;}
+      .velocity-kpi em{font-size:12px;color:var(--muted);font-style:normal;}
+      .velocity-sparkline{height:32px;display:flex;align-items:flex-end;gap:2px;margin-top:4px;}
+      .vspark-bar{flex:1;border-radius:2px 2px 0 0;min-height:2px;background:linear-gradient(180deg,rgba(58,106,212,.6),rgba(58,106,212,.25));}
+
+      @media(max-width:1080px){
+        main,.hero{grid-template-columns:1fr;}
+        .metric-grid,.metric-grid-4{grid-template-columns:repeat(2,minmax(0,1fr));}
+        .comparison-grid,.info-grid,.velocity-kpis{grid-template-columns:1fr;}
       }
-      main {
-        padding: 24px;
-        display: grid;
-        grid-template-columns: 1.3fr 1fr;
-        gap: 18px;
-        min-height: 100vh;
-      }
-      .column {
-        display: grid;
-        gap: 18px;
-      }
-      .card {
-        border-radius: 20px;
-        padding: 18px;
-        background: linear-gradient(180deg, var(--panel), var(--panel-2));
-        border: 1px solid var(--border);
-      }
-      .eyebrow {
-        display: inline-block;
-        padding: 6px 10px;
-        border-radius: 999px;
-        background: rgba(110, 197, 255, 0.14);
-        color: var(--accent);
-        font-size: 12px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        margin-bottom: 12px;
-      }
-      .muted {
-        color: var(--muted);
-      }
-      .status {
-        padding: 12px 14px;
-        border-radius: 14px;
-        margin-bottom: 14px;
-        font-size: 14px;
-      }
-      .status.ok {
-        background: rgba(139, 233, 193, 0.16);
-        color: var(--good);
-      }
-      .status.warn {
-        background: rgba(255, 202, 133, 0.12);
-        color: var(--warn);
-      }
-      .status.error {
-        background: rgba(255, 156, 156, 0.12);
-        color: var(--bad);
-      }
-      .toolbar {
-        display: flex;
-        gap: 12px;
-        align-items: end;
-        flex-wrap: wrap;
-      }
-      input, button, select, textarea {
-        font: inherit;
-      }
-      input, select, textarea {
-        width: 100%;
-        border-radius: 12px;
-        border: 1px solid rgba(255,255,255,0.12);
-        background: rgba(255,255,255,0.04);
-        color: var(--text);
-        padding: 11px 12px;
-      }
-      textarea {
-        min-height: 88px;
-        resize: vertical;
-      }
-      button {
-        border: 0;
-        border-radius: 12px;
-        padding: 11px 14px;
-        cursor: pointer;
-      }
-      button.primary {
-        background: var(--accent);
-        color: #03121b;
-      }
-      button.secondary {
-        background: rgba(255,255,255,0.1);
-        color: var(--text);
-      }
-      button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
-      .metric-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-      }
-      .metric {
-        border-radius: 16px;
-        padding: 14px;
-        background: rgba(255,255,255,0.03);
-        border: 1px solid var(--border);
-      }
-      .metric strong {
-        display: block;
-        font-size: 1.6rem;
-        margin-top: 4px;
-      }
-      .list, .notes, .stack {
-        display: grid;
-        gap: 10px;
-      }
-      .item {
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 12px;
-        background: rgba(255,255,255,0.03);
-      }
-      .item p {
-        margin: 6px 0 0;
-      }
-      .two-col {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-      }
-      .auth-card {
-        min-width: 220px;
-        flex: 1 1 220px;
-      }
-      .browser-auth {
-        display: grid;
-        gap: 8px;
-        min-width: 220px;
-        flex: 1 1 220px;
-      }
-      .browser-auth-actions {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-      .browser-auth-status[data-kind="ok"] {
-        color: var(--good);
-      }
-      .browser-auth-status[data-kind="warn"] {
-        color: var(--warn);
-      }
-      .browser-auth-status[data-kind="error"] {
-        color: var(--bad);
-      }
-      .stall-buttons {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-      .stall-buttons button.active {
-        background: rgba(110, 197, 255, 0.18);
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-      }
-      th, td {
-        padding: 11px;
-        border-bottom: 1px solid var(--border);
-        text-align: left;
-        vertical-align: top;
-      }
-      tbody tr {
-        cursor: pointer;
-      }
-      tbody tr.active {
-        background: rgba(110, 197, 255, 0.08);
-      }
-      .pill {
-        display: inline-block;
-        padding: 4px 8px;
-        border-radius: 999px;
-        background: rgba(255,255,255,0.08);
-      }
-      .pill.good {
-        color: var(--good);
-      }
-      .pill.warn {
-        color: var(--warn);
-      }
-      .pill.bad {
-        color: var(--bad);
-      }
-      .toggle-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 12px;
-        margin-top: 14px;
-      }
-      .toggle-row {
-        display: flex;
-        gap: 10px;
-        align-items: flex-start;
-        padding: 12px;
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        background: rgba(255,255,255,0.03);
-      }
-      .blockers li {
-        color: var(--warn);
-      }
-      .section-title {
-        margin: 18px 0 10px;
-      }
-      .split-list {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-      }
-      .tiny {
-        font-size: 12px;
-      }
-      .empty {
-        color: var(--muted);
-      }
-      .inline-actions {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        margin-top: 12px;
-      }
-      a.action-link {
-        color: var(--accent);
-      }
-      @media (max-width: 1180px) {
-        main {
-          grid-template-columns: 1fr;
-        }
-      }
-      @media (max-width: 900px) {
-        .metric-grid,
-        .two-col,
-        .split-list {
-          grid-template-columns: 1fr;
-        }
-      }
+      @media(max-width:640px){.metric-grid,.metric-grid-4,.velocity-kpis{grid-template-columns:1fr;}}
     </style>
   </head>
   <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <span class="eyebrow">Organizer Ops</span>
+          <strong id="page-title">Organizer dashboard</strong>
+          <span class="muted" id="page-subtitle">Live event operations, freeze controls, and analytics.</span>
+        </div>
+        <nav class="shell-nav">
+          <a href="./index.html">Launchpad</a>
+          <a href="./organizer.html" class="active" id="nav-organizer">Organizer Ops</a>
+          <a href="./sponsor.html" id="nav-sponsor">Sponsor Dashboard</a>
+        </nav>
+      </div>
+    </div>
+
     <main>
       <section class="column">
+
+        <!-- HERO -->
+        <article class="card hero-card">
+          <div id="message" class="status" hidden></div>
+          <div class="hero">
+            <div>
+              <span class="eyebrow">Live Event Operations</span>
+              <h1 id="hero-title">Organizer ops</h1>
+              <p class="muted" id="hero-body">Full-access event management. Freeze controls and analytics are organizer-gated.</p>
+              <div id="freeze-banner" class="banner live" style="margin-top:14px;">
+                <strong>Event freeze status will appear here.</strong>
+                <span class="mini-note">Controls whether sponsor-facing reports are live or locked.</span>
+              </div>
+            </div>
+            <div class="list" id="context-cards">
+              <div class="item muted">Load organizer data to show event status, attendee count, and incident summary.</div>
+            </div>
+          </div>
+          <div class="toolbar" style="margin-top:16px;">
+            <div><label class="muted" for="event-id">Event ID</label><input id="event-id" type="text" value="event-demo"></div>
+            <div><label class="muted" for="auth-token">Organizer auth token</label><input id="auth-token" type="text" value="organizer-token"></div>
+            <div><label class="muted" for="admin-auth">Admin token (freeze ops)</label><input id="admin-auth" type="text" value="admin-token"></div>
+            <div style="flex:0 0 auto;align-self:end;"><button id="refresh-btn" class="secondary" type="button">Refresh</button></div>
+          </div>
+        </article>
+
+        <!-- OR-03 HOURLY TAP CHART -->
         <article class="card">
-          <div class="eyebrow">Organizer Control</div>
-          <h1>Event operations and investigation console</h1>
-          <p class="muted">
-            Restored organizer shell depth for overview, incident response, controlled exports,
-            provider readiness, break-glass coordination, and lead visibility on top of the recovered base.
-          </p>
-          <div id="message" class="status ok" hidden></div>
-          <div class="toolbar">
-            <div style="min-width:220px; flex:1 1 220px;">
-              <label class="muted" for="event-id">Event ID</label>
-              <input id="event-id" type="text">
-            </div>
-            <div id="auth-token-group" class="auth-card">
-              <label class="muted" for="auth-token">Organizer auth token</label>
-              <input id="auth-token" type="text">
-            </div>
-            <div id="browser-auth-group" class="browser-auth" hidden>
-              <div class="muted">Organizer SSO session</div>
-              <div id="browser-auth-status" class="browser-auth-status tiny"></div>
-              <div class="browser-auth-actions">
-                <button id="browser-auth-login" class="secondary" type="button">Sign in with SSO</button>
-                <button id="browser-auth-logout" class="secondary" type="button">Sign out</button>
-              </div>
-            </div>
-            <div id="admin-token-group" class="auth-card">
-              <label class="muted" for="admin-auth-token">Platform admin token</label>
-              <input id="admin-auth-token" type="text">
-            </div>
-            <div id="admin-browser-auth-group" class="browser-auth" hidden>
-              <div class="muted">Platform admin SSO session</div>
-              <div id="admin-browser-auth-status" class="browser-auth-status tiny"></div>
-              <div class="browser-auth-actions">
-                <button id="admin-browser-auth-login" class="secondary" type="button">Admin sign in</button>
-                <button id="admin-browser-auth-logout" class="secondary" type="button">Admin sign out</button>
-              </div>
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">Traffic Analytics — OR-03</div>
+              <h2>Hourly tap volume</h2>
+              <p>Stacked hourly chart: impressions, clicks, and consented leads per hour. Identify peak periods and drop-offs.</p>
             </div>
             <div>
-              <button id="refresh-page" class="primary" type="button">Refresh organizer view</button>
+              <div class="hourly-controls" style="margin-bottom:0;">
+                <div>
+                  <label>View</label>
+                  <select id="hourly-view">
+                    <option value="stacked">Stacked</option>
+                    <option value="impressions">Impressions only</option>
+                    <option value="clicks">Clicks only</option>
+                    <option value="leads">Opted-in leads only</option>
+                  </select>
+                </div>
+                <div style="flex:0 0 auto;align-self:end;">
+                  <button class="secondary" onclick="renderHourlyChart()">Apply</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="hourly-card">
+            <div class="hourly-chart-container" id="hourly-container">
+              <div class="hourly-chart-grid" id="hourly-grid"></div>
+              <div class="hourly-chart-bars" id="hourly-bars">
+                <div class="item muted" style="width:100%;text-align:center;border:0;background:none;">Load data to view hourly chart.</div>
+              </div>
+            </div>
+            <div class="hourly-legend">
+              <div class="hleg-item"><div class="hleg-dot" style="background:rgba(58,106,212,.75)"></div>Impressions</div>
+              <div class="hleg-item"><div class="hleg-dot" style="background:rgba(15,141,99,.7)"></div>Clicks</div>
+              <div class="hleg-item"><div class="hleg-dot" style="background:rgba(180,108,20,.7)"></div>Opted-in leads</div>
+            </div>
+          </div>
+          <div class="hourly-tooltip" id="hourly-tooltip"></div>
+        </article>
+
+        <!-- OR-03 VISITOR VELOCITY -->
+        <article class="card">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">Visitor Velocity — OR-03</div>
+              <h2>Traffic momentum</h2>
+              <p>How fast attendees are arriving and interacting. Velocity compares the last 60 min against the prior 60 min.</p>
+            </div>
+          </div>
+          <div class="velocity-card">
+            <div class="velocity-kpis" id="velocity-kpis">
+              <div class="velocity-kpi accent"><span>Current taps/hr</span><strong id="vel-taps">—</strong><em id="vel-taps-delta">Waiting for data</em></div>
+              <div class="velocity-kpi good"><span>Conversion velocity</span><strong id="vel-conv">—</strong><em id="vel-conv-delta">Leads per hour</em></div>
+              <div class="velocity-kpi warn"><span>Peak hour</span><strong id="vel-peak">—</strong><em id="vel-peak-note">Highest interaction window</em></div>
+            </div>
+            <div>
+              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px;">24-hr velocity sparkline</div>
+              <div class="velocity-sparkline" id="vel-sparkline">
+                <div class="item muted" style="width:100%;text-align:center;border:0;background:none;font-size:12px;">Sparkline will appear here.</div>
+              </div>
+            </div>
+            <div id="velocity-insights" class="list">
+              <div class="item muted">Velocity insights will appear here.</div>
             </div>
           </div>
         </article>
 
+        <!-- CORE METRICS -->
         <article class="card">
-          <div class="eyebrow">Overview</div>
-          <div class="metric-grid" id="overview-metrics">
-            <div class="metric"><span class="muted">Total interactions</span><strong>-</strong></div>
-            <div class="metric"><span class="muted">Online devices</span><strong>-</strong></div>
-            <div class="metric"><span class="muted">Average queue depth</span><strong>-</strong></div>
-            <div class="metric"><span class="muted">Open incidents</span><strong>-</strong></div>
-          </div>
-        </article>
-
-        <article class="card">
-          <div class="eyebrow">Pilot Gates</div>
+          <div class="section-head"><div><div class="eyebrow">Event Performance</div><h2>Core metrics</h2></div></div>
           <div class="metric-grid">
-            <div class="metric">
-              <span class="muted">Go-live gate</span>
-              <strong id="readiness-title">Waiting for organizer data</strong>
-              <div id="readiness-summary" class="tiny muted" style="margin-top:8px;">No readiness snapshot loaded yet.</div>
-            </div>
-            <div class="metric">
-              <span class="muted">Rehearsal gate</span>
-              <strong id="rehearsal-title">Pilot rehearsal loading</strong>
-              <div id="rehearsal-summary" class="tiny muted" style="margin-top:8px;">Waiting for rehearsal evidence.</div>
-            </div>
-            <div class="metric">
-              <span class="muted">Signoff gate</span>
-              <strong id="signoff-title">Pilot signoff loading</strong>
-              <div id="signoff-summary" class="tiny muted" style="margin-top:8px;">Waiting for signoff evidence.</div>
-            </div>
-            <div class="metric">
-              <span class="muted">Joint execution</span>
-              <strong id="execution-title">Joint pilot go-live loading</strong>
-              <div id="execution-summary" class="tiny muted" style="margin-top:8px;">Waiting for dry run and approvals.</div>
-            </div>
-          </div>
-          <div class="toolbar" style="margin-top:14px;">
-            <div><button id="refresh-rehearsal" class="secondary" type="button">Refresh rehearsal report</button></div>
-            <div><button id="refresh-signoff" class="secondary" type="button">Refresh signoff pack</button></div>
-            <div><button id="refresh-execution" class="secondary" type="button">Refresh joint execution</button></div>
-          </div>
-          <h3 class="section-title">Go-live blockers</h3>
-          <ul id="readiness-blockers" class="blockers"></ul>
-          <div id="readiness-checklist" class="list"></div>
-        </article>
-
-        <article class="card">
-          <div class="eyebrow">Data Control</div>
-          <h2>Consent, privacy, and CRM release policy</h2>
-          <div id="data-control-summary" class="list">
-            <div class="item muted">Load organizer data to inspect event policy controls.</div>
-          </div>
-          <div class="toggle-grid">
-            <label class="toggle-row"><input id="policy-vendor-exports-enabled" type="checkbox"><span>Vendor exports enabled</span></label>
-            <label class="toggle-row"><input id="policy-sponsor-pii-enabled" type="checkbox"><span>Sponsor raw PII enabled</span></label>
-            <label class="toggle-row"><input id="policy-require-export-approval" type="checkbox"><span>Require export approval</span></label>
-            <label class="toggle-row"><input id="policy-allow-crm-push" type="checkbox"><span>Allow CRM push</span></label>
-            <label class="toggle-row"><input id="policy-allow-cross-event-identity-graph" type="checkbox"><span>Allow cross-event identity graph</span></label>
-          </div>
-          <div class="toolbar" style="margin-top:14px;">
-            <div style="min-width:220px; flex:1 1 220px;">
-              <label class="muted" for="policy-retention-days">Retention window</label>
-              <select id="policy-retention-days">
-                <option value="30">30 days</option>
-                <option value="60">60 days</option>
-                <option value="90">90 days</option>
-                <option value="180">180 days</option>
-                <option value="365">365 days</option>
-              </select>
-            </div>
-            <div><button id="save-data-control" class="secondary" type="button">Save data control</button></div>
-            <div><button id="publish-event" class="primary" type="button">Publish draft event</button></div>
+            <div class="metric accent"><span class="muted">Total Interactions</span><strong id="metric-total">-</strong></div>
+            <div class="metric"><span class="muted">Unique Attendees</span><strong id="metric-unique">-</strong></div>
+            <div class="metric"><span class="muted">Avg per Attendee</span><strong id="metric-avg">-</strong></div>
+            <div class="metric"><span class="muted">Opted-In Leads</span><strong id="metric-opted-in">-</strong></div>
+            <div class="metric good"><span class="muted">Consent Rate</span><strong id="metric-consent-rate">-</strong></div>
+            <div class="metric"><span class="muted">Active Stalls</span><strong id="metric-active-stalls">-</strong></div>
           </div>
         </article>
 
+        <!-- STALL RANKING -->
         <article class="card">
-          <div class="eyebrow">Incident Center</div>
-          <h2>Incident history and investigation queue</h2>
-          <div class="toolbar">
-            <div style="min-width:140px; flex:1 1 140px;">
-              <label class="muted" for="incident-filter-severity">Severity</label>
-              <select id="incident-filter-severity">
-                <option value="">All severities</option>
-                <option value="critical">critical</option>
-                <option value="high">high</option>
-                <option value="medium">medium</option>
-                <option value="low">low</option>
-              </select>
-            </div>
-            <div style="min-width:140px; flex:1 1 140px;">
-              <label class="muted" for="incident-filter-status">Status</label>
-              <select id="incident-filter-status">
-                <option value="">All statuses</option>
-                <option value="open">open</option>
-                <option value="escalated">escalated</option>
-                <option value="resolved">resolved</option>
-              </select>
-            </div>
-            <div style="min-width:160px; flex:1 1 160px;">
-              <label class="muted" for="incident-filter-device">Device</label>
-              <input id="incident-filter-device" type="text" placeholder="device-1">
-            </div>
-            <div style="min-width:160px; flex:1 1 160px;">
-              <label class="muted" for="incident-filter-area">Event area</label>
-              <input id="incident-filter-area" type="text" placeholder="north hall">
-            </div>
-            <div style="min-width:140px; flex:1 1 140px;">
-              <label class="muted" for="incident-filter-recent">Recent hours</label>
-              <select id="incident-filter-recent">
-                <option value="">All history</option>
-                <option value="1">1 hour</option>
-                <option value="6">6 hours</option>
-                <option value="24">24 hours</option>
-                <option value="72">72 hours</option>
-              </select>
-            </div>
-            <div><button id="refresh-incidents" class="secondary" type="button">Refresh incidents</button></div>
-          </div>
-          <table style="margin-top:14px;">
-            <thead>
-              <tr>
-                <th>Incident</th>
-                <th>Severity</th>
-                <th>Status</th>
-                <th>Device</th>
-                <th>Area</th>
-              </tr>
-            </thead>
-            <tbody id="incident-rows">
-              <tr><td colspan="5" class="muted">Load organizer data to inspect incidents.</td></tr>
-            </tbody>
+          <div class="section-head"><div><div class="eyebrow">Stall Ranking</div><h2>Zone performance</h2></div></div>
+          <div id="stall-ranking" class="bar-list"><div class="item muted">Load data to view stall ranking.</div></div>
+        </article>
+
+        <!-- INCIDENT SUMMARY -->
+        <article class="card">
+          <div class="section-head"><div><div class="eyebrow">Incidents</div><h2>Operational health</h2></div></div>
+          <div id="incident-summary" class="list"><div class="item muted">Incident summary will appear here.</div></div>
+        </article>
+
+        <!-- SPONSOR OVERVIEW -->
+        <article class="card">
+          <div class="section-head"><div><div class="eyebrow">Sponsor Overview</div><h2>Sponsor snapshot posture</h2></div></div>
+          <table>
+            <thead><tr><th>Sponsor org</th><th>Snapshots</th><th>Latest snapshot</th><th>Official export</th></tr></thead>
+            <tbody id="sponsor-rows"><tr><td colspan="4" class="muted">Load data to inspect sponsor posture.</td></tr></tbody>
           </table>
         </article>
 
-        <article class="card">
-          <div class="eyebrow">Export Control</div>
-          <h2>Controlled export lifecycle</h2>
-          <div class="toolbar">
-            <div style="min-width:240px; flex:1 1 240px;">
-              <label class="muted" for="export-type">Export type</label>
-              <select id="export-type">
-                <option value="vendor_leads">Vendor leads</option>
-                <option value="sponsor_leads">Sponsor leads</option>
-                <option value="organizer_event_report">Organizer event report</option>
-              </select>
-            </div>
-            <div><button id="request-export" class="primary" type="button">Request export</button></div>
-          </div>
-          <table style="margin-top:14px;">
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Requested by</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody id="export-rows">
-              <tr><td colspan="4" class="muted">Load organizer data to inspect exports.</td></tr>
-            </tbody>
-          </table>
-          <div id="export-detail" class="stack" style="margin-top:14px;">
-            <div class="item muted">Select an export to review approval and link status.</div>
-          </div>
-        </article>
-
-        <article class="card">
-          <div class="eyebrow">Stall Lead Visibility</div>
-          <h2>Review lead flow by stall</h2>
-          <div id="stall-buttons" class="stall-buttons"></div>
-          <table style="margin-top:14px;">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Consent</th>
-                <th>Qualification</th>
-                <th>CRM</th>
-              </tr>
-            </thead>
-            <tbody id="lead-rows">
-              <tr><td colspan="4" class="muted">Load organizer data to inspect stall leads.</td></tr>
-            </tbody>
-          </table>
-        </article>
       </section>
 
       <aside class="column">
+
+        <!-- FREEZE CONTROLS -->
         <article class="card">
-          <div class="eyebrow">Provider Readiness</div>
-          <h2>Provider and operational signal depth</h2>
-          <div id="provider-summary" class="list">
-            <div class="item muted">Provider readiness will appear here.</div>
+          <div class="section-head"><div><div class="eyebrow">Freeze Controls</div><h2>Freeze workflow</h2></div></div>
+          <h2 id="freeze-title">Waiting for freeze status</h2>
+          <div id="freeze-detail" class="list"><div class="item muted">Freeze status will appear here.</div></div>
+          <label class="muted" for="freeze-note" style="display:block;margin-top:14px;">Freeze note</label>
+          <textarea id="freeze-note" placeholder="Document why you are freezing the event now."></textarea>
+          <div class="toolbar" style="margin-top:10px;gap:8px;">
+            <button id="btn-freeze-open" class="primary" type="button">Freeze open-state report</button>
+            <button id="btn-freeze-closed" class="primary" type="button">Freeze closed-state report</button>
+            <button id="btn-unfreeze" class="secondary" type="button">Unfreeze</button>
           </div>
-          <h3 class="section-title">Operational alerts</h3>
-          <div id="operational-alerts" class="list">
-            <div class="item muted">No operational alerts loaded yet.</div>
+          <div class="mini-note muted" id="freeze-hint" style="margin-top:8px;">Admin auth is required for freeze operations.</div>
+        </article>
+
+        <!-- OFFICIAL EXPORT -->
+        <article class="card">
+          <div class="section-head"><div><div class="eyebrow">Official Export</div><h2>Frozen export package</h2></div></div>
+          <div id="official-export-detail" class="list"><div class="item muted">Freeze the event to generate official exports.</div></div>
+          <div class="toolbar" style="margin-top:12px;">
+            <button id="btn-request-export" class="secondary" type="button">Request official export</button>
           </div>
         </article>
 
+        <!-- SNAPSHOT MANAGEMENT -->
         <article class="card">
-          <div class="eyebrow">Break-Glass</div>
-          <h2>Admin trust controls for investigations</h2>
-          <div class="toolbar">
-            <div style="min-width:220px; flex:1 1 220px;">
-              <label class="muted" for="break-glass-justification">Justification</label>
-              <input id="break-glass-justification" type="text" placeholder="Investigation justification">
-            </div>
-            <div style="min-width:220px; flex:1 1 220px;">
-              <label class="muted" for="break-glass-access-scope">Access scope</label>
-              <input id="break-glass-access-scope" type="text" placeholder='{"area":"audit"}'>
-            </div>
-            <div style="min-width:220px; flex:1 1 220px;">
-              <label class="muted" for="break-glass-expires-at">Expires at</label>
-              <input id="break-glass-expires-at" type="datetime-local">
-            </div>
-            <div><button id="request-break-glass" class="primary" type="button">Request access</button></div>
-          </div>
-          <table style="margin-top:14px;">
-            <thead>
-              <tr>
-                <th>Status</th>
-                <th>Justification</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody id="break-glass-rows">
-              <tr><td colspan="3" class="muted">Platform-admin break-glass requests will appear here.</td></tr>
-            </tbody>
+          <div class="section-head"><div><div class="eyebrow">Snapshot Management</div><h2>Organizer snapshots</h2></div></div>
+          <table>
+            <thead><tr><th>Created</th><th>Type</th><th>Note</th></tr></thead>
+            <tbody id="snapshot-rows"><tr><td colspan="3" class="muted">No organizer snapshots.</td></tr></tbody>
           </table>
-          <div id="break-glass-detail" class="stack" style="margin-top:14px;">
-            <div class="item muted">Select a break-glass request to review approvals.</div>
+          <div class="toolbar" style="margin-top:12px;">
+            <div style="flex:1;"><input id="snapshot-note" placeholder="Snapshot note..." type="text"></div>
+            <button id="btn-snapshot" class="secondary" type="button">Take organizer snapshot</button>
           </div>
         </article>
 
+        <!-- LIVE DASHBOARD TOTALS -->
         <article class="card">
-          <div class="eyebrow">Incident Investigation</div>
-          <h2 id="incident-detail-title">Select an incident</h2>
-          <div id="incident-detail-meta" class="list">
-            <div class="item muted">Incident detail, linked artifacts, and action controls will appear here.</div>
-          </div>
-
-          <h3 class="section-title">Manual incident actions</h3>
-          <div class="toolbar">
-            <div style="min-width:220px; flex:1 1 220px;">
-              <label class="muted" for="incident-action-note-input">Action note</label>
-              <input id="incident-action-note-input" type="text" placeholder="Why is the state changing?">
-            </div>
-            <div><button id="escalate-incident" class="secondary" type="button">Escalate incident</button></div>
-            <div><button id="resolve-incident" class="primary" type="button">Resolve incident</button></div>
-          </div>
-
-          <h3 class="section-title">Runbook and workaround tracking</h3>
-          <div class="stack">
-            <div class="two-col">
-              <div>
-                <label class="muted" for="runbook-reference-input">Runbook reference</label>
-                <input id="runbook-reference-input" type="text" placeholder="RUNBOOK-42">
-              </div>
-              <div>
-                <label class="muted" for="workaround-status-input">Workaround status</label>
-                <select id="workaround-status-input">
-                  <option value="">Select status</option>
-                  <option value="planned">planned</option>
-                  <option value="active">active</option>
-                  <option value="validated">validated</option>
-                  <option value="rolled_back">rolled_back</option>
-                </select>
-              </div>
-            </div>
-            <div>
-              <label class="muted" for="workaround-summary-input">Workaround summary</label>
-              <textarea id="workaround-summary-input" placeholder="What workaround is in place?"></textarea>
-            </div>
-            <div>
-              <label class="muted" for="incident-next-action-input">Next action</label>
-              <input id="incident-next-action-input" type="text" placeholder="What should ops do next?">
-            </div>
-            <div><button id="save-runbook-tracking" class="secondary" type="button">Save runbook tracking</button></div>
-          </div>
-
-          <h3 class="section-title">Operator action notes</h3>
-          <div class="stack">
-            <div>
-              <label class="muted" for="incident-note-input">Incident note</label>
-              <textarea id="incident-note-input" placeholder="Capture operator observations or investigation notes."></textarea>
-            </div>
-            <div><button id="save-incident-note" class="secondary" type="button">Save incident note</button></div>
-          </div>
-
-          <h3 class="section-title">Linked investigation artifacts</h3>
-          <div id="incident-artifacts" class="split-list">
-            <div class="item muted">Select an incident to inspect cross-linked alerts, exports, break-glass, and audit evidence.</div>
-          </div>
-
-          <h3 class="section-title">Timeline and heartbeat trail</h3>
-          <div id="incident-timeline" class="list">
-            <div class="item muted">No timeline loaded.</div>
+          <div class="section-head"><div><div class="eyebrow">Live Totals</div><h2>Live vs frozen comparison</h2></div></div>
+          <div class="comparison-grid">
+            <div class="comparison-card"><h3>Current live</h3><div id="live-compare" class="list"><div class="item muted">Live view will appear here.</div></div></div>
+            <div class="comparison-card"><h3>Latest snapshot</h3><div id="snap-compare" class="list"><div class="item muted">Snapshot comparison will appear here.</div></div></div>
           </div>
         </article>
 
-        <article class="card">
-          <div class="eyebrow">Lead Detail</div>
-          <h2 id="detail-title">Select a lead</h2>
-          <div id="detail-meta" class="list">
-            <div class="item muted">Lead detail, consent state, and notes will appear here.</div>
-          </div>
-          <h3 class="section-title">Notes</h3>
-          <div id="detail-notes" class="notes">
-            <div class="item muted">No notes loaded.</div>
-          </div>
-        </article>
       </aside>
     </main>
 
     <script type="module">
-      import {
-        completeBrowserAuthCallback,
-        createBrowserAuthSlot
-      } from "./browser-auth.js";
-
       const params = new URLSearchParams(window.location.search);
-      const apiBase =
-        params.get("apiBase") ||
-        (window.location.protocol === "file:" ? "http://127.0.0.1:3000" : window.location.origin);
+      const apiBase = params.get("apiBase") || (window.location.protocol==="file:" ? "http://127.0.0.1:3000" : window.location.origin);
+      const $id = id => document.getElementById(id);
 
-      const eventIdInput = document.getElementById("event-id");
-      const authTokenInput = document.getElementById("auth-token");
-      const authTokenGroup = document.getElementById("auth-token-group");
-      const browserAuthGroup = document.getElementById("browser-auth-group");
-      const browserAuthStatus = document.getElementById("browser-auth-status");
-      const browserAuthLogin = document.getElementById("browser-auth-login");
-      const browserAuthLogout = document.getElementById("browser-auth-logout");
-      const adminAuthTokenInput = document.getElementById("admin-auth-token");
-      const adminTokenGroup = document.getElementById("admin-token-group");
-      const adminBrowserAuthGroup = document.getElementById("admin-browser-auth-group");
-      const adminBrowserAuthStatus = document.getElementById("admin-browser-auth-status");
-      const adminBrowserAuthLogin = document.getElementById("admin-browser-auth-login");
-      const adminBrowserAuthLogout = document.getElementById("admin-browser-auth-logout");
+      $id("event-id").value   = params.get("eventId") || "event-demo";
+      $id("auth-token").value = params.get("auth") || "organizer-token";
+      $id("admin-auth").value = params.get("adminAuth") || "admin-token";
 
-      const message = document.getElementById("message");
-      const overviewMetrics = document.getElementById("overview-metrics");
-      const readinessTitle = document.getElementById("readiness-title");
-      const readinessSummary = document.getElementById("readiness-summary");
-      const readinessBlockers = document.getElementById("readiness-blockers");
-      const readinessChecklist = document.getElementById("readiness-checklist");
-      const rehearsalTitle = document.getElementById("rehearsal-title");
-      const rehearsalSummary = document.getElementById("rehearsal-summary");
-      const signoffTitle = document.getElementById("signoff-title");
-      const signoffSummary = document.getElementById("signoff-summary");
-      const executionTitle = document.getElementById("execution-title");
-      const executionSummary = document.getElementById("execution-summary");
+      let OVERVIEW = null;
+      let HEATMAP = null;
+      let SNAPS = [];
 
-      const dataControlSummary = document.getElementById("data-control-summary");
-      const vendorExportsEnabledInput = document.getElementById("policy-vendor-exports-enabled");
-      const sponsorPiiEnabledInput = document.getElementById("policy-sponsor-pii-enabled");
-      const requireExportApprovalInput = document.getElementById("policy-require-export-approval");
-      const allowCrmPushInput = document.getElementById("policy-allow-crm-push");
-      const allowCrossEventIdentityGraphInput = document.getElementById("policy-allow-cross-event-identity-graph");
-      const retentionDaysInput = document.getElementById("policy-retention-days");
-      const saveDataControlButton = document.getElementById("save-data-control");
-      const publishEventButton = document.getElementById("publish-event");
+      $id("refresh-btn").addEventListener("click", loadAll);
+      $id("btn-freeze-open").addEventListener("click", () => doFreeze("open"));
+      $id("btn-freeze-closed").addEventListener("click", () => doFreeze("closed"));
+      $id("btn-unfreeze").addEventListener("click", doUnfreeze);
+      $id("btn-request-export").addEventListener("click", requestExport);
+      $id("btn-snapshot").addEventListener("click", takeSnapshot);
 
-      const incidentFilterSeverity = document.getElementById("incident-filter-severity");
-      const incidentFilterStatus = document.getElementById("incident-filter-status");
-      const incidentFilterDevice = document.getElementById("incident-filter-device");
-      const incidentFilterArea = document.getElementById("incident-filter-area");
-      const incidentFilterRecent = document.getElementById("incident-filter-recent");
-      const incidentRows = document.getElementById("incident-rows");
-      const incidentDetailTitle = document.getElementById("incident-detail-title");
-      const incidentDetailMeta = document.getElementById("incident-detail-meta");
-      const incidentArtifacts = document.getElementById("incident-artifacts");
-      const incidentTimeline = document.getElementById("incident-timeline");
-      const incidentActionNoteInput = document.getElementById("incident-action-note-input");
-      const runbookReferenceInput = document.getElementById("runbook-reference-input");
-      const workaroundStatusInput = document.getElementById("workaround-status-input");
-      const workaroundSummaryInput = document.getElementById("workaround-summary-input");
-      const incidentNextActionInput = document.getElementById("incident-next-action-input");
-      const incidentNoteInput = document.getElementById("incident-note-input");
+      loadAll();
 
-      const exportTypeInput = document.getElementById("export-type");
-      const exportRows = document.getElementById("export-rows");
-      const exportDetail = document.getElementById("export-detail");
-
-      const providerSummary = document.getElementById("provider-summary");
-      const operationalAlerts = document.getElementById("operational-alerts");
-
-      const breakGlassJustificationInput = document.getElementById("break-glass-justification");
-      const breakGlassAccessScopeInput = document.getElementById("break-glass-access-scope");
-      const breakGlassExpiresAtInput = document.getElementById("break-glass-expires-at");
-      const breakGlassRows = document.getElementById("break-glass-rows");
-      const breakGlassDetail = document.getElementById("break-glass-detail");
-
-      const stallButtons = document.getElementById("stall-buttons");
-      const leadRows = document.getElementById("lead-rows");
-      const detailTitle = document.getElementById("detail-title");
-      const detailMeta = document.getElementById("detail-meta");
-      const detailNotes = document.getElementById("detail-notes");
-
-      eventIdInput.value = params.get("eventId") || "event-demo";
-      authTokenInput.value = params.get("auth") || "organizer-token";
-      adminAuthTokenInput.value = params.get("adminAuth") || "platform-token";
-      breakGlassExpiresAtInput.value = params.get("breakGlassExpiresAt") || defaultBreakGlassExpiry();
-
-      let organizerAuthSession = null;
-      let adminAuthSession = null;
-
-      let currentOverview = null;
-      let currentDataControl = null;
-      let currentStalls = [];
-      let currentLeads = [];
-      let currentIncidents = [];
-      let currentIncidentDetail = null;
-      let currentExports = [];
-      let currentProviderReadiness = null;
-      let currentOperationalAlerts = [];
-      let currentQueueMetrics = null;
-      let currentBreakGlassItems = [];
-      let currentSelectedBreakGlass = null;
-      let currentSelectedExport = null;
-      let currentExportLinks = new Map();
-      let selectedStallId = null;
-      let selectedLead = null;
-      let selectedIncidentId = params.get("incidentId") || null;
-      let selectedExportId = params.get("exportId") || null;
-      let selectedBreakGlassId = params.get("breakGlassId") || null;
-
-      document.getElementById("refresh-page").addEventListener("click", loadOrganizerPage);
-      document.getElementById("refresh-incidents").addEventListener("click", () => loadIncidents({ announce: true }));
-      document.getElementById("refresh-rehearsal").addEventListener("click", refreshRehearsal);
-      document.getElementById("refresh-signoff").addEventListener("click", refreshSignoff);
-      document.getElementById("refresh-execution").addEventListener("click", refreshExecution);
-      saveDataControlButton.addEventListener("click", saveDataControl);
-      publishEventButton.addEventListener("click", publishEvent);
-      document.getElementById("request-export").addEventListener("click", requestExport);
-      document.getElementById("request-break-glass").addEventListener("click", requestBreakGlass);
-      document.getElementById("escalate-incident").addEventListener("click", () => updateIncidentState("escalate"));
-      document.getElementById("resolve-incident").addEventListener("click", () => updateIncidentState("resolve"));
-      document.getElementById("save-runbook-tracking").addEventListener("click", saveRunbookTracking);
-      document.getElementById("save-incident-note").addEventListener("click", saveIncidentNote);
-
-      eventIdInput.addEventListener("change", syncQueryState);
-      authTokenInput.addEventListener("change", syncQueryState);
-      adminAuthTokenInput.addEventListener("change", syncQueryState);
-      incidentFilterSeverity.addEventListener("change", syncQueryState);
-      incidentFilterStatus.addEventListener("change", syncQueryState);
-      incidentFilterDevice.addEventListener("change", syncQueryState);
-      incidentFilterArea.addEventListener("change", syncQueryState);
-      incidentFilterRecent.addEventListener("change", syncQueryState);
-
-      await completeBrowserAuthCallback({ apiBase });
-      organizerAuthSession = await createBrowserAuthSlot({
-        apiBase,
-        slot: "primary",
-        defaultToken: "organizer-token",
-        tokenInput: authTokenInput,
-        tokenGroup: authTokenGroup,
-        browserGroup: browserAuthGroup,
-        statusEl: browserAuthStatus,
-        signInButton: browserAuthLogin,
-        signOutButton: browserAuthLogout
-      });
-      adminAuthSession = await createBrowserAuthSlot({
-        apiBase,
-        slot: "admin",
-        defaultToken: "platform-token",
-        tokenInput: adminAuthTokenInput,
-        tokenGroup: adminTokenGroup,
-        browserGroup: adminBrowserAuthGroup,
-        statusEl: adminBrowserAuthStatus,
-        signInButton: adminBrowserAuthLogin,
-        signOutButton: adminBrowserAuthLogout
-      });
-
-      loadOrganizerPage();
-
-      async function loadOrganizerPage() {
+      /* ── LOAD ──────────────────────────────────────── */
+      async function loadAll() {
         try {
-          const eventId = getEventId();
-          const [
-            overview,
-            readinessResponse,
-            dataControl,
-            providerReadiness,
-            queueMetrics,
-            alertsResponse,
-            rehearsalResponse,
-            signoffResponse,
-            executionResponse,
-            exportsResponse
-          ] = await Promise.all([
-            api(`/organizer/events/${encodeURIComponent(eventId)}/overview`),
-            api(`/organizer/events/${encodeURIComponent(eventId)}/iot-go-live-readiness`),
-            api(`/organizer/events/${encodeURIComponent(eventId)}/data-control`),
-            api(`/organizer/events/${encodeURIComponent(eventId)}/provider-readiness`),
-            api(`/organizer/events/${encodeURIComponent(eventId)}/outbound-queue/metrics`),
-            api(`/organizer/events/${encodeURIComponent(eventId)}/operational-alerts?limit=5`),
-            api(`/organizer/events/${encodeURIComponent(eventId)}/pilot-rehearsal-report`),
-            api(`/organizer/events/${encodeURIComponent(eventId)}/pilot-signoff-pack`),
-            api(`/organizer/events/${encodeURIComponent(eventId)}/pilot-go-live-execution`),
-            api(`/organizer/events/${encodeURIComponent(eventId)}/exports`)
+          const eid = $id("event-id").value.trim();
+          const [overview, snaps] = await Promise.all([
+            api(`/organizer/events/${enc(eid)}/overview`),
+            api(`/organizer/events/${enc(eid)}/snapshots`).catch(()=>({items:[]}))
           ]);
+          OVERVIEW = overview;
+          SNAPS = snaps.items || [];
 
-          currentOverview = overview;
-          currentDataControl = dataControl;
-          currentProviderReadiness = providerReadiness;
-          currentOperationalAlerts = alertsResponse.items || [];
-          currentQueueMetrics = queueMetrics;
-          currentExports = exportsResponse.items || [];
+          try { HEATMAP = await api(`/events/${enc(eid)}/heatmap`); } catch { HEATMAP = null; }
 
-          renderOverview(overview);
-          renderReadiness(readinessResponse.readiness);
-          renderRehearsal(rehearsalResponse.rehearsal);
-          renderSignoff(signoffResponse.signoff);
-          renderExecution(executionResponse.execution);
-          renderDataControl(dataControl);
-          renderProviderReadiness(providerReadiness, queueMetrics, currentOperationalAlerts);
-          renderExports();
-
-          currentStalls = overview.top_stalls || [];
-          renderStallButtons();
-          if (currentStalls.length) {
-            const preferredStallId = selectedStallId && currentStalls.some((entry) => entry.stall_id === selectedStallId)
-              ? selectedStallId
-              : currentStalls[0].stall_id;
-            await selectStall(preferredStallId);
-          } else {
-            leadRows.innerHTML = `<tr><td colspan="4" class="muted">No stall traffic yet.</td></tr>`;
-            clearLeadDetail();
-          }
-
-          await loadIncidents({ announce: false, preserveMessage: true });
-          await loadBreakGlass({ announce: false, preserveMessage: true });
-
-          syncQueryState();
-          showMessage("Organizer data refreshed.", "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
+          renderDashboard();
+          renderHourlyChart();  // OR-03
+          renderVelocity();     // OR-03
+          renderSnapshots();
+          syncUrl();
+          showMsg("Dashboard refreshed.", "ok");
+        } catch(e) { showMsg(e.message, "error"); }
       }
 
-      function renderOverview(overview) {
-        overviewMetrics.innerHTML = `
-          <div class="metric"><span class="muted">Total interactions</span><strong>${number(overview.total_interactions)}</strong></div>
-          <div class="metric"><span class="muted">Online devices</span><strong>${number(overview.online_devices)}</strong></div>
-          <div class="metric"><span class="muted">Average queue depth</span><strong>${overview.average_queue_depth}</strong></div>
-          <div class="metric"><span class="muted">Open incidents</span><strong>${number(overview.open_incidents)}</strong></div>
-        `;
-      }
+      /* ── DASHBOARD ─────────────────────────────────── */
+      function renderDashboard() {
+        if (!OVERVIEW) return;
+        const O = OVERVIEW;
+        $id("page-title").textContent = `${O.event_name} ops`;
+        $id("page-subtitle").textContent = `${O.event_name} · ${humanize(O.event_status)} · Organizer ops`;
+        $id("hero-title").textContent = O.event_name;
+        $id("hero-body").textContent = `Event ID: ${O.event_id} · Status: ${humanize(O.event_status)} · Report v${O.report_snapshot_version}`;
 
-      function renderReadiness(readiness) {
-        readinessTitle.textContent = readiness.ready ? "Pilot ready" : "Pilot blocked";
-        readinessSummary.textContent = readiness.ready
-          ? "IoT go-live readiness has no blocking gates."
-          : `${readiness.blockers.length} blocker(s) remain before the event is ready.`;
-        readinessBlockers.innerHTML = "";
-        if (!readiness.blockers.length) {
-          readinessBlockers.innerHTML = `<li class="muted">No blockers detected.</li>`;
+        // Context cards
+        const cc = $id("context-cards");
+        cc.innerHTML = "";
+        ctxCard(cc, "Total interactions", num(O.total_interactions));
+        ctxCard(cc, "Unique attendees", num(O.unique_attendees));
+        ctxCard(cc, "Active stalls", num(O.active_stalls));
+        ctxCard(cc, "Unresolved incidents", num(O.unresolved_incidents));
+        ctxCard(cc, "Sponsors", num(O.sponsors?.length || 0));
+        ctxCard(cc, "Freeze posture", freezeTag(O.freeze_detail).tag);
+
+        // Core metrics
+        $id("metric-total").textContent    = num(O.total_interactions);
+        $id("metric-unique").textContent   = num(O.unique_attendees);
+        $id("metric-avg").textContent      = O.unique_attendees > 0 ? (O.total_interactions / O.unique_attendees).toFixed(1) : "0";
+        $id("metric-opted-in").textContent = num(O.opted_in_leads || 0);
+        $id("metric-consent-rate").textContent = O.total_interactions > 0 ? `${((O.opted_in_leads||0)/O.total_interactions*100).toFixed(1)}%` : "0%";
+        $id("metric-active-stalls").textContent = num(O.active_stalls);
+
+        // Freeze banner
+        const ft = freezeTag(O.freeze_detail);
+        const fb = $id("freeze-banner");
+        fb.className = `banner ${ft.tone}`;
+        fb.innerHTML = `<strong>${esc(ft.title)}</strong><span class="mini-note">${esc(ft.body)}</span><div class="pill-row"><span class="tag ${ft.tone==="live"?"good":ft.tone==="warn"?"warn":""}">${esc(ft.tag)}</span><span class="tag">${esc(humanize(O.event_status))}</span></div>`;
+
+        // Freeze detail
+        $id("freeze-title").textContent = ft.title;
+        renderFreezeDetail(O.freeze_detail);
+
+        // Stall ranking
+        renderStallRanking(O.stall_breakdown || []);
+
+        // Incident summary
+        const is_ = $id("incident-summary");
+        is_.innerHTML = "";
+        if (!O.unresolved_incidents && !O.incident_summary?.length) {
+          is_.innerHTML = `<div class="item muted">No active incidents.</div>`;
         } else {
-          for (const blocker of readiness.blockers) {
-            const item = document.createElement("li");
-            item.textContent = blocker;
-            readinessBlockers.appendChild(item);
+          const cnt = document.createElement("div"); cnt.className="item";
+          cnt.innerHTML = `<div class="stat-inline"><strong>${num(O.unresolved_incidents)} unresolved incidents</strong><span class="tag ${O.unresolved_incidents>0?"danger":"good"}">${O.unresolved_incidents>0?"Action needed":"All clear"}</span></div>`;
+          is_.appendChild(cnt);
+          for (const inc of (O.incident_summary||[]).slice(0,5)) {
+            const item = document.createElement("div"); item.className="item";
+            item.innerHTML = `<div class="stat-inline"><strong>${esc(inc.type||"Incident")}</strong><span class="tag ${inc.resolved?"good":"warn"}">${inc.resolved?"Resolved":"Open"}</span></div><p class="muted">${esc(inc.description||"")}</p>`;
+            is_.appendChild(item);
           }
         }
-        readinessChecklist.innerHTML = "";
-        for (const item of readiness.checklist || []) {
-          readinessChecklist.appendChild(buildChecklistItem(item));
+
+        // Sponsor rows
+        const sr = $id("sponsor-rows");
+        sr.innerHTML = "";
+        if (!O.sponsors?.length) { sr.innerHTML=`<tr><td colspan="4" class="muted">No sponsors registered.</td></tr>`; }
+        else for(const s of O.sponsors) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${esc(s.sponsor_name||s.sponsor_id)}</td><td>${num(s.snapshot_count||0)}</td><td>${s.latest_snapshot ? fmtDate(s.latest_snapshot.created_at) : "—"}</td><td>${s.latest_official_export ? humanize(s.latest_official_export.status) : "Not generated"}</td>`;
+          tr.addEventListener("click", () => {
+            const u = new URL("./sponsor.html", window.location.href);
+            u.searchParams.set("eventId", $id("event-id").value.trim());
+            u.searchParams.set("sponsorId", s.sponsor_id);
+            u.searchParams.set("auth", $id("auth-token").value.trim());
+            window.open(u.pathname+u.search, "_blank");
+          });
+          sr.appendChild(tr);
         }
+
+        // Live comparison
+        renderComparison(O);
       }
 
-      function renderRehearsal(rehearsal) {
-        rehearsalTitle.textContent = rehearsal.ready ? "Pilot rehearsal ready" : "Pilot rehearsal blocked";
-        rehearsalSummary.textContent = rehearsal.ready
-          ? `Evidence complete with ${number(rehearsal.evidence?.generated_exports || 0)} generated export(s).`
-          : `${rehearsal.blockers.length} rehearsal blocker(s) still need operator evidence.`;
-      }
+      /* ── OR-03 HOURLY TAP CHART ─────────────────────── */
+      window.renderHourlyChart = function() {
+        const bars = $id("hourly-bars");
+        const grid = $id("hourly-grid");
+        const view = $id("hourly-view")?.value || "stacked";
 
-      function renderSignoff(signoff) {
-        signoffTitle.textContent = signoff.ready ? "Pilot signoff ready" : "Pilot signoff blocked";
-        signoffSummary.textContent = signoff.ready
-          ? "Final signoff pack is ready for the cross-team review."
-          : `${signoff.blockers.length} signoff blocker(s) remain in the pack.`;
-      }
+        const hourly = OVERVIEW?.hourly_trend || HEATMAP?.hourly_trend || [];
+        bars.innerHTML = ""; grid.innerHTML = "";
 
-      function renderExecution(execution) {
-        executionTitle.textContent = execution.ready ? "Joint pilot go-live ready" : "Joint pilot go-live blocked";
-        executionSummary.textContent = execution.ready
-          ? "Dry run and approvals are complete."
-          : `${execution.blockers.length} joint execution blocker(s) remain.`;
-      }
-
-      function buildChecklistItem(item) {
-        const row = document.createElement("div");
-        row.className = "item";
-        row.innerHTML = `
-          <strong>${item.passed ? "Passed" : "Blocked"}</strong>
-          <p class="muted">${escapeHtml(item.label)}</p>
-          ${item.blockerMessage && !item.passed ? `<p class="tiny">${escapeHtml(item.blockerMessage)}</p>` : ""}
-        `;
-        return row;
-      }
-
-      function renderDataControl(dataControl) {
-        currentDataControl = dataControl;
-        const policy = dataControl.policy || {};
-        vendorExportsEnabledInput.checked = Boolean(policy.vendor_exports_enabled);
-        sponsorPiiEnabledInput.checked = Boolean(policy.sponsor_pii_enabled);
-        requireExportApprovalInput.checked = Boolean(policy.require_export_approval);
-        allowCrmPushInput.checked = Boolean(policy.allow_crm_push);
-        allowCrossEventIdentityGraphInput.checked = Boolean(policy.allow_cross_event_identity_graph);
-        retentionDaysInput.value = String(policy.retention_days || 30);
-        publishEventButton.disabled = dataControl.event_status !== "draft";
-
-        dataControlSummary.innerHTML = "";
-        addDataControlItem(`Event status: ${dataControl.event_status}`);
-        addDataControlItem(`Policy row persisted: ${dataControl.database_persistence.policy_row_present ? "Yes" : "No"}`);
-        addDataControlItem(`Secure defaults active: ${dataControl.database_persistence.secure_defaults_applied ? "Yes" : "No"}`);
-        addDataControlItem(`Publish ready: ${dataControl.ui_states.publish_ready ? "Yes" : "No"}`);
-        for (const blocker of dataControl.ui_states.publish_blockers || []) {
-          addDataControlItem(`Blocker: ${blocker.message}`);
+        if (!hourly.length) {
+          bars.innerHTML = `<div style="width:100%;text-align:center;font-size:13px;color:var(--muted);">No hourly data yet.</div>`;
+          return;
         }
-      }
 
-      async function loadIncidents({ announce = false, preserveMessage = false } = {}) {
-        try {
-          const response = await api(buildIncidentListPath());
-          currentIncidents = response.items || [];
-          renderIncidentRows();
-          if (currentIncidents.length) {
-            const preferredIncidentId =
-              selectedIncidentId && currentIncidents.some((entry) => entry.id === selectedIncidentId)
-                ? selectedIncidentId
-                : currentIncidents[0].id;
-            await selectIncident(preferredIncidentId, { preserveMessage: true });
+        // Determine max for y-axis
+        let maxV = 1;
+        for (const h of hourly) {
+          const total = (h.impressions||0) + (view==="stacked"?0:0); // in stacked we compare total
+          if (view==="stacked")     maxV = Math.max(maxV, (h.impressions||0));
+          else if (view==="clicks") maxV = Math.max(maxV, (h.clicks||0));
+          else if (view==="leads")  maxV = Math.max(maxV, (h.opted_in_leads||0));
+          else                      maxV = Math.max(maxV, (h.impressions||0));
+        }
+
+        // Grid lines (4 levels)
+        const levels = [maxV, Math.round(maxV*0.75), Math.round(maxV*0.5), Math.round(maxV*0.25), 0];
+        for (const level of levels) {
+          const line = document.createElement("div"); line.className = "hgrid-line";
+          line.innerHTML = `<span class="hgrid-lbl">${level}</span>`;
+          grid.appendChild(line);
+        }
+
+        const tooltip = $id("hourly-tooltip");
+
+        for (const entry of hourly) {
+          const h = new Date(entry.hour).getHours();
+          const col = document.createElement("div"); col.className = "hbar-col";
+
+          if (view === "stacked") {
+            // Three stacked segments: leads, clicks, impressions (bottom to top)
+            const imp = entry.impressions || 0;
+            const clk = Math.min(entry.clicks || 0, imp);
+            const led = Math.min(entry.opted_in_leads || 0, clk);
+            const segH = (v) => Math.max(0, Math.round((v / maxV) * 100));
+
+            if (led > 0) {
+              const s = document.createElement("div"); s.className="hbar-stacked";
+              s.style.cssText = `height:${segH(led)}%;background:rgba(180,108,20,.7);order:1;`;
+              s.title = `${h}:00 — leads: ${led}`; col.appendChild(s);
+            }
+            if (clk - led > 0) {
+              const s = document.createElement("div"); s.className="hbar-stacked";
+              s.style.cssText = `height:${segH(clk-led)}%;background:rgba(15,141,99,.7);order:2;`;
+              s.title = `${h}:00 — clicks: ${clk}`; col.appendChild(s);
+            }
+            if (imp - clk > 0) {
+              const s = document.createElement("div"); s.className="hbar-stacked";
+              s.style.cssText = `height:${segH(imp-clk)}%;background:rgba(58,106,212,.75);order:3;`;
+              s.title = `${h}:00 — impressions: ${imp}`; col.appendChild(s);
+            }
+            // If all zero, show a tiny placeholder
+            if (imp === 0) {
+              const s = document.createElement("div"); s.className="hbar-stacked";
+              s.style.cssText = `height:2px;background:rgba(17,34,51,.1);`; col.appendChild(s);
+            }
+
+            // Tooltip on hover
+            col.addEventListener("mouseenter", e => {
+              tooltip.style.display = "block";
+              tooltip.innerHTML = `<strong>${h}:00</strong><br>Impressions: ${num(imp)}<br>Clicks: ${num(clk)}<br>Opted-in leads: ${num(led)}<br>CTR: ${imp>0?((clk/imp)*100).toFixed(1):0}%`;
+            });
+            col.addEventListener("mouseleave", () => { tooltip.style.display="none"; });
+            col.addEventListener("mousemove", e => {
+              tooltip.style.left = `${e.clientX+12}px`;
+              tooltip.style.top  = `${e.clientY-10}px`;
+            });
           } else {
-            clearIncidentDetail();
+            let val = 0, color = "rgba(58,106,212,.75)";
+            if (view==="clicks")      { val=entry.clicks||0;        color="rgba(15,141,99,.7)"; }
+            else if (view==="leads")  { val=entry.opted_in_leads||0; color="rgba(180,108,20,.7)"; }
+            else                      { val=entry.impressions||0; }
+            const pct = Math.max(2, Math.round((val/maxV)*100));
+            const s = document.createElement("div"); s.className="hbar-stacked";
+            s.style.cssText = `height:${pct}%;background:${color};width:100%;`;
+            col.appendChild(s);
+            col.addEventListener("mouseenter", e => { tooltip.style.display="block"; tooltip.innerHTML=`<strong>${h}:00</strong><br>${humanize(view)}: ${num(val)}`; });
+            col.addEventListener("mouseleave", () => { tooltip.style.display="none"; });
+            col.addEventListener("mousemove", e => { tooltip.style.left=`${e.clientX+12}px`; tooltip.style.top=`${e.clientY-10}px`; });
           }
-          if (announce && !preserveMessage) {
-            showMessage("Incident center refreshed.", "ok");
-          }
-        } catch (error) {
-          if (!preserveMessage) {
-            showMessage(error.message, "error");
-          }
+
+          const lbl = document.createElement("div"); lbl.className="hbar-lbl"; lbl.textContent=`${h}h`;
+          col.appendChild(lbl);
+          bars.appendChild(col);
+        }
+      };
+
+      /* ── OR-03 VISITOR VELOCITY ─────────────────────── */
+      function renderVelocity() {
+        const hourly = OVERVIEW?.hourly_trend || [];
+        if (!hourly.length) return;
+
+        // Compute velocity: last hour vs prior hour
+        const now = new Date();
+        const lastHour  = hourly.filter(h => { const d = new Date(h.hour); return (now-d) < 3600*1000; });
+        const priorHour = hourly.filter(h => { const d = new Date(h.hour); const diff=(now-d)/1000; return diff>=3600 && diff<7200; });
+
+        const sumF = (arr, field) => arr.reduce((a,h)=>a+(h[field]||0),0);
+        const lastTaps  = sumF(lastHour,  "impressions");
+        const priorTaps = sumF(priorHour, "impressions");
+        const lastLeads = sumF(lastHour,  "opted_in_leads");
+        const priorLeads= sumF(priorHour, "opted_in_leads");
+
+        // Peak hour
+        const peakEntry = hourly.reduce((best, h) => (h.impressions||0) > (best.impressions||0) ? h : best, hourly[0]);
+        const peakH = new Date(peakEntry.hour).getHours();
+
+        // Velocity delta text
+        const velDelta = priorTaps === 0
+          ? (lastTaps > 0 ? "Trending up" : "No prior data")
+          : `${lastTaps >= priorTaps ? "+" : ""}${lastTaps - priorTaps} vs prev hour (${priorTaps > 0 ? ((lastTaps/priorTaps-1)*100).toFixed(0) : "∞"}%)`;
+
+        const convDelta = lastLeads === 0 ? "No opt-ins this hour" : `${num(lastLeads)} opted-in this hour`;
+
+        $id("vel-taps").textContent = num(lastTaps);
+        $id("vel-taps-delta").textContent = velDelta;
+        $id("vel-conv").textContent = num(lastLeads);
+        $id("vel-conv-delta").textContent = convDelta;
+        $id("vel-peak").textContent = `${peakH}:00`;
+        $id("vel-peak-note").textContent = `${num(peakEntry.impressions)} impressions`;
+
+        // Sparkline
+        const spark = $id("vel-sparkline");
+        spark.innerHTML = "";
+        const maxSpark = Math.max(...hourly.map(h=>h.impressions||0), 1);
+        for (const h of hourly) {
+          const pct = Math.max(4, Math.round(((h.impressions||0)/maxSpark)*100));
+          const bar = document.createElement("div"); bar.className="vspark-bar";
+          bar.style.height=`${pct}%`;
+          bar.title=`${new Date(h.hour).getHours()}:00 — ${num(h.impressions)} impressions`;
+          spark.appendChild(bar);
+        }
+
+        // Velocity insights
+        const vi = $id("velocity-insights");
+        vi.innerHTML = "";
+
+        const peakConvEntry = hourly.reduce((best, h) => (h.opted_in_leads||0) > (best.opted_in_leads||0) ? h : best, hourly[0]);
+        const peakConvH = new Date(peakConvEntry.hour).getHours();
+
+        addItem(vi, "Traffic momentum", lastTaps > priorTaps
+          ? `Taps are accelerating (+${lastTaps-priorTaps} vs last hour). Good time to open stall promotions.`
+          : lastTaps < priorTaps
+          ? `Taps are decelerating (${lastTaps-priorTaps} vs last hour). Consider push notifications or floor activation.`
+          : "Tap volume is steady.");
+
+        addItem(vi, `Peak impressions: ${peakH}:00`, `${num(peakEntry.impressions)} impressions in peak hour.`);
+        addItem(vi, `Peak conversion: ${peakConvH}:00`, `${num(peakConvEntry.opted_in_leads)} opted-in leads in peak consent hour.`);
+
+        const totalImpressions = sumF(hourly, "impressions");
+        const totalLeads       = sumF(hourly, "opted_in_leads");
+        const overallConv = totalImpressions > 0 ? ((totalLeads/totalImpressions)*100).toFixed(2) : "0.00";
+        addItem(vi, "Overall conversion", `${overallConv}% of impressions convert to opted-in leads across all hours.`);
+      }
+
+      /* ── STALL RANKING ──────────────────────────────── */
+      function renderStallRanking(stalls) {
+        const el = $id("stall-ranking"); el.innerHTML="";
+        if (!stalls.length) { el.innerHTML=`<div class="item muted">No stall data yet.</div>`; return; }
+        const maxI = Math.max(...stalls.map(s=>Number(s.impressions||0)),1);
+        for (const s of stalls.slice(0,8)) {
+          const pct = Math.max(6, Math.round((Number(s.impressions||0)/maxI)*100));
+          const row = document.createElement("div"); row.className="bar-row";
+          row.innerHTML=`<div class="stat-inline"><strong>${esc(s.stall_name||s.stall_id)}</strong><div class="pill-row"><span class="tag good">${num(s.opted_in_leads||0)} opted-in</span><span class="tag">${num(s.impressions||0)} impressions</span></div></div><div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>`;
+          el.appendChild(row);
         }
       }
 
-      function buildIncidentListPath() {
-        const query = new URLSearchParams();
-        setQueryFilter(query, "severity", incidentFilterSeverity.value);
-        setQueryFilter(query, "status", incidentFilterStatus.value);
-        setQueryFilter(query, "device_id", incidentFilterDevice.value.trim());
-        setQueryFilter(query, "area", incidentFilterArea.value.trim());
-        setQueryFilter(query, "recent_hours", incidentFilterRecent.value);
-        const suffix = query.toString() ? `?${query.toString()}` : "";
-        return `/organizer/events/${encodeURIComponent(getEventId())}/incidents${suffix}`;
-      }
+      /* ── FREEZE DETAIL ──────────────────────────────── */
+      function renderFreezeDetail(fd) {
+        const el = $id("freeze-detail"); el.innerHTML="";
+        if (!fd) { el.innerHTML=`<div class="item muted">No freeze detail available.</div>`; return; }
+        const ft = freezeTag(fd);
+        const ig = document.createElement("div"); ig.className="info-grid";
+        ig.appendChild(infoCard("Posture", ft.tag, ft.body));
+        ig.appendChild(infoCard("Frozen", fd.frozen ? "Yes" : "No", fd.frozen_at ? `Frozen at ${fmtDate(fd.frozen_at)}` : "Not yet frozen"));
+        const lo = fd.latest_official_export;
+        ig.appendChild(infoCard("Latest official export", lo ? humanize(lo.status) : "None", lo ? fmtDate(lo.created_at) : "Run 'Request official export' after freezing."));
+        ig.appendChild(infoCard("Snapshots", num(fd.sponsor_snapshot_count||0), `${fd.unresolved_incidents||0} unresolved incidents`));
+        el.appendChild(ig);
 
-      function renderIncidentRows() {
-        if (!currentIncidents.length) {
-          incidentRows.innerHTML = `<tr><td colspan="5" class="muted">No incidents match the current filters.</td></tr>`;
-          return;
+        if (lo?.file_url) {
+          const link = document.createElement("a"); link.className="cta-link"; link.href=lo.file_url; link.textContent="Open frozen export package";
+          el.appendChild(link);
         }
-        incidentRows.innerHTML = currentIncidents.map((incident) => `
-          <tr data-incident-id="${escapeHtml(incident.id)}" class="${incident.id === selectedIncidentId ? "active" : ""}">
-            <td>
-              <strong>${escapeHtml(incident.code)}</strong>
-              <div class="muted">${escapeHtml(incident.message || "No message")}</div>
-            </td>
-            <td><span class="pill ${severityClass(incident.severity)}">${escapeHtml(incident.severity)}</span></td>
-            <td>${escapeHtml(incident.status)}</td>
-            <td>${escapeHtml(incident.serial_number || incident.device_id)}</td>
-            <td>${escapeHtml(incident.area_label || "Event-wide")}</td>
-          </tr>
-        `).join("");
 
-        incidentRows.querySelectorAll("tr[data-incident-id]").forEach((row) => {
-          row.addEventListener("click", () => selectIncident(row.dataset.incidentId));
-        });
+        $id("official-export-detail").innerHTML = lo
+          ? `<div class="item"><div class="stat-inline"><strong>Export status</strong><span class="tag ${lo.status==="generated"?"good":"warn"}">${humanize(lo.status)}</span></div><p class="muted">Created ${fmtDate(lo.created_at)}</p></div>`
+          : `<div class="item muted">Freeze the event and request an export to generate the official package.</div>`;
       }
 
-      async function selectIncident(incidentId, { preserveMessage = false } = {}) {
+      /* ── SNAPSHOTS ──────────────────────────────────── */
+      function renderSnapshots() {
+        const tbody=$id("snapshot-rows"); tbody.innerHTML="";
+        if(!SNAPS.length){tbody.innerHTML=`<tr><td colspan="3" class="muted">No organizer snapshots.</td></tr>`;return;}
+        for(const item of SNAPS){
+          const tr=document.createElement("tr");
+          tr.innerHTML=`<td>${esc(fmtDate(item.created_at))}</td><td>${esc(item.snapshot_type||"organizer")}</td><td>${esc(item.note||"No note")}</td>`;
+          tbody.appendChild(tr);
+        }
+      }
+
+      async function takeSnapshot(){
+        try{
+          const eid=$id("event-id").value.trim();
+          await api(`/organizer/events/${enc(eid)}/snapshots`,{method:"POST",body:{note:$id("snapshot-note").value.trim()||null}});
+          $id("snapshot-note").value="";
+          await loadAll();
+          showMsg("Organizer snapshot taken.", "ok");
+        }catch(e){showMsg(e.message,"error");}
+      }
+
+      /* ── FREEZE OPERATIONS ──────────────────────────── */
+      async function doFreeze(state) {
         try {
-          selectedIncidentId = incidentId;
-          syncQueryState();
-          renderIncidentRows();
-          currentIncidentDetail = await api(
-            `/organizer/events/${encodeURIComponent(getEventId())}/incidents/${encodeURIComponent(incidentId)}`
-          );
-          renderIncidentDetail(currentIncidentDetail);
-          if (!preserveMessage) {
-            showMessage("Incident investigation loaded.", "ok");
-          }
-        } catch (error) {
-          if (!preserveMessage) {
-            showMessage(error.message, "error");
-          }
-        }
+          const eid=$id("event-id").value.trim();
+          await api(`/organizer/events/${enc(eid)}/freeze`,{method:"POST",body:{event_state:state,note:$id("freeze-note").value.trim()||null},adminAuth:true});
+          await loadAll();
+          showMsg(`Event report frozen (${state}).`, "ok");
+        } catch(e) { showMsg(e.message,"error"); }
       }
 
-      function renderIncidentDetail(detail) {
-        const item = detail.item;
-        incidentDetailTitle.textContent = `${item.code} · ${item.message || "Incident detail"}`;
-        incidentDetailMeta.innerHTML = "";
-        addIncidentMeta(`Status: ${item.status}`);
-        addIncidentMeta(`Severity: ${item.severity}`);
-        addIncidentMeta(`Device: ${item.serial_number || item.device_id}`);
-        addIncidentMeta(`Area: ${item.stall_name || item.stall_id || "Event-wide"}`);
-        addIncidentMeta(`Occurred: ${formatDate(item.occurred_at)}`);
-        addIncidentMeta(`Resolved: ${formatDate(item.resolved_at)}`);
-
-        if (detail.fleet_context) {
-          addIncidentMeta(
-            `Fleet status: ${detail.fleet_context.assignment_status || "unknown"} / ${detail.fleet_context.diagnostics_status || "unknown"}`
-          );
-          addIncidentMeta(`Reader status: ${detail.fleet_context.reader_status || "unknown"}`);
-          addIncidentMeta(`Connectivity: ${detail.fleet_context.connectivity_status || "unknown"}`);
-          addIncidentMeta(`Queue depth: ${detail.fleet_context.local_queue_depth ?? "n/a"}`);
-        }
-        addIncidentMeta(`Linked alerts: ${number(detail.related_alerts?.length || 0)}`);
-        addIncidentMeta(`Linked exports: ${number(detail.related_exports?.length || 0)}`);
-        addIncidentMeta(`Linked break-glass requests: ${number(detail.related_break_glass_requests?.length || 0)}`);
-
-        const runbook = detail.runbook_tracking;
-        runbookReferenceInput.value = runbook?.runbook_reference || "";
-        workaroundStatusInput.value = runbook?.workaround_status || "";
-        workaroundSummaryInput.value = runbook?.workaround_summary || "";
-        incidentNextActionInput.value = runbook?.next_action || "";
-
-        incidentArtifacts.innerHTML = "";
-        addArtifactCard("Linked alerts", (detail.related_alerts || []).map((entry) =>
-          `${entry.code} · ${entry.status} · ${entry.message || "No message"}`
-        ));
-        addArtifactCard("Focus audit trail", (detail.related_audit_logs || []).map((entry) =>
-          `${entry.event_type} · ${formatDate(entry.created_at)}`
-        ));
-        addArtifactCard("Linked exports", (detail.related_exports || []).map((entry) =>
-          `${humanizeExportType(entry.export_type)} · ${entry.status}`
-        ));
-        addArtifactCard("Linked break-glass", (detail.related_break_glass_requests || []).map((entry) =>
-          `${entry.status} · ${entry.justification}`
-        ));
-        addArtifactCard("Operator notes", (detail.annotations || []).map((entry) =>
-          `${entry.action_type || "note"} · ${entry.note}`
-        ));
-        addArtifactCard("Runbook tracking", [
-          runbook?.runbook_reference ? `Runbook: ${runbook.runbook_reference}` : "Runbook: not set",
-          runbook?.workaround_status ? `Workaround status: ${runbook.workaround_status}` : "Workaround status: not set",
-          runbook?.next_action ? `Next action: ${runbook.next_action}` : "Next action: not set"
-        ]);
-
-        incidentTimeline.innerHTML = "";
-        for (const entry of detail.timeline || []) {
-          incidentTimeline.appendChild(buildTimelineItem(entry.label, entry.timestamp, entry.details));
-        }
-        for (const heartbeat of detail.device_history?.heartbeats || []) {
-          incidentTimeline.appendChild(buildTimelineItem(
-            "Heartbeat",
-            heartbeat.recorded_at,
-            `Queue ${heartbeat.local_queue_depth ?? "n/a"} · Battery ${heartbeat.battery_percent ?? "n/a"}%`
-          ));
-        }
-        for (const deviceIncident of detail.device_history?.incidents || []) {
-          incidentTimeline.appendChild(buildTimelineItem(
-            `Device incident: ${deviceIncident.code}`,
-            deviceIncident.occurred_at || deviceIncident.created_at,
-            deviceIncident.message || null
-          ));
-        }
-      }
-
-      function buildTimelineItem(label, timestamp, details) {
-        const item = document.createElement("div");
-        item.className = "item";
-        item.innerHTML = `
-          <strong>${escapeHtml(label)}</strong>
-          <p class="muted">${escapeHtml(formatDate(timestamp))}</p>
-          ${details ? `<p>${escapeHtml(details)}</p>` : ""}
-        `;
-        return item;
-      }
-
-      function addIncidentMeta(text) {
-        const item = document.createElement("div");
-        item.className = "item";
-        item.textContent = text;
-        incidentDetailMeta.appendChild(item);
-      }
-
-      function addArtifactCard(title, lines) {
-        const item = document.createElement("div");
-        item.className = "item";
-        if (!lines.length) {
-          item.innerHTML = `<strong>${escapeHtml(title)}</strong><p class="muted">No linked records.</p>`;
-        } else {
-          item.innerHTML = `
-            <strong>${escapeHtml(title)}</strong>
-            ${lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
-          `;
-        }
-        incidentArtifacts.appendChild(item);
-      }
-
-      function clearIncidentDetail() {
-        currentIncidentDetail = null;
-        selectedIncidentId = null;
-        incidentDetailTitle.textContent = "Select an incident";
-        incidentDetailMeta.innerHTML = `<div class="item muted">Incident detail, linked artifacts, and action controls will appear here.</div>`;
-        incidentArtifacts.innerHTML = `<div class="item muted">Select an incident to inspect cross-linked alerts, exports, break-glass, and audit evidence.</div>`;
-        incidentTimeline.innerHTML = `<div class="item muted">No timeline loaded.</div>`;
-        incidentActionNoteInput.value = "";
-        runbookReferenceInput.value = "";
-        workaroundStatusInput.value = "";
-        workaroundSummaryInput.value = "";
-        incidentNextActionInput.value = "";
-        incidentNoteInput.value = "";
-      }
-
-      async function updateIncidentState(action) {
-        if (!currentIncidentDetail?.item?.id) {
-          showMessage("Select an incident first.", "warn");
-          return;
-        }
+      async function doUnfreeze() {
         try {
-          currentIncidentDetail = await api(
-            `/organizer/events/${encodeURIComponent(getEventId())}/incidents/${encodeURIComponent(currentIncidentDetail.item.id)}/state`,
-            {
-              method: "POST",
-              body: {
-                action,
-                note: incidentActionNoteInput.value.trim() || null
-              }
-            }
-          );
-          incidentActionNoteInput.value = "";
-          renderIncidentDetail(currentIncidentDetail);
-          await loadIncidents({ announce: false, preserveMessage: true });
-          showMessage(action === "escalate" ? "Incident escalated." : "Incident resolved.", "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function saveRunbookTracking() {
-        if (!currentIncidentDetail?.item?.id) {
-          showMessage("Select an incident first.", "warn");
-          return;
-        }
-        try {
-          currentIncidentDetail = await api(
-            `/organizer/events/${encodeURIComponent(getEventId())}/incidents/${encodeURIComponent(currentIncidentDetail.item.id)}/runbook`,
-            {
-              method: "POST",
-              body: {
-                runbook_reference: runbookReferenceInput.value.trim() || null,
-                workaround_status: workaroundStatusInput.value || null,
-                workaround_summary: workaroundSummaryInput.value.trim() || null,
-                next_action: incidentNextActionInput.value.trim() || null
-              }
-            }
-          );
-          renderIncidentDetail(currentIncidentDetail);
-          showMessage("Runbook tracking saved.", "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function saveIncidentNote() {
-        if (!currentIncidentDetail?.item?.id) {
-          showMessage("Select an incident first.", "warn");
-          return;
-        }
-        if (!incidentNoteInput.value.trim()) {
-          showMessage("Add an incident note first.", "warn");
-          return;
-        }
-        try {
-          await api(
-            `/organizer/events/${encodeURIComponent(getEventId())}/incidents/${encodeURIComponent(currentIncidentDetail.item.id)}/annotations`,
-            {
-              method: "POST",
-              body: {
-                note: incidentNoteInput.value.trim()
-              }
-            }
-          );
-          incidentNoteInput.value = "";
-          await selectIncident(currentIncidentDetail.item.id, { preserveMessage: true });
-          showMessage("Incident note saved.", "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      function renderExports() {
-        if (!currentExports.length) {
-          exportRows.innerHTML = `<tr><td colspan="4" class="muted">No exports have been requested yet.</td></tr>`;
-          exportDetail.innerHTML = `<div class="item muted">Select an export to review approval and link status.</div>`;
-          return;
-        }
-
-        exportRows.innerHTML = currentExports.map((entry) => `
-          <tr data-export-id="${escapeHtml(entry.id)}" class="${entry.id === selectedExportId ? "active" : ""}">
-            <td>
-              <strong>${escapeHtml(humanizeExportType(entry.export_type))}</strong>
-              <div class="muted">${escapeHtml(entry.id)}</div>
-            </td>
-            <td>${escapeHtml(entry.status)}</td>
-            <td>${escapeHtml(entry.requested_by_user_id || "Unknown")}</td>
-            <td>${escapeHtml(formatDate(entry.created_at))}</td>
-          </tr>
-        `).join("");
-
-        exportRows.querySelectorAll("tr[data-export-id]").forEach((row) => {
-          row.addEventListener("click", () => selectExport(row.dataset.exportId));
-        });
-
-        const preferredExportId =
-          selectedExportId && currentExports.some((entry) => entry.id === selectedExportId)
-            ? selectedExportId
-            : currentExports[0].id;
-        selectExport(preferredExportId, { preserveMessage: true });
-      }
-
-      function selectExport(exportId, { preserveMessage = false } = {}) {
-        selectedExportId = exportId;
-        syncQueryState();
-        currentSelectedExport = currentExports.find((entry) => entry.id === exportId) || null;
-        exportRows.querySelectorAll("tr[data-export-id]").forEach((row) => {
-          row.classList.toggle("active", row.dataset.exportId === exportId);
-        });
-        renderExportDetail();
-        if (!preserveMessage && currentSelectedExport) {
-          showMessage("Export detail loaded.", "ok");
-        }
-      }
-
-      function renderExportDetail() {
-        if (!currentSelectedExport) {
-          exportDetail.innerHTML = `<div class="item muted">Select an export to review approval and link status.</div>`;
-          return;
-        }
-        const shortLink = currentExportLinks.get(currentSelectedExport.id) || null;
-        exportDetail.innerHTML = `
-          <div class="item">
-            <strong>${escapeHtml(humanizeExportType(currentSelectedExport.export_type))}</strong>
-            <p>Status: ${escapeHtml(currentSelectedExport.status)}</p>
-            <p class="muted">Requested at ${escapeHtml(formatDate(currentSelectedExport.created_at))}</p>
-            ${currentSelectedExport.file_url ? `<p class="tiny">Native download: ${escapeHtml(currentSelectedExport.file_url)}</p>` : ""}
-            ${shortLink ? `<p><a class="action-link" href="${escapeHtml(shortLink.path)}" target="_blank" rel="noreferrer">Open signed export link</a></p>` : `<p class="muted">Open signed export link will appear after approval.</p>`}
-            <div class="inline-actions">
-              <button id="approve-export" class="secondary" type="button" ${currentSelectedExport.status !== "requested" ? "disabled" : ""}>Approve export</button>
-              <button id="reject-export" class="secondary" type="button" ${currentSelectedExport.status !== "requested" ? "disabled" : ""}>Reject export</button>
-              <button id="create-export-link" class="primary" type="button" ${currentSelectedExport.status !== "generated" ? "disabled" : ""}>Create signed link</button>
-            </div>
-          </div>
-        `;
-        const approveButton = document.getElementById("approve-export");
-        const rejectButton = document.getElementById("reject-export");
-        const createLinkButton = document.getElementById("create-export-link");
-        approveButton?.addEventListener("click", approveSelectedExport);
-        rejectButton?.addEventListener("click", rejectSelectedExport);
-        createLinkButton?.addEventListener("click", createSignedExportLink);
+          const eid=$id("event-id").value.trim();
+          await api(`/organizer/events/${enc(eid)}/unfreeze`,{method:"POST",adminAuth:true});
+          await loadAll();
+          showMsg("Event report unfrozen.", "ok");
+        } catch(e) { showMsg(e.message,"error"); }
       }
 
       async function requestExport() {
         try {
-          const response = await api("/exports/request", {
-            method: "POST",
-            body: {
-              event_id: getEventId(),
-              export_type: exportTypeInput.value
-            }
-          });
-          selectedExportId = response.id;
-          await refreshExports();
-          showMessage(`Export requested: ${humanizeExportType(response.export_type)}.`, "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
+          const eid=$id("event-id").value.trim();
+          await api(`/organizer/events/${enc(eid)}/exports`,{method:"POST",body:{export_type:"official_event_report",event_id:eid}});
+          await loadAll();
+          showMsg("Official export requested.", "ok");
+        } catch(e) { showMsg(e.message,"error"); }
+      }
+
+      /* ── COMPARISON ─────────────────────────────────── */
+      function renderComparison(O) {
+        const lc=$id("live-compare"); lc.innerHTML="";
+        const sc=$id("snap-compare"); sc.innerHTML="";
+        for(const [l,v] of [["Total interactions",O.total_interactions],["Unique attendees",O.unique_attendees],["Opted-in leads",O.opted_in_leads||0],["Active stalls",O.active_stalls]]) {
+          lc.appendChild(cmpMetric(l, num(v), null));
+        }
+        const sd = O.latest_snapshot?.overview;
+        if(!sd){sc.innerHTML=`<div class="item muted">Take a snapshot to compare.</div>`;return;}
+        for(const [l,sv,lv] of [["Total interactions",sd.total_interactions,O.total_interactions],["Unique attendees",sd.unique_attendees,O.unique_attendees],["Opted-in leads",sd.opted_in_leads||0,O.opted_in_leads||0],["Active stalls",sd.active_stalls,O.active_stalls]]) {
+          const diff=Number(lv||0)-Number(sv||0);
+          const delta=diff===0?{kind:"flat",label:"Matches live"}:{kind:diff>0?"up":"flat",label:`${diff>0?"+":""}${diff} since snapshot`};
+          sc.appendChild(cmpMetric(l, num(sv), delta));
         }
       }
 
-      async function refreshExports() {
-        const response = await api(`/organizer/events/${encodeURIComponent(getEventId())}/exports`);
-        currentExports = response.items || [];
-        renderExports();
+      /* ── HELPERS ─────────────────────────────────────── */
+      function ctxCard(parent,label,value){const item=document.createElement("div");item.className="item";item.innerHTML=`<span class="muted">${esc(label)}</span><strong>${esc(String(value))}</strong>`;parent.appendChild(item);}
+      function addItem(parent,label,body){const item=document.createElement("div");item.className="item";item.innerHTML=`<strong>${esc(label)}</strong><p class="muted">${esc(body)}</p>`;parent.appendChild(item);}
+      function infoCard(label,value,note){const item=document.createElement("div");item.className="info-card";item.innerHTML=`<span class="muted">${esc(label)}</span><strong>${esc(value)}</strong><span class="mini-note">${esc(note)}</span>`;return item;}
+      function cmpMetric(label,value,delta){const item=document.createElement("div");item.className="item";const dm=delta?`<span class="delta ${delta.kind}">${esc(delta.label)}</span>`:`<span class="mini-note">Live</span>`;item.innerHTML=`<div class="stat-inline"><strong>${esc(label)}</strong>${dm}</div><div>${esc(value)}</div>`;return item;}
+      function freezeTag(fd){
+        if(!fd) return{tone:"live",tag:"Live reporting",title:"Event is live",body:"No freeze detail available."};
+        if(fd.frozen) return{tone:"frozen",tag:"Official report frozen",title:"Official event report is frozen",body:fd.frozen_at?`Frozen at ${fmtDate(fd.frozen_at)}.`:"Report is frozen."};
+        if(fd.event_status==="closed"&&!fd.frozen) return{tone:"warn",tag:"Closed without freeze",title:"Event closed but report not frozen",body:"Run the freeze workflow to produce the official sponsor package."};
+        return{tone:"live",tag:"Live reporting",title:"Live metrics — report not frozen",body:fd.unresolved_incidents?`${num(fd.unresolved_incidents)} incidents need resolution before freezing.`:"Ready to freeze when needed."};
       }
-
-      async function approveSelectedExport() {
-        if (!currentSelectedExport) {
-          return;
-        }
-        try {
-          await api(`/exports/${encodeURIComponent(currentSelectedExport.id)}/approve`, {
-            method: "POST"
-          });
-          await refreshExports();
-          await createSignedExportLink({ quiet: true });
-          showMessage("Export approved and signed link generated.", "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
+      function syncUrl(){
+        const u=new URL(window.location.href);
+        wp(u,"eventId",$id("event-id").value.trim());
+        wp(u,"auth",$id("auth-token").value.trim());
+        wp(u,"adminAuth",$id("admin-auth").value.trim());
+        window.history.replaceState({},"",u);
+        const so=new URL("./sponsor.html",window.location.href);
+        so.searchParams.set("eventId",$id("event-id").value.trim());
+        $id("nav-sponsor").href=so.pathname+so.search;
       }
+      function wp(u,k,v){if(v)u.searchParams.set(k,v);else u.searchParams.delete(k);}
+      function showMsg(text,type){const m=$id("message");m.hidden=!text;m.textContent=text||"";m.className=`status ${type}`;}
+      function num(v){return new Intl.NumberFormat("en-US").format(Number(v||0));}
+      function humanize(v){return String(v||"unknown").replaceAll("_"," ").replace(/\b\w/g,m=>m.toUpperCase());}
+      function fmtDate(v){if(!v)return"Unknown";return new Date(v).toLocaleString([],{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});}
+      function esc(v){return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");}
+      function enc(v){return encodeURIComponent(v);}
 
-      async function rejectSelectedExport() {
-        if (!currentSelectedExport) {
-          return;
-        }
-        try {
-          await api(`/exports/${encodeURIComponent(currentSelectedExport.id)}/reject`, {
-            method: "POST",
-            body: {
-              reason: "Organizer review rejected the export request."
-            }
-          });
-          await refreshExports();
-          showMessage("Export rejected.", "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function createSignedExportLink({ quiet = false } = {}) {
-        if (!currentSelectedExport) {
-          return;
-        }
-        try {
-          const link = await api(`/exports/${encodeURIComponent(currentSelectedExport.id)}/short-link`, {
-            method: "POST"
-          });
-          currentExportLinks.set(currentSelectedExport.id, link);
-          renderExportDetail();
-          if (!quiet) {
-            showMessage("Signed export link created.", "ok");
-          }
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      function renderProviderReadiness(providerReadiness, queueMetrics, alerts) {
-        providerSummary.innerHTML = "";
-        addProviderItem(`Wallet pass provider: ${humanizeProviderStatus(providerReadiness.wallet_pass.status)}`);
-        addProviderItem(`Wallet pass mode: ${providerReadiness.wallet_pass.mode}`);
-        addProviderItem(`Email notification provider: ${humanizeProviderStatus(providerReadiness.notifications?.email?.status || "unknown")}`);
-        addProviderItem(`SMS notification provider: ${humanizeProviderStatus(providerReadiness.notifications?.sms?.status || "unknown")}`);
-        addProviderItem(`Worker scheduler: ${humanizeKey(providerReadiness.scheduler?.mode || "unknown")}`);
-        addProviderItem(`Outbound queued ready: ${number(queueMetrics.counts?.queued_ready || 0)}`);
-        addProviderItem(`Dead-letter notifications: ${number(queueMetrics.counts?.dead_letter || 0)}`);
-        addProviderItem(`Blocking provider issue: ${providerReadiness.blocking ? "Yes" : "No"}`);
-
-        operationalAlerts.innerHTML = "";
-        if (!alerts.length) {
-          operationalAlerts.innerHTML = `<div class="item muted">No active operational alerts.</div>`;
-          return;
-        }
-        for (const alert of alerts) {
-          const item = document.createElement("div");
-          item.className = "item";
-          item.innerHTML = `
-            <strong>${escapeHtml(alert.kind)} · ${escapeHtml(alert.status)}</strong>
-            <p>${escapeHtml(alert.message || "Operator review needed.")}</p>
-            <p class="muted">${escapeHtml(alert.provider || "provider")} · ${escapeHtml(formatDate(alert.updated_at))}</p>
-          `;
-          operationalAlerts.appendChild(item);
-        }
-      }
-
-      function addProviderItem(text) {
-        const item = document.createElement("div");
-        item.className = "item";
-        item.textContent = text;
-        providerSummary.appendChild(item);
-      }
-
-      async function loadBreakGlass({ announce = false, preserveMessage = false } = {}) {
-        try {
-          const response = await api("/break-glass", { slot: "admin" });
-          currentBreakGlassItems = response.items || [];
-          renderBreakGlassRows();
-          if (currentBreakGlassItems.length) {
-            const preferredId =
-              selectedBreakGlassId && currentBreakGlassItems.some((entry) => entry.id === selectedBreakGlassId)
-                ? selectedBreakGlassId
-                : currentBreakGlassItems[0].id;
-            selectBreakGlass(preferredId, { preserveMessage: true });
-          } else {
-            breakGlassDetail.innerHTML = `<div class="item muted">No break-glass requests yet.</div>`;
-          }
-          if (announce && !preserveMessage) {
-            showMessage("Break-glass view refreshed.", "ok");
-          }
-        } catch (error) {
-          currentBreakGlassItems = [];
-          breakGlassRows.innerHTML = `<tr><td colspan="3" class="muted">Sign in as platform admin to manage break-glass.</td></tr>`;
-          breakGlassDetail.innerHTML = `<div class="item muted">Platform-admin access is required for break-glass approvals.</div>`;
-          if (announce && !preserveMessage) {
-            showMessage(error.message, "warn");
-          }
-        }
-      }
-
-      function renderBreakGlassRows() {
-        if (!currentBreakGlassItems.length) {
-          breakGlassRows.innerHTML = `<tr><td colspan="3" class="muted">No break-glass requests yet.</td></tr>`;
-          return;
-        }
-        breakGlassRows.innerHTML = currentBreakGlassItems.map((entry) => `
-          <tr data-break-glass-id="${escapeHtml(entry.id)}" class="${entry.id === selectedBreakGlassId ? "active" : ""}">
-            <td>${escapeHtml(entry.status)}</td>
-            <td>${escapeHtml(entry.justification)}</td>
-            <td>${escapeHtml(formatDate(entry.created_at))}</td>
-          </tr>
-        `).join("");
-        breakGlassRows.querySelectorAll("tr[data-break-glass-id]").forEach((row) => {
-          row.addEventListener("click", () => selectBreakGlass(row.dataset.breakGlassId));
-        });
-      }
-
-      function selectBreakGlass(requestId, { preserveMessage = false } = {}) {
-        selectedBreakGlassId = requestId;
-        syncQueryState();
-        currentSelectedBreakGlass = currentBreakGlassItems.find((entry) => entry.id === requestId) || null;
-        renderBreakGlassRows();
-        renderBreakGlassDetail();
-        if (!preserveMessage && currentSelectedBreakGlass) {
-          showMessage("Break-glass request loaded.", "ok");
-        }
-      }
-
-      function renderBreakGlassDetail() {
-        if (!currentSelectedBreakGlass) {
-          breakGlassDetail.innerHTML = `<div class="item muted">Select a break-glass request to review approvals.</div>`;
-          return;
-        }
-        breakGlassDetail.innerHTML = `
-          <div class="item">
-            <strong>${escapeHtml(currentSelectedBreakGlass.justification)}</strong>
-            <p>Status: ${escapeHtml(currentSelectedBreakGlass.status)}</p>
-            <p>Scope: ${escapeHtml(formatAccessScope(currentSelectedBreakGlass.access_scope))}</p>
-            <p class="muted">Expires ${escapeHtml(formatDate(currentSelectedBreakGlass.expires_at))}</p>
-            <div class="inline-actions">
-              <button id="approve-break-glass" class="secondary" type="button" ${["active", "revoked", "expired"].includes(currentSelectedBreakGlass.status) ? "disabled" : ""}>Approve step</button>
-              <button id="revoke-break-glass" class="secondary" type="button" ${currentSelectedBreakGlass.status !== "active" ? "disabled" : ""}>Revoke access</button>
-            </div>
-          </div>
-        `;
-        document.getElementById("approve-break-glass")?.addEventListener("click", approveBreakGlass);
-        document.getElementById("revoke-break-glass")?.addEventListener("click", revokeBreakGlass);
-      }
-
-      async function requestBreakGlass() {
-        try {
-          const response = await api("/break-glass/request", {
-            method: "POST",
-            slot: "admin",
-            body: {
-              justification: breakGlassJustificationInput.value.trim(),
-              access_scope: parseAccessScope(breakGlassAccessScopeInput.value.trim()),
-              expires_at: parseDatetimeLocal(breakGlassExpiresAtInput.value)
-            }
-          });
-          selectedBreakGlassId = response.id;
-          await loadBreakGlass({ announce: false, preserveMessage: true });
-          showMessage(`Break-glass requested: ${response.id}.`, "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function approveBreakGlass() {
-        if (!currentSelectedBreakGlass) {
-          return;
-        }
-        try {
-          const response = await api(`/break-glass/${encodeURIComponent(currentSelectedBreakGlass.id)}/approve`, {
-            method: "POST",
-            slot: "admin"
-          });
-          selectedBreakGlassId = response.id;
-          await loadBreakGlass({ announce: false, preserveMessage: true });
-          showMessage(`Break-glass approval recorded: ${response.status}.`, "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function revokeBreakGlass() {
-        if (!currentSelectedBreakGlass) {
-          return;
-        }
-        try {
-          const response = await api(`/break-glass/${encodeURIComponent(currentSelectedBreakGlass.id)}/revoke`, {
-            method: "POST",
-            slot: "admin"
-          });
-          selectedBreakGlassId = response.id;
-          await loadBreakGlass({ announce: false, preserveMessage: true });
-          showMessage("Break-glass access revoked.", "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      function renderStallButtons() {
-        stallButtons.innerHTML = "";
-        for (const stall of currentStalls) {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = `secondary ${selectedStallId === stall.stall_id ? "active" : ""}`;
-          button.textContent = `${stall.stall_name} (${stall.interactions})`;
-          button.addEventListener("click", () => selectStall(stall.stall_id));
-          stallButtons.appendChild(button);
-        }
-      }
-
-      async function selectStall(stallId) {
-        selectedStallId = stallId;
-        syncQueryState();
-        renderStallButtons();
-        try {
-          const response = await api(`/stalls/${encodeURIComponent(stallId)}/leads`);
-          currentLeads = response.items;
-          renderLeads();
-          if (currentLeads.length) {
-            const preferredLeadId = selectedLead?.interaction_id && currentLeads.some((entry) => entry.interaction_id === selectedLead.interaction_id)
-              ? selectedLead.interaction_id
-              : currentLeads[0].interaction_id;
-            await selectLead(preferredLeadId, { preserveMessage: true });
-          } else {
-            clearLeadDetail();
-          }
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      function renderLeads() {
-        if (!currentLeads.length) {
-          leadRows.innerHTML = `<tr><td colspan="4" class="muted">No leads yet for this stall.</td></tr>`;
-          return;
-        }
-        leadRows.innerHTML = currentLeads.map((item) => `
-          <tr data-interaction-id="${escapeHtml(item.interaction_id)}" class="${selectedLead?.interaction_id === item.interaction_id ? "active" : ""}">
-            <td>${escapeHtml(item.full_name || "Masked")}</td>
-            <td>${escapeHtml(humanizeConsent(item.consent_status))}</td>
-            <td><span class="pill">${escapeHtml(capitalize(item.classification))}</span></td>
-            <td>${escapeHtml(humanizeCrm(item.crm_eligibility))}</td>
-          </tr>
-        `).join("");
-        leadRows.querySelectorAll("tr[data-interaction-id]").forEach((row) => {
-          row.addEventListener("click", () => selectLead(row.dataset.interactionId));
-        });
-      }
-
-      async function selectLead(interactionId, { preserveMessage = false } = {}) {
-        try {
-          const [detail, notes] = await Promise.all([
-            api(`/interactions/${encodeURIComponent(interactionId)}/detail`),
-            api(`/interactions/${encodeURIComponent(interactionId)}/notes`)
-          ]);
-          selectedLead = detail.item;
-          selectedLead.notes = notes.items;
-          renderLeads();
-          renderLeadDetail();
-          if (!preserveMessage) {
-            showMessage("Lead detail loaded.", "ok");
-          }
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      function renderLeadDetail() {
-        detailTitle.textContent = selectedLead.full_name || "Masked lead";
-        detailMeta.innerHTML = "";
-        detailNotes.innerHTML = "";
-
-        addDetailItem(`Company: ${selectedLead.company_name || "Masked"}`);
-        addDetailItem(`Email: ${selectedLead.email || "Not visible"}`);
-        addDetailItem(`Phone: ${selectedLead.phone || "Not visible"}`);
-        addDetailItem(`Consent: ${humanizeConsent(selectedLead.consent_status)}`);
-        addDetailItem(`Classification: ${capitalize(selectedLead.classification)}`);
-        addDetailItem(`CRM eligibility: ${humanizeCrm(selectedLead.crm_eligibility)}`);
-
-        if (!selectedLead.notes.length) {
-          detailNotes.innerHTML = `<div class="item muted">No notes captured for this interaction yet.</div>`;
-          return;
-        }
-        for (const note of selectedLead.notes) {
-          const item = document.createElement("div");
-          item.className = "item";
-          item.innerHTML = `
-            <strong>${escapeHtml(note.author_user_id || "Vendor")}</strong>
-            <p>${escapeHtml(note.note)}</p>
-            <p class="muted">${escapeHtml(formatDate(note.created_at))}</p>
-          `;
-          detailNotes.appendChild(item);
-        }
-      }
-
-      function clearLeadDetail() {
-        selectedLead = null;
-        detailTitle.textContent = "Select a lead";
-        detailMeta.innerHTML = `<div class="item muted">Lead detail will appear here.</div>`;
-        detailNotes.innerHTML = `<div class="item muted">No notes loaded.</div>`;
-      }
-
-      async function refreshRehearsal() {
-        try {
-          const response = await api(`/organizer/events/${encodeURIComponent(getEventId())}/pilot-rehearsal-report`);
-          renderRehearsal(response.rehearsal);
-          showMessage("Pilot rehearsal report refreshed.", "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function refreshSignoff() {
-        try {
-          const response = await api(`/organizer/events/${encodeURIComponent(getEventId())}/pilot-signoff-pack`);
-          renderSignoff(response.signoff);
-          showMessage("Pilot signoff pack refreshed.", "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function refreshExecution() {
-        try {
-          const response = await api(`/organizer/events/${encodeURIComponent(getEventId())}/pilot-go-live-execution`);
-          renderExecution(response.execution);
-          showMessage("Joint pilot execution refreshed.", "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function saveDataControl() {
-        try {
-          const response = await api(`/organizer/events/${encodeURIComponent(getEventId())}/data-control`, {
-            method: "PUT",
-            body: {
-              vendor_exports_enabled: vendorExportsEnabledInput.checked,
-              sponsor_pii_enabled: sponsorPiiEnabledInput.checked,
-              require_export_approval: requireExportApprovalInput.checked,
-              allow_crm_push: allowCrmPushInput.checked,
-              retention_days: Number(retentionDaysInput.value),
-              allow_cross_event_identity_graph: allowCrossEventIdentityGraphInput.checked
-            }
-          });
-          renderDataControl(response);
-          showMessage("Data control saved.", "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function publishEvent() {
-        try {
-          const response = await api(`/organizer/events/${encodeURIComponent(getEventId())}/publish`, {
-            method: "POST"
-          });
-          renderDataControl(response.data_control);
-          showMessage(`Event published: ${response.status}.`, "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      function addDetailItem(text) {
-        const item = document.createElement("div");
-        item.className = "item";
-        item.textContent = text;
-        detailMeta.appendChild(item);
-      }
-
-      function addDataControlItem(text) {
-        const item = document.createElement("div");
-        item.className = "item";
-        item.textContent = text;
-        dataControlSummary.appendChild(item);
-      }
-
-      function showMessage(text, type) {
-        message.hidden = !text;
-        message.textContent = text || "";
-        message.className = `status ${type}`;
-      }
-
-      function getEventId() {
-        return eventIdInput.value.trim();
-      }
-
-      function defaultBreakGlassExpiry() {
-        const date = new Date(Date.now() + 4 * 60 * 60 * 1000);
-        const offset = date.getTimezoneOffset();
-        const local = new Date(date.getTime() - offset * 60 * 1000);
-        return local.toISOString().slice(0, 16);
-      }
-
-      function parseDatetimeLocal(value) {
-        return value ? new Date(value).toISOString() : null;
-      }
-
-      function parseAccessScope(value) {
-        if (!value) {
-          return { area: "audit" };
-        }
-        try {
-          return JSON.parse(value);
-        } catch {
-          return value;
-        }
-      }
-
-      function formatAccessScope(value) {
-        if (value == null) {
-          return "none";
-        }
-        return typeof value === "string" ? value : JSON.stringify(value);
-      }
-
-      function setQueryFilter(query, key, value) {
-        if (value) {
-          query.set(key, value);
-        }
-      }
-
-      function syncQueryState() {
-        const next = new URL(window.location.href);
-        writeParam(next.searchParams, "apiBase", apiBase === window.location.origin ? null : apiBase);
-        writeParam(next.searchParams, "eventId", getEventId() || null);
-        writeParam(next.searchParams, "auth", organizerAuthSession?.isSecureMode ? null : authTokenInput.value.trim() || null);
-        writeParam(next.searchParams, "adminAuth", adminAuthSession?.isSecureMode ? null : adminAuthTokenInput.value.trim() || null);
-        writeParam(next.searchParams, "incidentId", selectedIncidentId || null);
-        writeParam(next.searchParams, "exportId", selectedExportId || null);
-        writeParam(next.searchParams, "breakGlassId", selectedBreakGlassId || null);
-        window.history.replaceState({}, "", next);
-      }
-
-      function writeParam(searchParams, key, value) {
-        if (value === null || value === undefined || value === "") {
-          searchParams.delete(key);
-          return;
-        }
-        searchParams.set(key, value);
-      }
-
-      function severityClass(value) {
-        if (value === "critical" || value === "high") {
-          return "bad";
-        }
-        if (value === "medium") {
-          return "warn";
-        }
-        return "good";
-      }
-
-      function humanizeConsent(value) {
-        return {
-          pending: "Pending",
-          vendor_only: "Vendor only",
-          vendor_and_sponsor: "Vendor and sponsor",
-          declined: "Declined"
-        }[value] || value || "Unknown";
-      }
-
-      function humanizeCrm(value) {
-        return {
-          eligible: "Eligible",
-          blocked_by_policy: "Blocked by policy",
-          blocked_by_consent: "Blocked by consent"
-        }[value] || value || "Unknown";
-      }
-
-      function humanizeExportType(value) {
-        return {
-          vendor_leads: "Vendor leads",
-          sponsor_leads: "Sponsor leads",
-          organizer_event_report: "Organizer event report"
-        }[value] || humanizeKey(value);
-      }
-
-      function humanizeProviderStatus(value) {
-        return {
-          ready: "Ready",
-          disabled: "Disabled",
-          misconfigured: "Misconfigured",
-          unknown: "Unknown"
-        }[value] || humanizeKey(value);
-      }
-
-      function humanizeKey(value) {
-        return String(value || "unknown")
-          .replaceAll("_", " ")
-          .replace(/\b\w/g, (match) => match.toUpperCase());
-      }
-
-      function capitalize(value) {
-        return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
-      }
-
-      function number(value) {
-        return new Intl.NumberFormat().format(Number(value || 0));
-      }
-
-      function formatDate(value) {
-        return value ? new Date(value).toLocaleString() : "Not available";
-      }
-
-      function escapeHtml(value) {
-        return String(value)
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;");
-      }
-
-      async function api(path, options = {}) {
-        const slot = options.slot || "primary";
-        const tokenInput = slot === "admin" ? adminAuthTokenInput : authTokenInput;
-        const authSession = slot === "admin" ? adminAuthSession : organizerAuthSession;
-        const bearerToken = authSession?.getBearerToken?.() || tokenInput.value.trim();
-        if (!bearerToken) {
-          throw new Error(slot === "admin" ? "Sign in as platform admin to continue." : "Sign in with SSO to continue.");
-        }
-
-        const response = await fetch(`${apiBase}${path}`, {
-          cache: "no-store",
-          method: options.method || "GET",
-          headers: {
-            authorization: `Bearer ${bearerToken}`,
-            "content-type": "application/json",
-            ...(options.headers || {})
-          },
-          body: options.body ? JSON.stringify(options.body) : undefined
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(payload.error || payload.details?.blockers?.[0]?.message || "Request failed");
-        }
+      async function api(path, options={}) {
+        const token = options.adminAuth ? $id("admin-auth").value.trim() : $id("auth-token").value.trim();
+        if (!token) throw new Error("Auth token required.");
+        const resp = await fetch(`${apiBase}${path}`,{method:options.method||"GET",headers:{"content-type":"application/json","authorization":`Bearer ${token}`,"x-tenant-id":"tenant-demo",...(options.headers||{})},cache:"no-store",body:options.body?JSON.stringify(options.body):undefined});
+        const payload = await resp.json().catch(()=>({}));
+        if(!resp.ok) throw new Error(payload.error||`Request failed with ${resp.status}`);
         return payload;
       }
     </script>

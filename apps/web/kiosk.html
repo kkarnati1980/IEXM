@@ -1131,9 +1131,78 @@
       };
 
       /* ═══════════════════════════════════════════
-         QUEUE STORE (inline — mirrors packages/runtime)
+         QUEUE STORE — IndexedDB-backed (RT-07 fix)
+         Survives page reload and device reboot.
+         In-memory mirror kept for sync speed;
+         IndexedDB is source of truth on boot.
       ═══════════════════════════════════════════ */
+      const IDB_NAME = "kiosk-queue";
+      const IDB_STORE = "items";
+      let _idb = null;
+
+      function openIDB() {
+        if (_idb) return Promise.resolve(_idb);
+        return new Promise((resolve, reject) => {
+          const req = indexedDB.open(IDB_NAME, 1);
+          req.onupgradeneeded = e => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains(IDB_STORE)) {
+              db.createObjectStore(IDB_STORE, { keyPath: "queue_sequence_number" });
+            }
+          };
+          req.onsuccess = e => { _idb = e.target.result; resolve(_idb); };
+          req.onerror = () => reject(req.error);
+        });
+      }
+
+      async function idbPut(item) {
+        try {
+          const db = await openIDB();
+          return new Promise((resolve, reject) => {
+            const tx = db.transaction(IDB_STORE, "readwrite");
+            tx.objectStore(IDB_STORE).put(item);
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+          });
+        } catch { /* storage failure — handled by caller */ throw new Error("LOCAL_STORAGE_WRITE_FAILURE"); }
+      }
+
+      async function idbGetAll() {
+        try {
+          const db = await openIDB();
+          return new Promise((resolve, reject) => {
+            const tx = db.transaction(IDB_STORE, "readonly");
+            const req = tx.objectStore(IDB_STORE).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+          });
+        } catch { return []; }
+      }
+
+      async function idbDelete(seq) {
+        try {
+          const db = await openIDB();
+          return new Promise((resolve) => {
+            const tx = db.transaction(IDB_STORE, "readwrite");
+            tx.objectStore(IDB_STORE).delete(seq);
+            tx.oncomplete = resolve;
+          });
+        } catch { /* non-critical */ }
+      }
+
+      /* Load persisted queue from IndexedDB into memory on boot */
+      async function hydrateQueueFromIDB() {
+        const persisted = await idbGetAll();
+        if (!persisted.length) return;
+        persisted.sort((a, b) => a.queue_sequence_number - b.queue_sequence_number);
+        queue.items = persisted;
+        queue.lastSequence = persisted[persisted.length - 1].queue_sequence_number;
+        logDiag(`ok:Queue hydrated — ${persisted.length} items restored from IndexedDB`, "ok");
+        updateQueueCounter();
+      }
+
       function createQueueStore() { return { lastSequence: 0, items: [] }; }
+
       function checksumFor(payload) {
         const str = JSON.stringify(payload, Object.keys(payload).sort());
         let h = 0;
@@ -1142,30 +1211,45 @@
         }
         return (h >>> 0).toString(16).padStart(8, '0');
       }
-      function appendQueueItem(store, payload) {
+
+      /* appendQueueItem now writes to IndexedDB first — throws on write failure (RT-11 fix) */
+      async function appendQueueItem(store, payload) {
         const seq = ++store.lastSequence;
         const item = { queue_sequence_number: seq, payload, sync_status: "queued", retry_count: 0, checksum: checksumFor(payload) };
+        await idbPut(item); // throws LOCAL_STORAGE_WRITE_FAILURE if IndexedDB fails
         store.items.push(item);
         return item;
       }
+
       function classifyQueueItem(item) {
         return checksumFor(item.payload) !== item.checksum ? "corrupt" : item.sync_status;
       }
-      function markQueueItemSynced(store, seq) {
+
+      async function markQueueItemSynced(store, seq) {
         const item = store.items.find(e => e.queue_sequence_number === seq);
-        if (item) item.sync_status = "synced";
+        if (item) {
+          item.sync_status = "synced";
+          await idbPut(item);
+        }
         return item;
       }
-      function markQueueItemRetryable(store, seq) {
+
+      async function markQueueItemRetryable(store, seq) {
         const item = store.items.find(e => e.queue_sequence_number === seq);
-        if (item) { item.sync_status = "failed_retryable"; item.retry_count++; }
+        if (item) {
+          item.sync_status = "failed_retryable";
+          item.retry_count++;
+          await idbPut(item);
+        }
         return item;
       }
+
       function getReplayableQueueItems(store) {
         return store.items
           .filter(item => ["queued","failed_retryable"].includes(classifyQueueItem(item)))
           .sort((a,b) => a.queue_sequence_number - b.queue_sequence_number);
       }
+
       function detectCorruption(store) {
         return store.items.filter(item => classifyQueueItem(item) === "corrupt");
       }
@@ -1180,11 +1264,20 @@
       let activeInteraction = null;
       let resetTimer = null;
       let heartbeatInterval = null;
+      let syncInterval = null;
       let diagTapCount = 0;
       let diagTapTimer = null;
       let lastSyncAt = null;
       let lastHbAt = null;
       let readerOk = true;
+      let lastTapAt = 0; // debounce tracker (KI-09)
+      const DEBOUNCE_MS = 2000; // 2-second reader debounce (spec §9.2)
+      const SYNC_INTERVAL_MS = 30_000; // 30-second sync interval (spec §9.2)
+      const SYNC_BATCH_MAX = 100; // max batch size (spec §9.2)
+      const BACKOFF_BASE_MS = 5_000; // exponential backoff base (RT-05)
+      const BRANDING_REFRESH_MS = 5 * 60_000; // refresh branding every 5 minutes
+      let brandingCache = null; // cached branding profile (Item 6)
+      let brandingInterval = null;
       const queue = createQueueStore();
       const diagLog = [];
 
@@ -1314,6 +1407,10 @@
         setBootStatus("Initialising local services…", 10);
         await sleep(300);
 
+        // Hydrate queue from IndexedDB (RT-07 — reboot recovery)
+        setBootStatus("Restoring offline queue…", 20);
+        await hydrateQueueFromIDB();
+
         // Check if we need setup
         if (!localStorage.getItem("kiosk_device_id") && !params.get("deviceId")) {
           setBootStatus("No device identity found…", 20);
@@ -1344,6 +1441,8 @@
           transition(isOnline ? KIOSK_STATES.IDLE : KIOSK_STATES.OFFLINE_IDLE);
           updateIdleScreen();
           startHeartbeat();
+          startSyncInterval(); // RT-04: 30s background sync
+          startBrandingRefresh(); // Item 6: fetch and cache branding
           startQRFallback();
         } catch (err) {
           // Offline or unassigned — use cached values
@@ -1354,6 +1453,8 @@
             populateDiagFields();
             transition(KIOSK_STATES.OFFLINE_IDLE);
             updateIdleScreen();
+            startSyncInterval(); // will fire when connectivity returns
+            startBrandingRefresh(); // load from cache; refresh when online
             startQRFallback();
           } else if (err.message.includes("404") || err.message.includes("assignment")) {
             setBootStatus("Device not assigned to event", 90);
@@ -1385,8 +1486,94 @@
       }
 
       /* ═══════════════════════════════════════════
-         QR FALLBACK
+         BRANDING CACHE (Item 6 — KI-12)
+         Fetches branding profile from API, caches
+         in localStorage for offline use, and
+         refreshes every BRANDING_REFRESH_MS.
       ═══════════════════════════════════════════ */
+      const BRANDING_CACHE_KEY = "kiosk_branding_v1";
+
+      async function fetchAndCacheBranding() {
+        if (!isOnline || !eventId) return;
+        try {
+          const profile = await api(`/events/${encodeURIComponent(eventId)}/branding`);
+          brandingCache = profile;
+          localStorage.setItem(BRANDING_CACHE_KEY + "_" + eventId, JSON.stringify({
+            profile,
+            cached_at: new Date().toISOString(),
+            asset_version: profile.branding?.asset_version ?? 1
+          }));
+          applyBrandingToUI(profile.branding);
+          logDiag(`ok:Branding loaded — v${profile.branding?.asset_version ?? 1}`, "ok");
+        } catch (err) {
+          logDiag(`warn:Branding fetch failed — using cache — ${err.message}`, "warn");
+        }
+      }
+
+      function loadCachedBranding() {
+        try {
+          const raw = localStorage.getItem(BRANDING_CACHE_KEY + "_" + eventId);
+          if (!raw) return false;
+          const cached = JSON.parse(raw);
+          brandingCache = cached.profile;
+          applyBrandingToUI(cached.profile?.branding ?? {});
+          logDiag(`ok:Branding restored from cache — v${cached.asset_version ?? 1}`, "ok");
+          return true;
+        } catch { return false; }
+      }
+
+      function applyBrandingToUI(branding) {
+        if (!branding) return;
+        // Kiosk idle screen
+        if (branding.idle_headline) {
+          const el = document.querySelector(".idle-headline");
+          if (el) {
+            const parts = branding.idle_headline.split(" to ");
+            el.innerHTML = parts.length === 2
+              ? `${escapeHTML(parts[0])}<br><strong>to ${escapeHTML(parts[1])}</strong>`
+              : escapeHTML(branding.idle_headline);
+          }
+        }
+        if (branding.idle_sub) {
+          const sub = document.getElementById("idle-stall-name");
+          if (sub && !deviceConfig?.stall_name) sub.textContent = branding.idle_sub;
+        }
+        // Sponsor creative
+        if (branding.sponsor_name) {
+          const sn = document.getElementById("idle-sponsor-name");
+          if (sn) sn.textContent = `Presented by ${branding.sponsor_name}`;
+          const asn = document.getElementById("active-sponsor-name");
+          if (asn) asn.textContent = branding.sponsor_name;
+        }
+        if (branding.sponsor_cta) {
+          const msg = document.getElementById("active-sponsor-msg");
+          if (msg) msg.textContent = branding.sponsor_cta;
+        }
+        // Colors
+        if (branding.primary_color) {
+          document.documentElement.style.setProperty("--accent", branding.primary_color);
+        }
+        if (branding.background_color) {
+          document.documentElement.style.setProperty("--bg", branding.background_color);
+        }
+      }
+
+      function startBrandingRefresh() {
+        if (brandingInterval) clearInterval(brandingInterval);
+        // Load from cache immediately (offline-safe)
+        loadCachedBranding();
+        // Then fetch fresh from API
+        fetchAndCacheBranding();
+        // Refresh every 5 minutes
+        brandingInterval = setInterval(fetchAndCacheBranding, BRANDING_REFRESH_MS);
+      }
+
+      function escapeHTML(str) {
+        return String(str)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
       function startQRFallback() {
         // QR always visible in idle — the placeholder SVG is already rendered
         // In production this would call short-links API and render a real QR
@@ -1396,9 +1583,19 @@
       /* ═══════════════════════════════════════════
          SIMULATED TAP (NFC host triggers this in production)
          Exposed as window.simulateTap for testing
+         — debounce guard (KI-09)
+         — storage failure detection (RT-11)
       ═══════════════════════════════════════════ */
       window.simulateTap = async function(tapType = "phone_ndef", rawData = null) {
         if (![KIOSK_STATES.IDLE, KIOSK_STATES.OFFLINE_IDLE].includes(kioskState)) return;
+
+        // KI-09: 2-second reader debounce
+        const now = Date.now();
+        if (now - lastTapAt < DEBOUNCE_MS) {
+          logDiag("warn:Tap debounced — within 2s window", "warn");
+          return;
+        }
+        lastTapAt = now;
 
         transition(KIOSK_STATES.TAP_READING);
         document.getElementById("tap-status").textContent = "Reading device signal…";
@@ -1418,7 +1615,19 @@
         };
 
         // RULE: Store locally first before any cloud call
-        const queuedItem = appendQueueItem(queue, tapPayload);
+        // RT-11: appendQueueItem now throws if IndexedDB write fails
+        let queuedItem;
+        try {
+          queuedItem = await appendQueueItem(queue, tapPayload);
+        } catch (storageErr) {
+          logDiag("err:LOCAL STORAGE WRITE FAILURE — tap not saved", "err");
+          showExceptionScreen(
+            "Storage failure",
+            "Unable to save tap locally. This tap was NOT recorded. Please retry or contact support."
+          );
+          return;
+        }
+
         updateQueueCounter();
         logDiag(`ok:Tap queued locally — seq=${queuedItem.queue_sequence_number}`, "ok");
         document.getElementById("tap-status").textContent = "Saved locally, contacting server…";
@@ -1440,7 +1649,7 @@
             method: "POST",
             body: tapPayload
           });
-          markQueueItemSynced(queue, queuedItem.queue_sequence_number);
+          await markQueueItemSynced(queue, queuedItem.queue_sequence_number);
           updateQueueCounter();
           lastSyncAt = new Date().toISOString();
           logDiag(`ok:Tap synced — interaction=${result.interaction_id}`, "ok");
@@ -1448,13 +1657,13 @@
         } catch (err) {
           // Handle duplicate (idempotent — treat as success)
           if (err.message.includes("409") || err.message.toLowerCase().includes("duplicate")) {
-            markQueueItemSynced(queue, queuedItem.queue_sequence_number);
+            await markQueueItemSynced(queue, queuedItem.queue_sequence_number);
             updateQueueCounter();
             logDiag(`ok:Duplicate tap — treated as synced`, "ok");
             showExceptionScreen("Duplicate tap", "This interaction was already recorded. The attendee's link is still active.");
             return;
           }
-          markQueueItemRetryable(queue, queuedItem.queue_sequence_number);
+          await markQueueItemRetryable(queue, queuedItem.queue_sequence_number);
           updateQueueCounter();
           logDiag(`warn:Tap sync failed — ${err.message}`, "warn");
           showExceptionScreen("Sync error", `Tap saved locally and will retry: ${err.message}`);
@@ -1469,8 +1678,8 @@
         document.getElementById("attendee-link-display").textContent = link;
         // Consent
         updateConsentDisplay("pending");
-        // Reset timer (30s auto-return to idle per spec)
-        startResetTimer(30);
+        // Reset timer (15s auto-return to idle per spec §9.2; extendable to 20s with staff action)
+        startResetTimer(15);
         logDiag(`ok:Interaction active — ${result.interaction_id}`, "ok");
       }
 
@@ -1480,7 +1689,7 @@
         document.getElementById("attendee-link-display").textContent =
           `Offline — will generate link when online`;
         updateConsentDisplay("pending");
-        startResetTimer(30);
+        startResetTimer(15);
         logDiag(`warn:Offline interaction — seq=${queuedItem.queue_sequence_number}`, "warn");
       }
 
@@ -1570,14 +1779,21 @@
 
       /* ═══════════════════════════════════════════
          BACKGROUND SYNC
+         — 30s interval (RT-04)
+         — 100-item batch cap (KI-11)
+         — exponential backoff (RT-05)
       ═══════════════════════════════════════════ */
       async function scheduleBackgroundSync() {
-        const replayable = getReplayableQueueItems(queue);
-        if (!replayable.length || !isOnline) return;
+        const allReplayable = getReplayableQueueItems(queue);
+        if (!allReplayable.length || !isOnline) return;
+
+        // KI-11: batch cap at 100 items
+        const replayable = allReplayable.slice(0, SYNC_BATCH_MAX);
+
         if (kioskState === KIOSK_STATES.IDLE) {
           transition(KIOSK_STATES.SYNCING_BACKGROUND);
         }
-        logDiag(`ok:Background sync — ${replayable.length} items`, "ok");
+        logDiag(`ok:Background sync — ${replayable.length} items (${allReplayable.length} total pending)`, "ok");
         try {
           const items = replayable.map(item => item.payload);
           await api("/device/sync", {
@@ -1585,20 +1801,35 @@
             body: { device_id: deviceId, items }
           });
           for (const item of replayable) {
-            markQueueItemSynced(queue, item.queue_sequence_number);
+            await markQueueItemSynced(queue, item.queue_sequence_number);
           }
           lastSyncAt = new Date().toISOString();
           updateQueueCounter();
           logDiag(`ok:Sync complete — ${replayable.length} items`, "ok");
+          const dlSync = document.getElementById("d-last-sync");
+          if (dlSync) dlSync.textContent = new Date(lastSyncAt).toLocaleTimeString();
         } catch (err) {
           for (const item of replayable) {
-            markQueueItemRetryable(queue, item.queue_sequence_number);
+            await markQueueItemRetryable(queue, item.queue_sequence_number);
           }
-          logDiag(`warn:Sync failed — ${err.message}`, "warn");
+          // RT-05: exponential backoff — next retry delayed by 2^retry_count * base
+          const maxRetries = replayable.reduce((m, i) => Math.max(m, i.retry_count), 0);
+          const backoffMs = Math.min(BACKOFF_BASE_MS * Math.pow(2, maxRetries), 300_000);
+          logDiag(`warn:Sync failed — retry in ${Math.round(backoffMs/1000)}s — ${err.message}`, "warn");
         }
         if (kioskState === KIOSK_STATES.SYNCING_BACKGROUND) {
           transition(isOnline ? KIOSK_STATES.IDLE : KIOSK_STATES.OFFLINE_IDLE);
         }
+      }
+
+      /* RT-04: Start 30-second sync interval */
+      function startSyncInterval() {
+        if (syncInterval) clearInterval(syncInterval);
+        syncInterval = setInterval(() => {
+          if (isOnline && getReplayableQueueItems(queue).length > 0) {
+            scheduleBackgroundSync();
+          }
+        }, SYNC_INTERVAL_MS);
       }
 
       window.forceSync = async function() {

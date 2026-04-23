@@ -9,416 +9,143 @@
         --bg: #f5f0e8;
         --ink: #112233;
         --muted: #5f6f7f;
-        --panel: rgba(255, 255, 255, 0.86);
-        --line: rgba(17, 34, 51, 0.12);
+        --panel: rgba(255,255,255,0.86);
+        --line: rgba(17,34,51,0.12);
         --accent: #d86e2d;
-        --accent-soft: rgba(216, 110, 45, 0.12);
+        --accent-soft: rgba(216,110,45,0.12);
         --good: #0f8d63;
         --warn: #b46c14;
       }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: "IBM Plex Sans", sans-serif;
-        color: var(--ink);
-        background:
-          radial-gradient(circle at top left, rgba(216, 110, 45, 0.18), transparent 28%),
-          linear-gradient(180deg, #fffaf2, #f2ecdf 62%, #ede5d7);
-      }
-      .shell {
-        max-width: 1400px;
-        margin: 0 auto;
-        padding: 20px 24px 0;
-      }
-      .shell-bar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 14px;
-        flex-wrap: wrap;
-        margin-bottom: 18px;
-      }
-      .shell-title {
-        display: grid;
-        gap: 6px;
-      }
-      .shell-title strong {
-        font-size: 1.2rem;
-        letter-spacing: 0.01em;
-      }
-      .shell-nav {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-      .shell-nav a {
-        text-decoration: none;
-        color: var(--ink);
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 10px 14px;
-        background: rgba(255,255,255,0.72);
-      }
-      .shell-nav a.active {
-        border-color: rgba(216, 110, 45, 0.3);
-        background: var(--accent-soft);
-        color: var(--accent);
-      }
-      main {
-        max-width: 1400px;
-        margin: 0 auto;
-        padding: 24px;
-        display: grid;
-        grid-template-columns: 1.15fr 0.85fr;
-        gap: 18px;
-        min-height: 100vh;
-      }
-      .column {
-        display: grid;
-        gap: 18px;
-      }
-      .card {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 22px;
-        padding: 18px;
-        box-shadow: 0 20px 60px rgba(17, 34, 51, 0.06);
-        backdrop-filter: blur(14px);
-      }
-      .card.hero-card {
-        position: relative;
-        overflow: hidden;
-      }
-      .card.hero-card::before {
-        content: "";
-        position: absolute;
-        inset: 0 auto 0 0;
-        width: 6px;
-        background: linear-gradient(180deg, rgba(216, 110, 45, 0.92), rgba(17, 34, 51, 0.55));
-      }
-      .eyebrow {
-        display: inline-block;
-        margin-bottom: 12px;
-        padding: 6px 10px;
-        border-radius: 999px;
-        background: var(--accent-soft);
-        color: var(--accent);
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-size: 12px;
-      }
-      .muted { color: var(--muted); }
-      .status {
-        margin-bottom: 14px;
-        padding: 12px 14px;
-        border-radius: 14px;
-        font-size: 14px;
-      }
-      .status.ok { background: rgba(15, 141, 99, 0.1); color: var(--good); }
-      .status.error { background: rgba(180, 108, 20, 0.12); color: var(--warn); }
-      .status.warn { background: rgba(180, 108, 20, 0.12); color: var(--warn); }
-      .hero {
-        display: grid;
-        grid-template-columns: 1.1fr 0.9fr;
-        gap: 14px;
-      }
-      .hero h1 {
-        margin: 0;
-        font-size: 2.2rem;
-      }
-      .toolbar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-        align-items: end;
-      }
-      .toolbar > div {
-        min-width: 180px;
-        flex: 1 1 180px;
-      }
-      input, button, textarea {
-        font: inherit;
-      }
-      input, textarea {
-        width: 100%;
-        border-radius: 12px;
-        border: 1px solid var(--line);
-        background: rgba(255,255,255,0.8);
-        color: var(--ink);
-        padding: 11px 12px;
-      }
-      textarea {
-        min-height: 86px;
-        resize: vertical;
-      }
-      button {
-        border: 0;
-        border-radius: 12px;
-        padding: 11px 14px;
-        cursor: pointer;
-      }
-      button.primary {
-        background: var(--accent);
-        color: white;
-      }
-      button.secondary {
-        background: rgba(17,34,51,0.08);
-        color: var(--ink);
-      }
-      .metric-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 12px;
-      }
-      .metric {
-        position: relative;
-        overflow: hidden;
-        border-radius: 18px;
-        border: 1px solid var(--line);
-        background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(255,255,255,0.62));
-        padding: 16px 14px 14px;
-      }
-      .metric::before {
-        content: "";
-        position: absolute;
-        inset: 0 0 auto 0;
-        height: 4px;
-        background: linear-gradient(90deg, rgba(216, 110, 45, 0.82), rgba(17, 34, 51, 0.35));
-      }
-      .metric span {
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-size: 11px;
-      }
-      .metric strong {
-        display: block;
-        margin-top: 6px;
-        font-size: 1.8rem;
-      }
-      .section-head {
-        display: flex;
-        align-items: end;
-        justify-content: space-between;
-        gap: 14px;
-        flex-wrap: wrap;
-        margin-bottom: 14px;
-      }
-      .section-head h2,
-      .section-head h3 {
-        margin: 0;
-      }
-      .section-head p {
-        margin: 4px 0 0;
-        color: var(--muted);
-        max-width: 56ch;
-      }
-      .list {
-        display: grid;
-        gap: 10px;
-      }
-      .item {
-        border-radius: 16px;
-        border: 1px solid var(--line);
-        background: rgba(255,255,255,0.65);
-        padding: 12px;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-      }
-      th, td {
-        text-align: left;
-        padding: 11px;
-        border-bottom: 1px solid var(--line);
-      }
-      tbody tr {
-        cursor: pointer;
-      }
-      tbody tr.active {
-        background: rgba(216, 110, 45, 0.08);
-      }
-      .tag {
-        display: inline-flex;
-        align-items: center;
-        border-radius: 999px;
-        padding: 5px 10px;
-        font-size: 12px;
-        border: 1px solid var(--line);
-      }
-      .tag.good {
-        color: var(--good);
-        background: rgba(15, 141, 99, 0.08);
-      }
-      .tag.warn {
-        color: var(--warn);
-        background: rgba(180, 108, 20, 0.08);
-      }
-      .banner {
-        display: grid;
-        gap: 8px;
-        padding: 14px;
-        border-radius: 18px;
-        border: 1px solid var(--line);
-        background: linear-gradient(135deg, rgba(216, 110, 45, 0.12), rgba(255, 255, 255, 0.65));
-      }
-      .banner.live {
-        background: linear-gradient(135deg, rgba(15, 141, 99, 0.12), rgba(255, 255, 255, 0.7));
-      }
-      .banner.frozen {
-        background: linear-gradient(135deg, rgba(17, 34, 51, 0.12), rgba(255, 255, 255, 0.72));
-      }
-      .banner.warn {
-        background: linear-gradient(135deg, rgba(180, 108, 20, 0.14), rgba(255, 255, 255, 0.7));
-      }
-      .comparison-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-      }
-      .comparison-card {
-        border-radius: 18px;
-        border: 1px solid var(--line);
-        background: rgba(255,255,255,0.72);
-        padding: 14px;
-      }
-      .comparison-card h3 {
-        margin: 0 0 8px;
-      }
-      .story-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 12px;
-      }
-      .story-card {
-        border-radius: 20px;
-        border: 1px solid var(--line);
-        padding: 16px;
-        display: grid;
-        gap: 8px;
-        min-height: 170px;
-        background: rgba(255,255,255,0.76);
-      }
-      .story-card.accent {
-        background: linear-gradient(145deg, rgba(216, 110, 45, 0.16), rgba(255,255,255,0.84));
-      }
-      .story-card.dark {
-        background: linear-gradient(145deg, rgba(17, 34, 51, 0.16), rgba(255,255,255,0.82));
-      }
-      .story-card.good {
-        background: linear-gradient(145deg, rgba(15, 141, 99, 0.16), rgba(255,255,255,0.84));
-      }
-      .story-card strong {
-        font-size: 1.1rem;
-      }
-      .story-card p {
-        margin: 0;
-        color: var(--muted);
-      }
-      .metric-pair {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
-      }
-      .metric-pair .item {
-        padding: 14px;
-      }
-      .delta {
-        font-weight: 600;
-      }
-      .delta.up {
-        color: var(--good);
-      }
-      .delta.flat {
-        color: var(--muted);
-      }
-      .bar-list {
-        display: grid;
-        gap: 10px;
-      }
-      .bar-row {
-        display: grid;
-        gap: 6px;
-      }
-      .bar-track {
-        width: 100%;
-        height: 10px;
-        border-radius: 999px;
-        background: rgba(17,34,51,0.08);
-        overflow: hidden;
-      }
-      .bar-fill {
-        height: 100%;
-        border-radius: 999px;
-        background: linear-gradient(90deg, rgba(216,110,45,0.8), rgba(216,110,45,0.4));
-      }
-      .stat-inline {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        align-items: center;
-        flex-wrap: wrap;
-      }
-      .info-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-      }
-      .info-card {
-        border-radius: 16px;
-        border: 1px solid var(--line);
-        background: rgba(255,255,255,0.7);
-        padding: 14px;
-        display: grid;
-        gap: 6px;
-      }
-      .info-card strong {
-        font-size: 1.05rem;
-      }
-      .pill-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-      }
-      .cta-link {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        text-decoration: none;
-        border-radius: 12px;
-        padding: 10px 14px;
-        background: rgba(17,34,51,0.08);
-        color: var(--ink);
-      }
-      .mini-note {
-        font-size: 13px;
-        color: var(--muted);
-      }
-      @media (max-width: 1080px) {
-        main,
-        .hero {
-          grid-template-columns: 1fr;
-        }
-        .story-grid {
-          grid-template-columns: 1fr;
-        }
-        .metric-pair {
-          grid-template-columns: 1fr;
-        }
-        .metric-grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-        .comparison-grid {
-          grid-template-columns: 1fr;
-        }
-        .info-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-      @media (max-width: 640px) {
-        .metric-grid {
-          grid-template-columns: 1fr;
-        }
-      }
+      *{box-sizing:border-box;}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--ink);background:radial-gradient(circle at top left,rgba(216,110,45,.18),transparent 28%),linear-gradient(180deg,#fffaf2,#f2ecdf 62%,#ede5d7);}
+      .shell{max-width:1400px;margin:0 auto;padding:20px 24px 0;}
+      .shell-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px;}
+      .shell-title{display:grid;gap:6px;}
+      .shell-title strong{font-size:1.2rem;letter-spacing:.01em;}
+      .shell-nav{display:flex;gap:10px;flex-wrap:wrap;}
+      .shell-nav a{text-decoration:none;color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:10px 14px;background:rgba(255,255,255,.72);}
+      .shell-nav a.active{border-color:rgba(216,110,45,.3);background:var(--accent-soft);color:var(--accent);}
+      main{max-width:1400px;margin:0 auto;padding:24px;display:grid;grid-template-columns:1.15fr 0.85fr;gap:18px;min-height:100vh;}
+      .column{display:grid;gap:18px;align-content:start;}
+      .card{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 60px rgba(17,34,51,.06);backdrop-filter:blur(14px);}
+      .card.hero-card{position:relative;overflow:hidden;}
+      .card.hero-card::before{content:"";position:absolute;inset:0 auto 0 0;width:6px;background:linear-gradient(180deg,rgba(216,110,45,.92),rgba(17,34,51,.55));}
+      .eyebrow{display:inline-block;margin-bottom:12px;padding:6px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent);text-transform:uppercase;letter-spacing:.08em;font-size:12px;}
+      .muted{color:var(--muted);}
+      .status{margin-bottom:14px;padding:12px 14px;border-radius:14px;font-size:14px;}
+      .status.ok{background:rgba(15,141,99,.1);color:var(--good);}
+      .status.error{background:rgba(180,108,20,.12);color:var(--warn);}
+      .hero{display:grid;grid-template-columns:1.1fr 0.9fr;gap:14px;}
+      .hero h1{margin:0;font-size:2.2rem;}
+      .toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:end;}
+      .toolbar>div{min-width:180px;flex:1 1 180px;}
+      input,button,textarea{font:inherit;}
+      input,textarea{width:100%;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.8);color:var(--ink);padding:11px 12px;}
+      textarea{min-height:86px;resize:vertical;}
+      button{border:0;border-radius:12px;padding:11px 14px;cursor:pointer;}
+      button.primary{background:var(--accent);color:white;}
+      button.secondary{background:rgba(17,34,51,.08);color:var(--ink);}
+      select{font:inherit;width:100%;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.8);color:var(--ink);padding:11px 12px;}
+      .metric-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+      .metric{position:relative;overflow:hidden;border-radius:18px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.62));padding:16px 14px 14px;}
+      .metric::before{content:"";position:absolute;inset:0 0 auto 0;height:4px;background:linear-gradient(90deg,rgba(216,110,45,.82),rgba(17,34,51,.35));}
+      .metric span{text-transform:uppercase;letter-spacing:.08em;font-size:11px;}
+      .metric strong{display:block;margin-top:6px;font-size:1.8rem;}
+      .section-head{display:flex;align-items:end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+      .section-head h2,.section-head h3{margin:0;}
+      .section-head p{margin:4px 0 0;color:var(--muted);max-width:56ch;}
+      .list{display:grid;gap:10px;}
+      .item{border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.65);padding:12px;}
+      table{width:100%;border-collapse:collapse;}
+      th,td{text-align:left;padding:11px;border-bottom:1px solid var(--line);}
+      tbody tr{cursor:pointer;}
+      tbody tr.active{background:rgba(216,110,45,.08);}
+      .tag{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:12px;border:1px solid var(--line);}
+      .tag.good{color:var(--good);background:rgba(15,141,99,.08);}
+      .tag.warn{color:var(--warn);background:rgba(180,108,20,.08);}
+      .banner{display:grid;gap:8px;padding:14px;border-radius:18px;border:1px solid var(--line);background:linear-gradient(135deg,rgba(216,110,45,.12),rgba(255,255,255,.65));}
+      .banner.live{background:linear-gradient(135deg,rgba(15,141,99,.12),rgba(255,255,255,.7));}
+      .banner.frozen{background:linear-gradient(135deg,rgba(17,34,51,.12),rgba(255,255,255,.72));}
+      .banner.warn{background:linear-gradient(135deg,rgba(180,108,20,.14),rgba(255,255,255,.7));}
+      .comparison-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+      .comparison-card{border-radius:18px;border:1px solid var(--line);background:rgba(255,255,255,.72);padding:14px;}
+      .comparison-card h3{margin:0 0 8px;}
+      .story-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+      .story-card{border-radius:20px;border:1px solid var(--line);padding:16px;display:grid;gap:8px;min-height:170px;background:rgba(255,255,255,.76);}
+      .story-card.accent{background:linear-gradient(145deg,rgba(216,110,45,.16),rgba(255,255,255,.84));}
+      .story-card.dark{background:linear-gradient(145deg,rgba(17,34,51,.16),rgba(255,255,255,.82));}
+      .story-card.good{background:linear-gradient(145deg,rgba(15,141,99,.16),rgba(255,255,255,.84));}
+      .story-card strong{font-size:1.1rem;}
+      .story-card p{margin:0;color:var(--muted);}
+      .bar-list{display:grid;gap:10px;}
+      .bar-row{display:grid;gap:6px;}
+      .bar-track{width:100%;height:10px;border-radius:999px;background:rgba(17,34,51,.08);overflow:hidden;}
+      .bar-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,rgba(216,110,45,.8),rgba(216,110,45,.4));}
+      .stat-inline{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;}
+      .info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+      .info-card{border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.7);padding:14px;display:grid;gap:6px;}
+      .info-card strong{font-size:1.05rem;}
+      .pill-row{display:flex;flex-wrap:wrap;gap:8px;}
+      .cta-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border-radius:12px;padding:10px 14px;background:rgba(17,34,51,.08);color:var(--ink);}
+      .mini-note{font-size:13px;color:var(--muted);}
+      .delta{font-weight:600;}
+      .delta.up{color:var(--good);}
+      .delta.flat{color:var(--muted);}
+
+      /* ── SP-02 HEATMAP ────────────────────────────── */
+      .heatmap-filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:end;}
+      .heatmap-filters>div{min-width:140px;flex:1 1 140px;}
+      .heatmap-filters label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;letter-spacing:.06em;text-transform:uppercase;}
+      .heatmap-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-top:4px;}
+      .heatmap-zone{border-radius:16px;border:1px solid var(--line);padding:14px;position:relative;overflow:hidden;cursor:default;transition:transform .15s;}
+      .heatmap-zone:hover{transform:translateY(-2px);}
+      .heatmap-zone::before{content:"";position:absolute;inset:0;border-radius:16px;opacity:var(--heat,0.05);background:radial-gradient(circle at 50% 30%,rgba(216,110,45,1),rgba(216,110,45,0));pointer-events:none;}
+      .hz-name{font-weight:600;font-size:13px;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      .hz-count{font-size:1.6rem;font-weight:300;line-height:1;}
+      .hz-sub{font-size:11px;color:var(--muted);margin-top:4px;}
+      .hz-bar{height:3px;border-radius:3px;background:linear-gradient(90deg,rgba(216,110,45,.8),rgba(216,110,45,.2));margin-top:10px;}
+      .heat-legend{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);margin-top:12px;}
+      .heat-legend-bar{height:8px;flex:1;border-radius:4px;background:linear-gradient(90deg,rgba(17,34,51,.06),rgba(216,110,45,.7));}
+      .heatmap-empty{padding:32px;text-align:center;color:var(--muted);font-size:14px;}
+
+      /* ── SP-03 FUNNEL ─────────────────────────────── */
+      .funnel-wrap{display:grid;gap:6px;padding:4px 0;}
+      .funnel-stage{display:flex;align-items:center;gap:12px;}
+      .funnel-bar-wrap{flex:1;position:relative;height:36px;}
+      .funnel-bar{height:100%;border-radius:8px;display:flex;align-items:center;padding:0 12px;min-width:60px;transition:width .5s ease;}
+      .funnel-bar span{font-size:12px;font-weight:600;color:white;white-space:nowrap;position:relative;z-index:1;}
+      .funnel-label{min-width:130px;font-size:12px;color:var(--muted);text-align:right;}
+      .funnel-pct{min-width:44px;font-size:12px;font-weight:600;text-align:right;}
+      .funnel-pct.drop{color:var(--warn);}
+      .funnel-pct.keep{color:var(--good);}
+      .funnel-connector{width:1px;height:6px;background:var(--line);margin-left:20px;}
+      .funnel-summary{margin-top:12px;padding:12px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.65);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
+      .funnel-summary strong{font-size:1.4rem;}
+
+      /* ── SP-04 AUDIENCE INSIGHTS ─────────────────── */
+      .insight-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+      .insight-card{border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.7);padding:14px;}
+      .insight-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px;}
+      .insight-rows{display:grid;gap:8px;}
+      .insight-row{display:flex;align-items:center;gap:8px;}
+      .insight-row-label{font-size:12px;color:var(--ink);min-width:90px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      .insight-row-bar-wrap{flex:1;height:8px;background:rgba(17,34,51,.08);border-radius:4px;overflow:hidden;}
+      .insight-row-bar{height:100%;border-radius:4px;background:linear-gradient(90deg,rgba(216,110,45,.7),rgba(216,110,45,.3));}
+      .insight-row-count{font-size:12px;font-weight:600;min-width:28px;text-align:right;}
+
+      /* Hourly spark */
+      .hourly-wrap{display:flex;align-items:flex-end;gap:4px;height:80px;}
+      .hcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;}
+      .hbar{width:100%;border-radius:3px 3px 0 0;background:linear-gradient(180deg,rgba(216,110,45,.7),rgba(216,110,45,.3));min-height:2px;}
+      .hlbl{font-size:9px;color:var(--muted);}
+
+      @media(max-width:1080px){
+        main,.hero{grid-template-columns:1fr;}
+        .story-grid{grid-template-columns:1fr;}
+        .metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+        .comparison-grid,.info-grid,.insight-grid{grid-template-columns:1fr;}
+      }
+      @media(max-width:640px){.metric-grid{grid-template-columns:1fr;}}
     </style>
   </head>
   <body>
@@ -439,87 +166,46 @@
 
     <main>
       <section class="column">
+
+        <!-- HERO -->
         <article class="card hero-card">
           <div id="message" class="status" hidden></div>
           <div class="hero">
             <div>
               <span class="eyebrow">Live Dashboard</span>
               <h1 id="hero-title">Waiting for sponsor metrics</h1>
-              <p class="muted" id="hero-body">
-                This view stays aggregate-first. No raw attendee PII is shown in the sponsor surface.
-              </p>
+              <p class="muted" id="hero-body">This view stays aggregate-first. No raw attendee PII is shown.</p>
               <div id="freeze-banner" class="banner" style="margin-top:14px;">
                 <strong>Freeze status will appear here.</strong>
-                <span class="mini-note">Sponsors should be able to tell whether they are viewing live metrics or a frozen official event report.</span>
+                <span class="mini-note">Shows whether you are viewing live metrics or a frozen official event report.</span>
               </div>
             </div>
             <div class="list" id="context-cards">
-              <div class="item muted">Load sponsor data to show current event, role, and snapshot posture.</div>
+              <div class="item muted">Load sponsor data to show event, role, and snapshot posture.</div>
             </div>
           </div>
           <div class="toolbar" style="margin-top:16px;">
-            <div>
-              <label class="muted" for="event-id">Event ID</label>
-              <input id="event-id" type="text" value="event-demo">
-            </div>
-            <div>
-              <label class="muted" for="sponsor-id">Sponsor org ID</label>
-              <input id="sponsor-id" type="text" value="org-sponsor">
-            </div>
-            <div id="auth-token-group">
-              <label class="muted" for="auth-token">Auth token</label>
-              <input id="auth-token" type="text" value="sponsor-token">
-            </div>
-            <div id="browser-auth-group" style="min-width:320px;" hidden>
-              <label class="muted">SSO session</label>
-              <div class="toolbar" style="margin-bottom:0;">
-                <div id="browser-auth-status" class="muted" style="min-width:220px;">Sign in with SSO to continue.</div>
-                <button id="browser-auth-login" class="secondary" type="button">Sign in with SSO</button>
-                <button id="browser-auth-logout" class="secondary" type="button">Sign out</button>
-              </div>
-            </div>
-            <div style="flex:0 0 auto;">
-              <button id="refresh-page" class="secondary" type="button">Refresh dashboard</button>
-            </div>
+            <div><label class="muted" for="event-id">Event ID</label><input id="event-id" type="text" value="event-demo"></div>
+            <div><label class="muted" for="sponsor-id">Sponsor org ID</label><input id="sponsor-id" type="text" value="org-sponsor"></div>
+            <div><label class="muted" for="auth-token">Auth token</label><input id="auth-token" type="text" value="sponsor-token"></div>
+            <div style="flex:0 0 auto;align-self:end;"><button id="refresh-page" class="secondary" type="button">Refresh dashboard</button></div>
           </div>
         </article>
 
+        <!-- REPORTING STORY -->
         <article class="card">
-          <div class="section-head">
-            <div>
-              <div class="eyebrow">Reporting Story</div>
-              <h2>Sponsor briefing</h2>
-              <p>A concise read on posture, cadence, and what this sponsor team should do next.</p>
-            </div>
-          </div>
+          <div class="section-head"><div><div class="eyebrow">Reporting Story</div><h2>Sponsor briefing</h2><p>Posture, cadence, and next best action.</p></div></div>
           <div id="report-story" class="story-grid">
-            <div class="story-card accent">
-              <span class="eyebrow">Posture</span>
-              <strong>Load sponsor data</strong>
-              <p>The report posture card will explain whether this is a live board or a frozen official view.</p>
-            </div>
-            <div class="story-card dark">
-              <span class="eyebrow">Cadence</span>
-              <strong>Snapshot rhythm</strong>
-              <p>Snapshot timing and report version detail will appear here.</p>
-            </div>
-            <div class="story-card good">
-              <span class="eyebrow">Next Step</span>
-              <strong>Action guidance</strong>
-              <p>The next best sponsor-facing action will appear here.</p>
-            </div>
+            <div class="story-card accent"><span class="eyebrow">Posture</span><strong>Load sponsor data</strong><p>Report posture will appear here.</p></div>
+            <div class="story-card dark"><span class="eyebrow">Cadence</span><strong>Snapshot rhythm</strong><p>Snapshot timing will appear here.</p></div>
+            <div class="story-card good"><span class="eyebrow">Next Step</span><strong>Action guidance</strong><p>Next best action will appear here.</p></div>
           </div>
         </article>
 
+        <!-- CORE METRICS -->
         <article class="card">
-          <div class="section-head">
-            <div>
-              <div class="eyebrow">Performance</div>
-              <h2>Core event performance</h2>
-              <p>The aggregate metrics that matter most for sponsor performance and official reporting.</p>
-            </div>
-          </div>
-          <div class="metric-grid" id="metric-grid">
+          <div class="section-head"><div><div class="eyebrow">Performance</div><h2>Core event performance</h2><p>Aggregate metrics for sponsor reporting.</p></div></div>
+          <div class="metric-grid">
             <div class="metric"><span class="muted">Impressions</span><strong id="metric-impressions">-</strong></div>
             <div class="metric"><span class="muted">Click Sessions</span><strong id="metric-clicks">-</strong></div>
             <div class="metric"><span class="muted">CTR</span><strong id="metric-ctr">-</strong></div>
@@ -529,967 +215,604 @@
           </div>
         </article>
 
+        <!-- SP-03 CAMPAIGN FUNNEL -->
         <article class="card">
-          <div class="section-head">
+          <div class="section-head"><div><div class="eyebrow">Campaign Performance — SP-03</div><h2>Conversion funnel</h2><p>How attendees move from impression through to exportable consented lead.</p></div></div>
+          <div id="funnel-wrap">
+            <div class="item muted" style="text-align:center;padding:24px;">Load sponsor data to view conversion funnel.</div>
+          </div>
+        </article>
+
+        <!-- SP-02 HEATMAP -->
+        <article class="card">
+          <div class="section-head"><div><div class="eyebrow">Zone Heatmap — SP-02</div><h2>Hall activity map</h2><p>Zone-level interaction intensity. No raw attendee PII.</p></div></div>
+          <div class="heatmap-filters">
             <div>
-              <div class="eyebrow">Stall Breakdown</div>
-              <h2>Zone-by-zone performance</h2>
-              <p>Compare which sponsor zones are attracting attention and which ones are converting follow-up consent.</p>
+              <label>Time range</label>
+              <select id="heatmap-time">
+                <option value="">All time</option>
+                <option value="1">Last 1 hour</option>
+                <option value="3">Last 3 hours</option>
+                <option value="6">Last 6 hours</option>
+              </select>
+            </div>
+            <div>
+              <label>Sort by</label>
+              <select id="heatmap-sort">
+                <option value="zone_score">Heat score</option>
+                <option value="interactions">Interactions</option>
+                <option value="sponsor_consented">Opted-in leads</option>
+                <option value="ctr">CTR</option>
+              </select>
+            </div>
+            <div style="flex:0 0 auto;align-self:end;">
+              <button class="secondary" onclick="window._renderHeatmap()">Apply filters</button>
             </div>
           </div>
+          <div id="heatmap-grid" class="heatmap-grid">
+            <div class="heatmap-empty">Load sponsor data to view zone heatmap.</div>
+          </div>
+          <div class="heat-legend">
+            <span>Cool</span>
+            <div class="heat-legend-bar"></div>
+            <span>Hot</span>
+          </div>
+        </article>
+
+        <!-- STALL BREAKDOWN -->
+        <article class="card">
+          <div class="section-head"><div><div class="eyebrow">Stall Breakdown</div><h2>Zone-by-zone performance</h2></div></div>
           <table>
-            <thead>
-              <tr>
-                <th>Stall</th>
-                <th>Impressions</th>
-                <th>Clicks</th>
-                <th>CTR</th>
-                <th>Opted-In</th>
-              </tr>
-            </thead>
-            <tbody id="stall-breakdown-rows">
-              <tr><td colspan="5" class="muted">Load sponsor data to inspect stall performance.</td></tr>
-            </tbody>
+            <thead><tr><th>Stall</th><th>Impressions</th><th>Clicks</th><th>CTR</th><th>Opted-In</th></tr></thead>
+            <tbody id="stall-rows"><tr><td colspan="5" class="muted">Load sponsor data to inspect stall performance.</td></tr></tbody>
           </table>
         </article>
 
+        <!-- TREND + CONSENT -->
         <article class="card">
-          <div class="section-head">
-            <div>
-              <div class="eyebrow">Trend and Consent</div>
-              <h2>Movement through the day</h2>
-              <p>Hourly trend and consent mix together tell whether traffic quality is improving or flattening.</p>
-            </div>
-          </div>
+          <div class="section-head"><div><div class="eyebrow">Trend and Consent</div><h2>Movement through the day</h2></div></div>
           <div class="hero">
             <div>
-              <h2>Hourly trend</h2>
-              <div id="hourly-trend" class="list">
-                <div class="item muted">Hourly interaction trend will appear here.</div>
-              </div>
+              <h3 style="margin:0 0 10px">Hourly trend</h3>
+              <div id="hourly-wrap"><div class="item muted">No hourly data yet.</div></div>
             </div>
             <div>
-              <h2>Breakdowns</h2>
-              <div id="breakdowns" class="list">
-                <div class="item muted">Consent and classification breakdowns will appear here.</div>
-              </div>
+              <h3 style="margin:0 0 10px">Breakdowns</h3>
+              <div id="breakdowns" class="list"><div class="item muted">Breakdowns will appear here.</div></div>
             </div>
           </div>
         </article>
 
+        <!-- SP-04 AUDIENCE INSIGHTS -->
         <article class="card">
-          <div class="section-head">
-            <div>
-              <div class="eyebrow">Live vs Frozen</div>
-              <h2>Report drift check</h2>
-              <p>Use this to see how far the live board has moved since the latest published sponsor snapshot.</p>
-            </div>
+          <div class="section-head"><div><div class="eyebrow">Audience Insights — SP-04</div><h2>Aggregate audience profile</h2><p>Industry, seniority, and company size — aggregate only, no raw PII.</p></div></div>
+          <div id="audience-insights">
+            <div class="item muted" style="text-align:center;padding:24px;">Load sponsor data to view audience insights.</div>
           </div>
+        </article>
+
+        <!-- LIVE vs FROZEN -->
+        <article class="card">
+          <div class="section-head"><div><div class="eyebrow">Live vs Frozen</div><h2>Report drift check</h2><p>How far the live board has moved since the latest published snapshot.</p></div></div>
           <div class="comparison-grid">
-            <div class="comparison-card">
-              <h3>Current live view</h3>
-              <div id="live-compare" class="list">
-                <div class="item muted">Live metric comparison will appear here.</div>
-              </div>
-            </div>
-            <div class="comparison-card">
-              <h3>Latest published snapshot</h3>
-              <div id="snapshot-compare" class="list">
-                <div class="item muted">Published snapshot comparison will appear here.</div>
-              </div>
-            </div>
+            <div class="comparison-card"><h3>Current live view</h3><div id="live-compare" class="list"><div class="item muted">Live comparison will appear here.</div></div></div>
+            <div class="comparison-card"><h3>Latest published snapshot</h3><div id="snapshot-compare" class="list"><div class="item muted">Published snapshot comparison will appear here.</div></div></div>
           </div>
         </article>
 
+        <!-- ZONE MOMENTUM -->
         <article class="card">
-          <div class="section-head">
-            <div>
-              <div class="eyebrow">Zone Momentum</div>
-              <h2>Momentum ranking</h2>
-              <p>A quick visual read on which sponsor areas are carrying the event right now.</p>
-            </div>
-          </div>
-          <div id="zone-momentum" class="bar-list">
-            <div class="item muted">Relative stall momentum will appear here.</div>
-          </div>
+          <div class="section-head"><div><div class="eyebrow">Zone Momentum</div><h2>Momentum ranking</h2></div></div>
+          <div id="zone-momentum" class="bar-list"><div class="item muted">Relative stall momentum will appear here.</div></div>
         </article>
+
       </section>
 
       <aside class="column">
+
+        <!-- OFFICIAL REPORT STATE -->
         <article class="card">
-          <div class="section-head">
-            <div>
-              <div class="eyebrow">Official Report State</div>
-              <h2>Freeze and release posture</h2>
-              <p>The authoritative read on whether the sponsor can trust the official package or should stay on live reporting.</p>
-            </div>
-          </div>
-          <h2 id="official-report-title">Waiting for official report status</h2>
-          <div id="official-report" class="list">
-            <div class="item muted">Freeze status, latest official export, and close state will appear here.</div>
-          </div>
-          <div class="toolbar" style="margin-top:12px;">
-            <div style="flex:0 0 auto;">
-              <a id="official-report-link" class="cta-link" href="./organizer.html">Open organizer freeze controls</a>
-            </div>
-          </div>
+          <div class="section-head"><div><div class="eyebrow">Official Report State</div><h2>Freeze and release posture</h2></div></div>
+          <h2 id="official-report-title">Waiting for status</h2>
+          <div id="official-report" class="list"><div class="item muted">Freeze status will appear here.</div></div>
+          <div class="toolbar" style="margin-top:12px;"><a id="organizer-link" class="cta-link" href="./organizer.html">Open organizer freeze controls</a></div>
         </article>
 
+        <!-- SNAPSHOT WORKFLOW -->
         <article class="card">
-          <div class="section-head">
-            <div>
-              <div class="eyebrow">Snapshot Workflow</div>
-              <h2>Publish the sponsor story</h2>
-              <p>Freeze a sponsor dashboard checkpoint whenever the team wants a stable report cut.</p>
-            </div>
-          </div>
+          <div class="section-head"><div><div class="eyebrow">Snapshot Workflow</div><h2>Publish sponsor story</h2></div></div>
           <h2 id="snapshot-title">Latest sponsor snapshot</h2>
-          <div id="latest-snapshot" class="list">
-            <div class="item muted">No published sponsor snapshot yet.</div>
-          </div>
-          <label class="muted" for="snapshot-note" style="margin-top:14px;">Snapshot note</label>
-          <textarea id="snapshot-note" placeholder="Document what changed before publishing this sponsor snapshot."></textarea>
+          <div id="latest-snapshot" class="list"><div class="item muted">No published snapshot yet.</div></div>
+          <label class="muted" for="snapshot-note" style="display:block;margin-top:14px;">Snapshot note</label>
+          <textarea id="snapshot-note" placeholder="Document changes before publishing."></textarea>
           <div class="toolbar" style="margin-top:10px;">
-            <div style="flex:0 0 auto;">
-              <button id="publish-snapshot" class="primary" type="button">Publish snapshot</button>
-            </div>
-            <div class="muted" id="snapshot-publish-hint">Organizer auth is required to publish snapshots.</div>
+            <button id="publish-snapshot" class="primary" type="button">Publish snapshot</button>
+            <span class="muted mini-note" id="snapshot-hint">Organizer auth required.</span>
           </div>
         </article>
 
+        <!-- SNAPSHOT HISTORY -->
         <article class="card">
-          <div class="section-head">
-            <div>
-              <div class="eyebrow">Snapshot History</div>
-              <h2>Published history</h2>
-              <p>Every sponsor-facing cut that has been published for this event.</p>
-            </div>
-          </div>
+          <div class="section-head"><div><div class="eyebrow">Snapshot History</div><h2>Published history</h2></div></div>
           <table>
-            <thead>
-              <tr>
-                <th>Created</th>
-                <th>Version</th>
-                <th>Note</th>
-              </tr>
-            </thead>
-            <tbody id="snapshot-rows">
-              <tr><td colspan="3" class="muted">No sponsor snapshots loaded.</td></tr>
-            </tbody>
+            <thead><tr><th>Created</th><th>Version</th><th>Note</th></tr></thead>
+            <tbody id="snapshot-rows"><tr><td colspan="3" class="muted">No snapshots loaded.</td></tr></tbody>
           </table>
         </article>
 
+        <!-- SNAPSHOT DETAIL -->
         <article class="card">
-          <div class="section-head">
-            <div>
-              <div class="eyebrow">Snapshot Detail</div>
-              <h2>Selected snapshot</h2>
-              <p>Inspect what a specific published snapshot captured before exporting or sharing it.</p>
-            </div>
-          </div>
+          <div class="section-head"><div><div class="eyebrow">Snapshot Detail</div><h2>Selected snapshot</h2></div></div>
           <h2 id="snapshot-detail-title">Select a snapshot</h2>
-          <div id="snapshot-detail" class="list">
-            <div class="item muted">Snapshot detail will appear here.</div>
-          </div>
-          <div class="toolbar" style="margin-top:12px;">
-            <div style="flex:0 0 auto;">
-              <button id="request-snapshot-export" class="secondary" type="button">Request snapshot export</button>
-            </div>
-          </div>
+          <div id="snapshot-detail" class="list"><div class="item muted">Snapshot detail will appear here.</div></div>
+          <div class="toolbar" style="margin-top:12px;"><button id="request-export" class="secondary" type="button">Request snapshot export</button></div>
         </article>
 
+        <!-- EXPORTS -->
         <article class="card">
-          <div class="section-head">
-            <div>
-              <div class="eyebrow">Snapshot Exports</div>
-              <h2>Delivery queue</h2>
-              <p>Track export generation status and open the final sponsor-facing artifact when it is ready.</p>
-            </div>
-          </div>
+          <div class="section-head"><div><div class="eyebrow">Snapshot Exports</div><h2>Delivery queue</h2></div></div>
           <table>
-            <thead>
-              <tr>
-                <th>Created</th>
-                <th>Status</th>
-                <th>Snapshot</th>
-              </tr>
-            </thead>
-            <tbody id="export-rows">
-              <tr><td colspan="3" class="muted">No sponsor exports requested yet.</td></tr>
-            </tbody>
+            <thead><tr><th>Created</th><th>Status</th><th>Snapshot</th></tr></thead>
+            <tbody id="export-rows"><tr><td colspan="3" class="muted">No exports requested yet.</td></tr></tbody>
           </table>
-          <h2 id="export-detail-title" style="margin-top:16px;">Select an export</h2>
-          <div id="export-detail" class="list">
-            <div class="item muted">Export status and download link will appear here.</div>
-          </div>
+          <div id="export-detail" class="list" style="margin-top:14px;"><div class="item muted">Export detail will appear here.</div></div>
         </article>
+
       </aside>
     </main>
 
     <script type="module">
-      import {
-        completeBrowserAuthCallback,
-        createBrowserAuthSlot
-      } from "./browser-auth.js";
-
       const params = new URLSearchParams(window.location.search);
-      const apiBase =
-        params.get("apiBase") ||
-        (window.location.protocol === "file:" ? "http://127.0.0.1:3000" : window.location.origin);
-      const message = document.getElementById("message");
-      const eventIdInput = document.getElementById("event-id");
-      const sponsorIdInput = document.getElementById("sponsor-id");
-      const authTokenInput = document.getElementById("auth-token");
-      const authTokenGroup = document.getElementById("auth-token-group");
-      const browserAuthGroup = document.getElementById("browser-auth-group");
-      const browserAuthStatus = document.getElementById("browser-auth-status");
-      const browserAuthLogin = document.getElementById("browser-auth-login");
-      const browserAuthLogout = document.getElementById("browser-auth-logout");
-      const heroTitle = document.getElementById("hero-title");
-      const heroBody = document.getElementById("hero-body");
-      const freezeBanner = document.getElementById("freeze-banner");
-      const reportStory = document.getElementById("report-story");
-      const pageTitle = document.getElementById("page-title");
-      const pageSubtitle = document.getElementById("page-subtitle");
-      const contextCards = document.getElementById("context-cards");
-      const metricImpressions = document.getElementById("metric-impressions");
-      const metricClicks = document.getElementById("metric-clicks");
-      const metricCtr = document.getElementById("metric-ctr");
-      const metricTotalClicks = document.getElementById("metric-total-clicks");
-      const metricOptedIn = document.getElementById("metric-opted-in");
-      const metricUnique = document.getElementById("metric-unique");
-      const stallBreakdownRows = document.getElementById("stall-breakdown-rows");
-      const hourlyTrend = document.getElementById("hourly-trend");
-      const breakdowns = document.getElementById("breakdowns");
-      const liveCompare = document.getElementById("live-compare");
-      const snapshotCompare = document.getElementById("snapshot-compare");
-      const zoneMomentum = document.getElementById("zone-momentum");
-      const officialReportTitle = document.getElementById("official-report-title");
-      const officialReport = document.getElementById("official-report");
-      const officialReportLink = document.getElementById("official-report-link");
-      const latestSnapshot = document.getElementById("latest-snapshot");
-      const snapshotRows = document.getElementById("snapshot-rows");
-      const snapshotDetailTitle = document.getElementById("snapshot-detail-title");
-      const snapshotDetail = document.getElementById("snapshot-detail");
-      const snapshotNote = document.getElementById("snapshot-note");
-      const publishSnapshotButton = document.getElementById("publish-snapshot");
-      const snapshotPublishHint = document.getElementById("snapshot-publish-hint");
-      const requestSnapshotExportButton = document.getElementById("request-snapshot-export");
-      const exportRows = document.getElementById("export-rows");
-      const exportDetailTitle = document.getElementById("export-detail-title");
-      const exportDetail = document.getElementById("export-detail");
-      const navOrganizer = document.getElementById("nav-organizer");
-      const navSponsor = document.getElementById("nav-sponsor");
+      const apiBase = params.get("apiBase") || (window.location.protocol==="file:" ? "http://127.0.0.1:3000" : window.location.origin);
 
-      eventIdInput.value = params.get("eventId") || "event-demo";
-      sponsorIdInput.value = params.get("sponsorId") || "org-sponsor";
-      authTokenInput.value = params.get("auth") || "sponsor-token";
+      const $id = id => document.getElementById(id);
 
-      let currentDashboard = null;
-      let currentSnapshots = [];
-      let currentExports = [];
-      let currentPrincipal = null;
-      let selectedSnapshot = null;
-      let requestedSnapshotId = params.get("snapshotId");
+      $id("event-id").value   = params.get("eventId")   || "event-demo";
+      $id("sponsor-id").value = params.get("sponsorId") || "org-sponsor";
+      $id("auth-token").value = params.get("auth")      || "sponsor-token";
+
+      let DB = null; // current dashboard payload
+      let HEATMAP = null;
+      let snapshots = [];
+      let exports_ = [];
+      let selectedSnap = null;
       let selectedExport = null;
-      let requestedExportId = params.get("exportId");
-      let authSession = null;
 
-      document.getElementById("refresh-page").addEventListener("click", loadDashboard);
-      publishSnapshotButton.addEventListener("click", publishSnapshot);
-      requestSnapshotExportButton.addEventListener("click", requestSnapshotExport);
-      eventIdInput.addEventListener("change", syncQueryState);
-      sponsorIdInput.addEventListener("change", syncQueryState);
-      authTokenInput.addEventListener("change", syncQueryState);
+      $id("refresh-page").addEventListener("click", loadAll);
+      $id("publish-snapshot").addEventListener("click", publishSnapshot);
+      $id("request-export").addEventListener("click", requestExport);
 
-      await completeBrowserAuthCallback({ apiBase });
-      authSession = await createBrowserAuthSlot({
-        apiBase,
-        slot: "primary",
-        defaultToken: "sponsor-token",
-        tokenInput: authTokenInput,
-        tokenGroup: authTokenGroup,
-        browserGroup: browserAuthGroup,
-        statusEl: browserAuthStatus,
-        signInButton: browserAuthLogin,
-        signOutButton: browserAuthLogout
-      });
-      refreshNav();
-      loadDashboard();
+      loadAll();
 
-      async function loadDashboard() {
+      /* ── LOAD ──────────────────────────────────────── */
+      async function loadAll() {
         try {
-          const eventId = eventIdInput.value.trim();
-          const sponsorId = sponsorIdInput.value.trim();
-          const [principalResponse, dashboard, snapshots] = await Promise.all([
-            api("/auth/me"),
-            api(`/sponsors/${encodeURIComponent(sponsorId)}/metrics?event_id=${encodeURIComponent(eventId)}`),
-            api(`/sponsors/${encodeURIComponent(sponsorId)}/report-snapshots?event_id=${encodeURIComponent(eventId)}`)
+          const eid = $id("event-id").value.trim();
+          const sid = $id("sponsor-id").value.trim();
+          const [dash, snaps, exps] = await Promise.all([
+            api(`/sponsors/${enc(sid)}/metrics?event_id=${enc(eid)}`),
+            api(`/sponsors/${enc(sid)}/report-snapshots?event_id=${enc(eid)}`),
+            api(`/sponsors/${enc(sid)}/exports?event_id=${enc(eid)}`)
           ]);
-          currentPrincipal = principalResponse.principal;
-          currentDashboard = dashboard;
-          currentSnapshots = snapshots.items || [];
-          currentExports = (await api(`/sponsors/${encodeURIComponent(sponsorId)}/exports?event_id=${encodeURIComponent(eventId)}`)).items || [];
+          DB = dash;
+          snapshots = snaps.items || [];
+          exports_ = exps.items || [];
+
+          try { HEATMAP = await api(`/events/${enc(eid)}/heatmap`); } catch { HEATMAP = null; }
+
           renderDashboard();
+          renderFunnel();       // SP-03
+          window._renderHeatmap(); // SP-02
+          renderAudienceInsights(); // SP-04
           renderSnapshots();
           renderExports();
-          syncQueryState();
-          refreshNav();
-          showMessage("Sponsor dashboard refreshed.", "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
+          syncUrl();
+          showMsg("Dashboard refreshed.", "ok");
+        } catch(e) { showMsg(e.message, "error"); }
       }
 
+      /* ── DASHBOARD ─────────────────────────────────── */
       function renderDashboard() {
-        if (!currentDashboard) {
-          return;
-        }
-        pageTitle.textContent = `${currentDashboard.sponsor_name} dashboard`;
-        pageSubtitle.textContent = `${currentDashboard.event_name} • aggregate-only sponsor reporting`;
-        heroTitle.textContent = `${currentDashboard.sponsor_name} at ${currentDashboard.event_name}`;
-        heroBody.textContent = `Live performance for report snapshot v${currentDashboard.report_snapshot_version}. Raw attendee PII remains hidden in this sponsor-facing surface.`;
-        contextCards.innerHTML = "";
-        addContextCard("Role", `${currentPrincipal?.role || "unknown"} via ${currentPrincipal?.auth_source || "seed"}`);
-        addContextCard("Top zone", currentDashboard.top_zone || "No sponsored zones yet");
-        addContextCard("Snapshots", `${currentDashboard.snapshot_count} published`);
-        addContextCard("Latest snapshot", currentDashboard.latest_snapshot ? formatDate(currentDashboard.latest_snapshot.created_at) : "Not published");
-        addContextCard("Event status", humanizeKey(currentDashboard.event_status));
-        addContextCard("Official report", describeFreezePosture(currentDashboard.report_freeze));
+        if (!DB) return;
+        $id("page-title").textContent = `${DB.sponsor_name} dashboard`;
+        $id("page-subtitle").textContent = `${DB.event_name} · aggregate-only sponsor reporting`;
+        $id("hero-title").textContent = `${DB.sponsor_name} at ${DB.event_name}`;
+        $id("hero-body").textContent = `Live performance for report snapshot v${DB.report_snapshot_version}. No raw attendee PII.`;
 
-        metricImpressions.textContent = number(currentDashboard.impressions);
-        metricClicks.textContent = number(currentDashboard.clicks);
-        metricCtr.textContent = `${currentDashboard.ctr}%`;
-        metricTotalClicks.textContent = number(currentDashboard.total_clicks);
-        metricOptedIn.textContent = number(currentDashboard.opted_in_leads);
-        metricUnique.textContent = number(currentDashboard.unique_attendees);
+        // Context cards
+        const cc = $id("context-cards");
+        cc.innerHTML = "";
+        ctxCard(cc, "Top zone", DB.top_zone || "No zones yet");
+        ctxCard(cc, "Snapshots", `${DB.snapshot_count} published`);
+        ctxCard(cc, "Latest snapshot", DB.latest_snapshot ? fmtDate(DB.latest_snapshot.created_at) : "Not published");
+        ctxCard(cc, "Event status", humanize(DB.event_status));
+        ctxCard(cc, "Official report", freezeTag(DB.report_freeze).tag);
 
-        stallBreakdownRows.innerHTML = "";
-        if (!currentDashboard.stall_breakdown.length) {
-          stallBreakdownRows.innerHTML = `<tr><td colspan="5" class="muted">No sponsored stall activity yet.</td></tr>`;
-        } else {
-          for (const item of currentDashboard.stall_breakdown) {
-            const row = document.createElement("tr");
-            row.innerHTML = `
-              <td>${escapeHtml(item.stall_name || item.stall_id)}</td>
-              <td>${escapeHtml(number(item.impressions))}</td>
-              <td>${escapeHtml(number(item.clicks))}</td>
-              <td>${escapeHtml(String(item.ctr))}%</td>
-              <td>${escapeHtml(number(item.opted_in_leads))}</td>
-            `;
-            stallBreakdownRows.appendChild(row);
-          }
+        // Core metrics
+        $id("metric-impressions").textContent = num(DB.impressions);
+        $id("metric-clicks").textContent      = num(DB.clicks);
+        $id("metric-ctr").textContent         = `${DB.ctr}%`;
+        $id("metric-total-clicks").textContent= num(DB.total_clicks);
+        $id("metric-opted-in").textContent    = num(DB.opted_in_leads);
+        $id("metric-unique").textContent      = num(DB.unique_attendees);
+
+        // Stall table
+        const sr = $id("stall-rows");
+        sr.innerHTML = "";
+        if (!DB.stall_breakdown.length) { sr.innerHTML=`<tr><td colspan="5" class="muted">No sponsored stall activity yet.</td></tr>`; }
+        else for(const s of DB.stall_breakdown) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${esc(s.stall_name||s.stall_id)}</td><td>${num(s.impressions)}</td><td>${num(s.clicks)}</td><td>${s.ctr}%</td><td>${num(s.opted_in_leads)}</td>`;
+          sr.appendChild(tr);
         }
 
-        hourlyTrend.innerHTML = "";
-        if (!currentDashboard.hourly_trend.length) {
-          hourlyTrend.innerHTML = `<div class="item muted">No hourly trend yet.</div>`;
-        } else {
-          for (const entry of currentDashboard.hourly_trend) {
-            const item = document.createElement("div");
-            item.className = "item";
-            item.innerHTML = `<strong>${escapeHtml(formatDate(entry.hour))}</strong><p class="muted">${escapeHtml(number(entry.impressions))} impressions</p>`;
-            hourlyTrend.appendChild(item);
-          }
+        // Hourly trend spark
+        renderHourlySpark(DB.hourly_trend || []);
+
+        // Breakdowns
+        const bd = $id("breakdowns");
+        bd.innerHTML = "";
+        addItem(bd, "Consent", [
+          `Sponsor opt-in: ${num(DB.consent_breakdown.sponsor_opt_in)}`,
+          `Vendor only: ${num(DB.consent_breakdown.vendor_only)}`,
+          `Pending/masked: ${num(DB.consent_breakdown.pending_or_masked)}`
+        ].join(" · "));
+        addItem(bd, "Classification", Object.entries(DB.classification_breakdown||{}).map(([k,v])=>`${humanize(k)}: ${num(v)}`).join(" · ") || "No data");
+
+        // Freeze banner
+        const ft = freezeTag(DB.report_freeze);
+        const fb = $id("freeze-banner");
+        fb.className = `banner ${ft.tone}`;
+        fb.innerHTML = `<strong>${esc(ft.title)}</strong><span class="mini-note">${esc(ft.body)}</span><div class="pill-row"><span class="tag ${ft.tone==="live"?"good":"warn"}">${esc(ft.tag)}</span><span class="tag">${esc(humanize(DB.event_status))}</span><span class="tag">v${DB.report_snapshot_version}</span></div>`;
+
+        // Report story
+        const rs = $id("report-story");
+        rs.innerHTML = "";
+        rs.appendChild(storyCard(ft.title, ft.tag, ft.body, ft.tone==="live"?"accent":ft.tone==="frozen"?"dark":"good"));
+        const snapCard = DB.latest_snapshot
+          ? storyCard(`Snapshot cadence active at v${DB.latest_snapshot.report_snapshot_version}`, `Last cut ${fmtDate(DB.latest_snapshot.created_at)}`, DB.latest_snapshot.note||"No note", "dark")
+          : storyCard("No sponsor snapshot published yet", "Start the cadence", "Publish when team wants a stable report cut.", "dark");
+        rs.appendChild(snapCard);
+        const na = nextAction(DB, DB.report_freeze);
+        rs.appendChild(storyCard(na.title, na.eyebrow, na.body, na.tone));
+
+        // Official report
+        const ort = freezeTag(DB.report_freeze);
+        $id("official-report-title").textContent = ort.title;
+        const or_ = $id("official-report");
+        or_.innerHTML = "";
+        const ig = document.createElement("div"); ig.className = "info-grid";
+        ig.appendChild(infoCard("Posture", ort.tag, ort.body));
+        const lo = DB.report_freeze?.latest_official_export;
+        ig.appendChild(infoCard("Latest official export", lo ? humanize(lo.status) : "Not generated", lo ? `Created ${fmtDate(lo.created_at)}` : "Freeze from organizer ops to generate."));
+        const ls = DB.report_freeze?.latest_official_snapshot;
+        ig.appendChild(infoCard("Latest official snapshot", ls ? `Published ${fmtDate(ls.created_at)}` : "None yet", ls?.note||"Will appear after freeze."));
+        ig.appendChild(infoCard("Blockers", DB.report_freeze?.unresolved_incidents ? `${num(DB.report_freeze.unresolved_incidents)} incidents` : "None", `${num(DB.report_freeze?.sponsor_snapshot_count||0)} sponsor snapshots`));
+        or_.appendChild(ig);
+
+        // Latest snapshot sidebar
+        const lsEl = $id("latest-snapshot");
+        lsEl.innerHTML = "";
+        if (!DB.latest_snapshot) { lsEl.innerHTML=`<div class="item muted">No snapshot yet.</div>`; }
+        else {
+          const item = document.createElement("div"); item.className="item";
+          item.innerHTML=`<strong>Published ${esc(fmtDate(DB.latest_snapshot.created_at))}</strong><p class="muted">v${DB.latest_snapshot.report_snapshot_version} · ${esc(DB.latest_snapshot.note||"No note")}</p><div class="pill-row"><span class="tag">v${DB.latest_snapshot.report_snapshot_version}</span><span class="tag good">Ready for export</span></div>`;
+          lsEl.appendChild(item);
         }
 
-        breakdowns.innerHTML = "";
-        addBreakdownCard("Consent", [
-          `Sponsor opt-in: ${number(currentDashboard.consent_breakdown.sponsor_opt_in)}`,
-          `Vendor only: ${number(currentDashboard.consent_breakdown.vendor_only)}`,
-          `Pending or masked: ${number(currentDashboard.consent_breakdown.pending_or_masked)}`
-        ]);
-        addBreakdownCard("Classification", Object.entries(currentDashboard.classification_breakdown || {}).map(
-          ([key, value]) => `${humanizeKey(key)}: ${number(value)}`
-        ));
+        // Comparison
+        renderComparison();
 
-        latestSnapshot.innerHTML = "";
-        if (!currentDashboard.latest_snapshot) {
-          latestSnapshot.innerHTML = `<div class="item muted">No published sponsor snapshot yet.</div>`;
-        } else {
-          addSnapshotSummary(currentDashboard.latest_snapshot);
-        }
-
-        renderFreezeBanner(currentDashboard.report_freeze);
-        renderReportStory(currentDashboard, currentDashboard.report_freeze);
-        renderOfficialReport(currentDashboard.report_freeze);
-        renderComparison(currentDashboard, currentDashboard.latest_snapshot?.dashboard || null);
-        renderZoneMomentum(currentDashboard.stall_breakdown);
-
-        const organizerMode = currentPrincipal?.role === "organizer_admin";
-        publishSnapshotButton.disabled = !organizerMode;
-        snapshotPublishHint.textContent = organizerMode
-          ? "Organizer mode is active. Publishing will freeze the current sponsor dashboard."
-          : "Organizer auth is required to publish snapshots.";
+        // Zone momentum
+        renderMomentum();
       }
 
+      /* ── SP-03 FUNNEL ──────────────────────────────── */
+      function renderFunnel() {
+        const wrap = $id("funnel-wrap");
+        if (!DB) { wrap.innerHTML=`<div class="item muted" style="text-align:center;padding:24px;">Load data to view funnel.</div>`; return; }
+
+        const stages = [
+          { label: "Impressions",      value: DB.impressions,    color: "rgba(216,110,45,0.80)" },
+          { label: "Click sessions",   value: DB.clicks,         color: "rgba(216,110,45,0.68)" },
+          { label: "Mobile card views",value: DB.clicks,         color: "rgba(216,110,45,0.56)" },
+          { label: "Consent given",    value: DB.opted_in_leads, color: "rgba(15,141,99,0.70)"  },
+          { label: "Exportable leads", value: DB.opted_in_leads, color: "rgba(15,141,99,0.85)"  }
+        ];
+
+        const maxV = stages[0].value || 1;
+        wrap.innerHTML = "";
+
+        stages.forEach((s, i) => {
+          if (i > 0) { const c = document.createElement("div"); c.className="funnel-connector"; wrap.appendChild(c); }
+          const wPct = maxV===0 ? 5 : Math.max(8, Math.round((s.value/maxV)*100));
+          const prev = i===0 ? s.value : stages[i-1].value;
+          const keep = prev===0 ? 100 : Math.round(((s.value)/prev)*100);
+          const row = document.createElement("div");
+          row.className = "funnel-stage";
+          row.innerHTML = `
+            <div class="funnel-label">${esc(s.label)}</div>
+            <div class="funnel-bar-wrap">
+              <div class="funnel-bar" style="width:${wPct}%;background:${s.color}">
+                <span>${num(s.value)}</span>
+              </div>
+            </div>
+            ${i>0 ? `<div class="funnel-pct ${keep<50?'drop':'keep'}">${keep}%</div>` : `<div class="funnel-pct">—</div>`}`;
+          wrap.appendChild(row);
+        });
+
+        const convRate = DB.impressions===0 ? "0.00" : ((DB.opted_in_leads/DB.impressions)*100).toFixed(2);
+        const summary = document.createElement("div");
+        summary.className = "funnel-summary";
+        summary.innerHTML = `<span class="muted" style="font-size:12px">Overall conversion<br><small>Impression → Exportable lead</small></span><strong>${convRate}%</strong><span class="muted" style="font-size:12px">CTR<br><small>Click / Impression</small></span><strong>${DB.ctr}%</strong>`;
+        wrap.appendChild(summary);
+      }
+
+      /* ── SP-02 HEATMAP ──────────────────────────────── */
+      window._renderHeatmap = function() {
+        const grid = $id("heatmap-grid");
+        const sortBy = $id("heatmap-sort")?.value || "zone_score";
+
+        let zones = HEATMAP?.zones || (DB?.stall_breakdown||[]).map(s => ({
+          stall_id: s.stall_id,
+          stall_name: s.stall_name || s.stall_id,
+          interactions: s.impressions || 0,
+          sponsor_consented: s.opted_in_leads || 0,
+          sponsor_clicks: s.clicks || 0,
+          ctr: s.ctr || 0,
+          zone_score: (s.impressions||0) + (s.clicks||0)*3 + (s.opted_in_leads||0)*2,
+          peak_hour: null
+        }));
+
+        if (!zones?.length) { grid.innerHTML=`<div class="heatmap-empty">No zone data available yet.</div>`; return; }
+
+        zones = [...zones].sort((a,b)=>(b[sortBy]??0)-(a[sortBy]??0));
+        const maxScore = Math.max(...zones.map(z=>z[sortBy]??0), 1);
+        grid.innerHTML = "";
+
+        for (const z of zones) {
+          const val = z[sortBy] ?? 0;
+          const heat = Math.max(0.04, Math.min(0.85, val/maxScore));
+          const barPct = Math.max(4, Math.round((val/maxScore)*100));
+          const cell = document.createElement("div");
+          cell.className = "heatmap-zone";
+          cell.style.setProperty("--heat", heat.toFixed(2));
+          cell.style.background = `rgba(255,255,255,${(0.9-heat*0.3).toFixed(2)})`;
+          cell.innerHTML = `
+            <div class="hz-name" title="${esc(z.stall_name)}">${esc(z.stall_name)}</div>
+            <div class="hz-count">${num(z.interactions)}</div>
+            <div class="hz-sub">interactions · ${z.ctr??0}% CTR</div>
+            <div class="hz-sub">${num(z.sponsor_consented??0)} opted-in</div>
+            ${z.peak_hour?`<div class="hz-sub">Peak: ${new Date(z.peak_hour).getHours()}:00</div>`:""}
+            <div class="hz-bar" style="width:${barPct}%"></div>`;
+          grid.appendChild(cell);
+        }
+      };
+
+      /* ── SP-04 AUDIENCE INSIGHTS ────────────────────── */
+      function renderAudienceInsights() {
+        const wrap = $id("audience-insights");
+        if (!DB) return;
+
+        const cl = DB.classification_breakdown || {};
+        const co = DB.consent_breakdown || {};
+        const st = DB.stall_breakdown || [];
+
+        const intentData  = [
+          { label:"Hot intent",   count: cl.hot||0 },
+          { label:"Warm intent",  count: cl.warm||0 },
+          { label:"Cold / new",   count: cl.cold||0 },
+          { label:"Unclassified", count: cl.unclassified||0 }
+        ].filter(r=>r.count>0);
+
+        const consentData = [
+          { label:"Full sponsor opt-in", count: co.sponsor_opt_in||0 },
+          { label:"Vendor only",          count: co.vendor_only||0 },
+          { label:"Pending / masked",     count: co.pending_or_masked||0 }
+        ].filter(r=>r.count>0);
+
+        const zoneData = st.slice(0,5).map(s=>({ label: s.stall_name||s.stall_id, count: s.impressions||0 }));
+
+        if (!intentData.length && !consentData.length) {
+          wrap.innerHTML=`<div class="item muted" style="text-align:center;padding:24px;">No audience data yet. Insights populate as attendees interact.</div>`;
+          return;
+        }
+
+        wrap.innerHTML = `<div class="insight-grid" id="ig-inner"></div>`;
+        const ig = $id("ig-inner");
+        if (intentData.length)  buildInsightCard(ig, "Engagement Intent", intentData);
+        if (consentData.length) buildInsightCard(ig, "Consent Profile", consentData);
+        if (zoneData.length)    buildInsightCard(ig, "Top Zones by Impressions", zoneData);
+
+        // Enrichment note
+        const note = document.createElement("div");
+        note.style.cssText = "grid-column:1/-1;";
+        note.innerHTML = `<div class="item mini-note"><strong>Note:</strong> Industry, seniority, and company-size breakdowns require the enrichment pipeline. Showing engagement and consent profile derived from interaction data.</div>`;
+        ig.appendChild(note);
+      }
+
+      function buildInsightCard(parent, title, rows) {
+        const maxCount = Math.max(...rows.map(r=>r.count), 1);
+        const card = document.createElement("div"); card.className="insight-card";
+        card.innerHTML = `<div class="insight-title">${esc(title)}</div><div class="insight-rows"></div>`;
+        const rw = card.querySelector(".insight-rows");
+        for (const r of rows) {
+          const pct = Math.max(4, Math.round((r.count/maxCount)*100));
+          const row = document.createElement("div"); row.className="insight-row";
+          row.innerHTML=`<div class="insight-row-label" title="${esc(r.label)}">${esc(r.label)}</div><div class="insight-row-bar-wrap"><div class="insight-row-bar" style="width:${pct}%"></div></div><div class="insight-row-count">${num(r.count)}</div>`;
+          rw.appendChild(row);
+        }
+        parent.appendChild(card);
+      }
+
+      /* ── HOURLY SPARK ──────────────────────────────── */
+      function renderHourlySpark(hourly) {
+        const wrap = $id("hourly-wrap");
+        if (!hourly.length) { wrap.innerHTML=`<div class="item muted">No hourly trend yet.</div>`; return; }
+        const maxV = Math.max(...hourly.map(h=>h.impressions), 1);
+        wrap.innerHTML=`<div class="hourly-wrap" id="hchart"></div>`;
+        const chart = $id("hchart");
+        for (const entry of hourly) {
+          const pct = Math.max(4, Math.round((entry.impressions/maxV)*100));
+          const h = new Date(entry.hour).getHours();
+          const col = document.createElement("div"); col.className="hcol";
+          col.innerHTML=`<div class="hbar" style="height:${pct}%"></div><div class="hlbl">${h}h</div>`;
+          col.title=`${h}:00 — ${num(entry.impressions)} impressions`;
+          chart.appendChild(col);
+        }
+      }
+
+      /* ── COMPARISON ────────────────────────────────── */
+      function renderComparison() {
+        if (!DB) return;
+        const lc = $id("live-compare"); lc.innerHTML="";
+        const sc = $id("snapshot-compare"); sc.innerHTML="";
+        for (const [l,v] of [["Impressions",DB.impressions],["CTR",`${DB.ctr}%`],["Opted-in leads",DB.opted_in_leads],["Unique attendees",DB.unique_attendees]]) {
+          lc.appendChild(cmpMetric(l, String(v), null));
+        }
+        const sd = DB.latest_snapshot?.dashboard;
+        if (!sd) { sc.innerHTML=`<div class="item muted">Publish a snapshot to compare.</div>`; return; }
+        for (const [l,sv,lv] of [["Impressions",sd.impressions,DB.impressions],["CTR",sd.ctr,DB.ctr],["Opted-in leads",sd.opted_in_leads,DB.opted_in_leads],["Unique attendees",sd.unique_attendees,DB.unique_attendees]]) {
+          const diff = Number(lv||0)-Number(sv||0);
+          const delta = diff===0 ? {kind:"flat",label:"Matches live"} : {kind:diff>0?"up":"flat",label:`${diff>0?"+":""}${diff} since snapshot`};
+          sc.appendChild(cmpMetric(l, String(sv), delta));
+        }
+      }
+
+      /* ── ZONE MOMENTUM ─────────────────────────────── */
+      function renderMomentum() {
+        if (!DB) return;
+        const el = $id("zone-momentum"); el.innerHTML="";
+        const stalls = DB.stall_breakdown || [];
+        if (!stalls.length) { el.innerHTML=`<div class="item muted">No sponsored stalls reporting yet.</div>`; return; }
+        const maxI = Math.max(...stalls.map(s=>Number(s.impressions||0)),1);
+        for (const s of stalls.slice(0,6)) {
+          const pct = Math.max(8, Math.round((Number(s.impressions||0)/maxI)*100));
+          const row = document.createElement("div"); row.className="bar-row";
+          row.innerHTML=`<div class="stat-inline"><strong>${esc(s.stall_name||s.stall_id)}</strong><span class="mini-note">${num(s.impressions)} impressions · ${num(s.opted_in_leads)} opted-in</span></div><div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>`;
+          el.appendChild(row);
+        }
+      }
+
+      /* ── SNAPSHOTS ─────────────────────────────────── */
       function renderSnapshots() {
-        snapshotRows.innerHTML = "";
-        if (!currentSnapshots.length) {
-          snapshotRows.innerHTML = `<tr><td colspan="3" class="muted">No sponsor snapshots have been published.</td></tr>`;
-          clearSnapshotDetail();
-          return;
+        const tbody = $id("snapshot-rows"); tbody.innerHTML="";
+        if (!snapshots.length) { tbody.innerHTML=`<tr><td colspan="3" class="muted">No snapshots published.</td></tr>`; clearSnapDetail(); return; }
+        for (const item of snapshots) {
+          const tr = document.createElement("tr");
+          tr.className = selectedSnap?.id===item.id ? "active" : "";
+          tr.innerHTML=`<td>${esc(fmtDate(item.created_at))}</td><td>v${item.report_snapshot_version}</td><td>${esc(item.note||"No note")}</td>`;
+          tr.addEventListener("click", ()=>selectSnap(item.id));
+          tbody.appendChild(tr);
         }
-        for (const item of currentSnapshots) {
-          const row = document.createElement("tr");
-          row.className = selectedSnapshot?.id === item.id ? "active" : "";
-          row.innerHTML = `
-            <td>${escapeHtml(formatDate(item.created_at))}</td>
-            <td>v${escapeHtml(String(item.report_snapshot_version))}</td>
-            <td>${escapeHtml(item.note || "No note")}</td>
-          `;
-          row.addEventListener("click", () => selectSnapshot(item.id));
-          snapshotRows.appendChild(row);
-        }
-        const preferred = requestedSnapshotId
-          ? currentSnapshots.find((item) => item.id === requestedSnapshotId)
-          : null;
-        if (preferred) {
-          selectSnapshot(preferred.id);
-        } else if (!selectedSnapshot) {
-          selectSnapshot(currentSnapshots[0].id);
-        }
+        if (!selectedSnap) selectSnap(snapshots[0].id);
       }
 
-      function renderExports() {
-        exportRows.innerHTML = "";
-        if (!currentExports.length) {
-          exportRows.innerHTML = `<tr><td colspan="3" class="muted">No sponsor exports requested yet.</td></tr>`;
-          clearExportDetail();
-          return;
-        }
-        for (const item of currentExports) {
-          const row = document.createElement("tr");
-          row.className = selectedExport?.id === item.id ? "active" : "";
-          row.innerHTML = `
-            <td>${escapeHtml(formatDate(item.created_at))}</td>
-            <td>${escapeHtml(item.status)}</td>
-            <td>${escapeHtml(item.filters?.snapshot_id || "Current live view")}</td>
-          `;
-          row.addEventListener("click", () => selectExport(item.id));
-          exportRows.appendChild(row);
-        }
-        const preferred = requestedExportId
-          ? currentExports.find((item) => item.id === requestedExportId)
-          : null;
-        if (preferred) {
-          selectExport(preferred.id);
-        } else if (!selectedExport) {
-          selectExport(currentExports[0].id);
-        }
-      }
-
-      function selectSnapshot(snapshotId) {
-        selectedSnapshot = currentSnapshots.find((item) => item.id === snapshotId) || null;
-        requestedSnapshotId = selectedSnapshot?.id || null;
-        Array.from(snapshotRows.querySelectorAll("tr")).forEach((row, index) => {
-          row.classList.toggle("active", currentSnapshots[index]?.id === selectedSnapshot?.id);
+      function selectSnap(id) {
+        selectedSnap = snapshots.find(i=>i.id===id)||null;
+        Array.from($id("snapshot-rows").querySelectorAll("tr")).forEach((tr,i)=>{
+          tr.classList.toggle("active", snapshots[i]?.id===selectedSnap?.id);
         });
-        renderSnapshotDetail();
-        syncQueryState();
+        renderSnapDetail();
+        syncUrl();
       }
 
-      async function selectExport(exportId) {
-        selectedExport = await api(`/exports/${encodeURIComponent(exportId)}/status`);
-        requestedExportId = selectedExport.id;
-        Array.from(exportRows.querySelectorAll("tr")).forEach((row, index) => {
-          row.classList.toggle("active", currentExports[index]?.id === selectedExport?.id);
-        });
-        renderExportDetail();
-        syncQueryState();
-      }
-
-      function renderSnapshotDetail() {
-        if (!selectedSnapshot) {
-          clearSnapshotDetail();
-          return;
-        }
-        snapshotDetailTitle.textContent = `Snapshot ${selectedSnapshot.id}`;
-        snapshotDetail.innerHTML = "";
-        addSnapshotDetailItem(`Created: ${formatDate(selectedSnapshot.created_at)}`);
-        addSnapshotDetailItem(`Version: v${selectedSnapshot.report_snapshot_version}`);
-        addSnapshotDetailItem(`Note: ${selectedSnapshot.note || "No note"}`);
-        addSnapshotDetailItem(`Published by: ${selectedSnapshot.created_by_user_id || "Unknown"}`);
-        if (selectedSnapshot.dashboard) {
-          addSnapshotDetailItem(`Impressions: ${number(selectedSnapshot.dashboard.impressions)}`);
-          addSnapshotDetailItem(`CTR: ${selectedSnapshot.dashboard.ctr}%`);
-          addSnapshotDetailItem(`Opted-in leads: ${number(selectedSnapshot.dashboard.opted_in_leads)}`);
-          addSnapshotDetailItem(`Unique attendees: ${number(selectedSnapshot.dashboard.unique_attendees)}`);
+      function renderSnapDetail() {
+        if (!selectedSnap) { clearSnapDetail(); return; }
+        $id("snapshot-detail-title").textContent = `Snapshot ${selectedSnap.id}`;
+        const d = $id("snapshot-detail"); d.innerHTML="";
+        for(const txt of [`Created: ${fmtDate(selectedSnap.created_at)}`,`Version: v${selectedSnap.report_snapshot_version}`,`Note: ${selectedSnap.note||"No note"}`,`Published by: ${selectedSnap.created_by_user_id||"Unknown"}`]) addDI(d,txt);
+        if(selectedSnap.dashboard){
+          for(const txt of [`Impressions: ${num(selectedSnap.dashboard.impressions)}`,`CTR: ${selectedSnap.dashboard.ctr}%`,`Opted-in: ${num(selectedSnap.dashboard.opted_in_leads)}`,`Unique: ${num(selectedSnap.dashboard.unique_attendees)}`]) addDI(d,txt);
         }
       }
 
-      function renderExportDetail() {
-        if (!selectedExport) {
-          clearExportDetail();
-          return;
-        }
-        exportDetailTitle.textContent = `Export ${selectedExport.id}`;
-        exportDetail.innerHTML = "";
-        addExportDetailItem(`Status: ${selectedExport.status}`, selectedExport.status === "generated" ? "good" : "warn");
-        addExportDetailItem(`Type: ${humanizeKey(selectedExport.export_type)}`);
-        addExportDetailItem(`Created: ${formatDate(selectedExport.created_at)}`);
-        addExportDetailItem(`Snapshot source: ${selectedExport.filters?.snapshot_id || "Current live view"}`);
-        if (selectedExport.rejection_reason) {
-          addExportDetailItem(`Rejection reason: ${selectedExport.rejection_reason}`, "warn");
-        }
-        if (selectedExport.file_url) {
-          const link = document.createElement("a");
-          link.className = "item cta-link";
-          link.href = selectedExport.file_url;
-          link.textContent = "Open generated export";
-          exportDetail.appendChild(link);
-        }
-      }
+      function clearSnapDetail() { $id("snapshot-detail-title").textContent="Select a snapshot"; $id("snapshot-detail").innerHTML=`<div class="item muted">Snapshot detail will appear here.</div>`; }
 
       async function publishSnapshot() {
         try {
-          const eventId = eventIdInput.value.trim();
-          const sponsorId = sponsorIdInput.value.trim();
-          const response = await api(`/organizer/events/${encodeURIComponent(eventId)}/sponsors/${encodeURIComponent(sponsorId)}/report-snapshots`, {
-            method: "POST",
-            body: {
-              note: snapshotNote.value.trim() || null
-            }
-          });
-          snapshotNote.value = "";
-          requestedSnapshotId = response.id;
-          await loadDashboard();
-          showMessage("Sponsor snapshot published.", "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
+          const eid=$id("event-id").value.trim(), sid=$id("sponsor-id").value.trim();
+          const res = await api(`/organizer/events/${enc(eid)}/sponsors/${enc(sid)}/report-snapshots`,{method:"POST",body:{note:$id("snapshot-note").value.trim()||null}});
+          $id("snapshot-note").value="";
+          await loadAll();
+          showMsg("Snapshot published.", "ok");
+        } catch(e) { showMsg(e.message,"error"); }
+      }
+
+      /* ── EXPORTS ───────────────────────────────────── */
+      function renderExports() {
+        const tbody=$id("export-rows"); tbody.innerHTML="";
+        if(!exports_.length){tbody.innerHTML=`<tr><td colspan="3" class="muted">No exports yet.</td></tr>`;return;}
+        for(const item of exports_){
+          const tr=document.createElement("tr");
+          tr.className=selectedExport?.id===item.id?"active":"";
+          tr.innerHTML=`<td>${esc(fmtDate(item.created_at))}</td><td>${esc(item.status)}</td><td>${esc(item.filters?.snapshot_id||"Live view")}</td>`;
+          tr.addEventListener("click",()=>selectExp(item.id));
+          tbody.appendChild(tr);
         }
+        if(!selectedExport) selectExp(exports_[0].id);
       }
 
-      async function requestSnapshotExport() {
-        if (!selectedSnapshot) {
-          showMessage("Select a published snapshot first.", "error");
-          return;
-        }
-        try {
-          const response = await api("/exports/request", {
-            method: "POST",
-            body: {
-              event_id: eventIdInput.value.trim(),
-              export_type: "sponsor_dashboard_snapshot",
-              filters: {
-                snapshot_id: selectedSnapshot.id,
-                sponsor_id: sponsorIdInput.value.trim()
-              }
-            }
-          });
-          requestedExportId = response.id;
-          await loadDashboard();
-          showMessage("Sponsor snapshot export requested.", "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
+      async function selectExp(id){
+        try{selectedExport=await api(`/exports/${enc(id)}/status`);}catch{selectedExport=exports_.find(i=>i.id===id)||null;}
+        Array.from($id("export-rows").querySelectorAll("tr")).forEach((tr,i)=>{tr.classList.toggle("active",exports_[i]?.id===selectedExport?.id);});
+        const d=$id("export-detail"); d.innerHTML="";
+        if(!selectedExport){d.innerHTML=`<div class="item muted">Export detail will appear here.</div>`;return;}
+        for(const txt of [`Status: ${selectedExport.status}`,`Type: ${humanize(selectedExport.export_type)}`,`Created: ${fmtDate(selectedExport.created_at)}`]) addDI(d,txt);
+        if(selectedExport.file_url){const a=document.createElement("a");a.className="item cta-link";a.href=selectedExport.file_url;a.textContent="Open generated export";d.appendChild(a);}
       }
 
-      function renderFreezeBanner(reportFreeze) {
-        const posture = summarizeFreezePosture(reportFreeze);
-        freezeBanner.className = `banner ${posture.tone}`;
-        freezeBanner.innerHTML = `
-          <strong>${escapeHtml(posture.title)}</strong>
-          <span class="mini-note">${escapeHtml(posture.body)}</span>
-          <div class="pill-row">
-            <span class="tag ${posture.tone === "live" ? "good" : "warn"}">${escapeHtml(posture.tag)}</span>
-            <span class="tag">${escapeHtml(`Event ${humanizeKey(reportFreeze?.event_status || currentDashboard?.event_status)}`)}</span>
-            <span class="tag">${escapeHtml(`Snapshot v${currentDashboard?.report_snapshot_version || 0}`)}</span>
-          </div>
-        `;
+      async function requestExport(){
+        if(!selectedSnap){showMsg("Select a snapshot first.","error");return;}
+        try{
+          await api("/exports/request",{method:"POST",body:{event_id:$id("event-id").value.trim(),export_type:"sponsor_dashboard_snapshot",filters:{snapshot_id:selectedSnap.id,sponsor_id:$id("sponsor-id").value.trim()}}});
+          await loadAll();
+          showMsg("Export requested.","ok");
+        }catch(e){showMsg(e.message,"error");}
       }
 
-      function renderOfficialReport(reportFreeze) {
-        const posture = summarizeFreezePosture(reportFreeze);
-        officialReportTitle.textContent = posture.title;
-        officialReport.innerHTML = "";
-
-        const infoGrid = document.createElement("div");
-        infoGrid.className = "info-grid";
-        infoGrid.appendChild(buildInfoCard(
-          "Official report posture",
-          posture.tag,
-          posture.body
-        ));
-        infoGrid.appendChild(buildInfoCard(
-          "Latest official export",
-          reportFreeze?.latest_official_export
-            ? humanizeKey(reportFreeze.latest_official_export.status)
-            : "Not generated yet",
-          reportFreeze?.latest_official_export
-            ? `Created ${formatDate(reportFreeze.latest_official_export.created_at)}`
-            : "Freeze the event from organizer ops to generate the official sponsor-facing export."
-        ));
-        infoGrid.appendChild(buildInfoCard(
-          "Latest official snapshot",
-          reportFreeze?.latest_official_snapshot
-            ? `Published ${formatDate(reportFreeze.latest_official_snapshot.created_at)}`
-            : "No official snapshot yet",
-          reportFreeze?.latest_official_snapshot?.note || "Official event report notes will appear here once frozen."
-        ));
-        infoGrid.appendChild(buildInfoCard(
-          "Operational blockers",
-          reportFreeze?.unresolved_incidents ? `${number(reportFreeze.unresolved_incidents)} unresolved incidents` : "No unresolved incidents",
-          `${number(reportFreeze?.sponsor_snapshot_count || 0)} sponsor snapshots published for this event`
-        ));
-        officialReport.appendChild(infoGrid);
+      /* ── HELPERS ───────────────────────────────────── */
+      function ctxCard(parent, label, value) {
+        const item=document.createElement("div");item.className="item";item.innerHTML=`<span class="muted">${esc(label)}</span><strong>${esc(value)}</strong>`;parent.appendChild(item);
       }
-
-      function renderReportStory(dashboard, reportFreeze) {
-        const posture = summarizeFreezePosture(reportFreeze);
-        const latestExport = reportFreeze?.latest_official_export || null;
-        const nextAction = buildNextSponsorAction(dashboard, reportFreeze);
-        reportStory.innerHTML = "";
-        reportStory.appendChild(buildStoryCard(
-          posture.title,
-          posture.tag,
-          posture.body,
-          posture.tone === "live" ? "accent" : posture.tone === "frozen" ? "dark" : "good"
-        ));
-        reportStory.appendChild(buildStoryCard(
-          dashboard.latest_snapshot
-            ? `Snapshot cadence is active at v${dashboard.latest_snapshot.report_snapshot_version}`
-            : "No sponsor snapshot has been published yet",
-          dashboard.latest_snapshot
-            ? `Last cut ${formatDate(dashboard.latest_snapshot.created_at)}`
-            : "Start the cadence",
-          dashboard.latest_snapshot
-            ? `${number(dashboard.snapshot_count)} total published sponsor snapshots. Latest note: ${dashboard.latest_snapshot.note || "No note"}`
-            : "Publish the first sponsor snapshot when the team wants a stable report cut or handoff artifact.",
-          "dark"
-        ));
-        reportStory.appendChild(buildStoryCard(
-          nextAction.title,
-          latestExport ? `Latest export ${humanizeKey(latestExport.status)}` : "No official export yet",
-          nextAction.body,
-          nextAction.tone
-        ));
+      function addItem(parent,label,body){const item=document.createElement("div");item.className="item";item.innerHTML=`<strong>${esc(label)}</strong><p class="muted">${esc(body)}</p>`;parent.appendChild(item);}
+      function addDI(parent,text){const item=document.createElement("div");item.className="item";item.textContent=text;parent.appendChild(item);}
+      function infoCard(label,value,note){const item=document.createElement("div");item.className="info-card";item.innerHTML=`<span class="muted">${esc(label)}</span><strong>${esc(value)}</strong><span class="mini-note">${esc(note)}</span>`;return item;}
+      function cmpMetric(label,value,delta){const item=document.createElement("div");item.className="item";const dm=delta?`<span class="delta ${delta.kind}">${esc(delta.label)}</span>`:`<span class="mini-note">Current aggregate</span>`;item.innerHTML=`<div class="stat-inline"><strong>${esc(label)}</strong>${dm}</div><div>${esc(value)}</div>`;return item;}
+      function storyCard(title,eyebrow,body,tone="accent"){const item=document.createElement("div");item.className=`story-card ${tone}`;item.innerHTML=`<span class="eyebrow">${esc(eyebrow)}</span><strong>${esc(title)}</strong><p>${esc(body)}</p>`;return item;}
+      function freezeTag(rf){
+        if(rf?.frozen) return{tone:"frozen",tag:"Official report frozen",title:"Official event report is frozen",body:rf.latest_official_snapshot?`Freeze reference from ${fmtDate(rf.latest_official_snapshot.created_at)}.`:"Event closed."};
+        if(rf?.event_status==="closed") return{tone:"warn",tag:"Closed without freeze artifact",title:"Event closed but report package incomplete",body:"Ask organizer ops to re-run freeze workflow."};
+        return{tone:"live",tag:"Live reporting",title:"Viewing live aggregate metrics",body:rf?.unresolved_incidents?`${num(rf.unresolved_incidents)} unresolved incidents.`:"Metrics can still move until organizer ops freezes the report."};
       }
-
-      function renderComparison(dashboard, snapshotDashboard) {
-        liveCompare.innerHTML = "";
-        snapshotCompare.innerHTML = "";
-
-        const liveMetrics = [
-          ["Impressions", dashboard.impressions],
-          ["CTR", `${dashboard.ctr}%`],
-          ["Opted-in leads", dashboard.opted_in_leads],
-          ["Unique attendees", dashboard.unique_attendees]
-        ];
-        for (const [label, value] of liveMetrics) {
-          liveCompare.appendChild(buildComparisonMetric(label, String(value), null));
-        }
-
-        if (!snapshotDashboard) {
-          snapshotCompare.innerHTML = `<div class="item muted">Publish a sponsor snapshot to compare the live dashboard against a frozen view.</div>`;
-          return;
-        }
-
-        const snapshotMetrics = [
-          ["Impressions", String(snapshotDashboard.impressions), deltaLabel(dashboard.impressions, snapshotDashboard.impressions)],
-          ["CTR", `${snapshotDashboard.ctr}%`, deltaLabel(dashboard.ctr, snapshotDashboard.ctr, "%")],
-          ["Opted-in leads", String(snapshotDashboard.opted_in_leads), deltaLabel(dashboard.opted_in_leads, snapshotDashboard.opted_in_leads)],
-          ["Unique attendees", String(snapshotDashboard.unique_attendees), deltaLabel(dashboard.unique_attendees, snapshotDashboard.unique_attendees)]
-        ];
-        for (const [label, value, delta] of snapshotMetrics) {
-          snapshotCompare.appendChild(buildComparisonMetric(label, value, delta));
-        }
+      function nextAction(dashboard, rf){
+        if(!dashboard.latest_snapshot) return{title:"Publish first sponsor snapshot",eyebrow:"First snapshot",body:"Dashboard is live but no frozen cut yet. Publish before sharing numbers.",tone:"accent"};
+        if(!rf?.latest_official_export) return{title:"Wait for organizer freeze",eyebrow:"Waiting on organizer",body:"Sponsor snapshots exist but no official frozen export yet.",tone:"good"};
+        if(rf.latest_official_export.status!=="generated") return{title:"Track official export queue",eyebrow:humanize(rf.latest_official_export.status),body:`Latest official export is currently ${humanize(rf.latest_official_export.status)}.`,tone:"dark"};
+        return{title:"Share the official sponsor package",eyebrow:"Ready to deliver",body:"Freeze package exists and latest official export is generated.",tone:"good"};
       }
-
-      function renderZoneMomentum(stalls) {
-        zoneMomentum.innerHTML = "";
-        if (!stalls?.length) {
-          zoneMomentum.innerHTML = `<div class="item muted">No sponsored stalls are reporting yet.</div>`;
-          return;
-        }
-        const maxImpressions = Math.max(...stalls.map((stall) => Number(stall.impressions || 0)), 1);
-        for (const stall of stalls.slice(0, 6)) {
-          const row = document.createElement("div");
-          row.className = "bar-row";
-          const percent = Math.max(8, Math.round((Number(stall.impressions || 0) / maxImpressions) * 100));
-          row.innerHTML = `
-            <div class="stat-inline">
-              <strong>${escapeHtml(stall.stall_name || stall.stall_id)}</strong>
-              <span class="mini-note">${escapeHtml(number(stall.impressions))} impressions • ${escapeHtml(number(stall.opted_in_leads))} opted-in</span>
-            </div>
-            <div class="bar-track"><div class="bar-fill" style="width:${percent}%;"></div></div>
-          `;
-          zoneMomentum.appendChild(row);
-        }
+      function syncUrl(){
+        const u=new URL(window.location.href);
+        wp(u,"eventId",$id("event-id").value.trim());
+        wp(u,"sponsorId",$id("sponsor-id").value.trim());
+        wp(u,"auth",$id("auth-token").value.trim());
+        if(selectedSnap?.id) wp(u,"snapshotId",selectedSnap.id); else u.searchParams.delete("snapshotId");
+        window.history.replaceState({},"",u);
       }
+      function wp(u,k,v){if(v)u.searchParams.set(k,v);else u.searchParams.delete(k);}
+      function showMsg(text,type){const m=$id("message");m.hidden=!text;m.textContent=text||"";m.className=`status ${type}`;}
+      function num(v){return new Intl.NumberFormat("en-US").format(Number(v||0));}
+      function humanize(v){return String(v||"unknown").replaceAll("_"," ").replace(/\b\w/g,m=>m.toUpperCase());}
+      function fmtDate(v){if(!v)return"Unknown";return new Date(v).toLocaleString([],{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});}
+      function esc(v){return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");}
+      function enc(v){return encodeURIComponent(v);}
 
-      function addContextCard(label, value) {
-        const item = document.createElement("div");
-        item.className = "item";
-        item.innerHTML = `<span class="muted">${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>`;
-        contextCards.appendChild(item);
-      }
-
-      function addBreakdownCard(label, rows) {
-        const item = document.createElement("div");
-        item.className = "item";
-        item.innerHTML = `<strong>${escapeHtml(label)}</strong><p class="muted">${escapeHtml(rows.join(" • ") || "No data")}</p>`;
-        breakdowns.appendChild(item);
-      }
-
-      function addSnapshotSummary(snapshot) {
-        const item = document.createElement("div");
-        item.className = "item";
-        item.innerHTML = `
-          <strong>Published ${escapeHtml(formatDate(snapshot.created_at))}</strong>
-          <p class="muted">v${escapeHtml(String(snapshot.report_snapshot_version))} • ${escapeHtml(snapshot.note || "No note")}</p>
-          <div class="pill-row">
-            <span class="tag">${escapeHtml(`Version v${snapshot.report_snapshot_version}`)}</span>
-            <span class="tag good">${escapeHtml("Ready for export")}</span>
-          </div>
-        `;
-        latestSnapshot.appendChild(item);
-      }
-
-      function addSnapshotDetailItem(text) {
-        const item = document.createElement("div");
-        item.className = "item";
-        item.textContent = text;
-        snapshotDetail.appendChild(item);
-      }
-
-      function addExportDetailItem(text, tone = "") {
-        const item = document.createElement("div");
-        item.className = tone ? `item tag ${tone}` : "item";
-        item.textContent = text;
-        exportDetail.appendChild(item);
-      }
-
-      function buildInfoCard(label, value, note) {
-        const item = document.createElement("div");
-        item.className = "info-card";
-        item.innerHTML = `
-          <span class="muted">${escapeHtml(label)}</span>
-          <strong>${escapeHtml(value)}</strong>
-          <span class="mini-note">${escapeHtml(note)}</span>
-        `;
-        return item;
-      }
-
-      function buildComparisonMetric(label, value, delta) {
-        const item = document.createElement("div");
-        item.className = "item";
-        const deltaMarkup = delta
-          ? `<span class="delta ${delta.kind}">${escapeHtml(delta.label)}</span>`
-          : `<span class="mini-note">Current aggregate view</span>`;
-        item.innerHTML = `
-          <div class="stat-inline">
-            <strong>${escapeHtml(label)}</strong>
-            ${deltaMarkup}
-          </div>
-          <div>${escapeHtml(value)}</div>
-        `;
-        return item;
-      }
-
-      function buildStoryCard(title, eyebrow, body, tone = "accent") {
-        const item = document.createElement("div");
-        item.className = `story-card ${tone}`;
-        item.innerHTML = `
-          <span class="eyebrow">${escapeHtml(eyebrow)}</span>
-          <strong>${escapeHtml(title)}</strong>
-          <p>${escapeHtml(body)}</p>
-        `;
-        return item;
-      }
-
-      function deltaLabel(liveValue, frozenValue, suffix = "") {
-        const difference = Number(liveValue || 0) - Number(frozenValue || 0);
-        if (difference === 0) {
-          return { kind: "flat", label: "Matches live view" };
-        }
-        const direction = difference > 0 ? "+" : "";
-        return {
-          kind: difference > 0 ? "up" : "flat",
-          label: `${direction}${difference}${suffix} since snapshot`
-        };
-      }
-
-      function summarizeFreezePosture(reportFreeze) {
-        if (reportFreeze?.frozen) {
-          return {
-            tone: "frozen",
-            tag: "Official report frozen",
-            title: "Official event report is frozen",
-            body: reportFreeze.latest_official_snapshot
-              ? `This sponsor view has an official freeze reference from ${formatDate(reportFreeze.latest_official_snapshot.created_at)}.`
-              : "The event is closed and an official sponsor-facing report is available."
-          };
-        }
-        if (reportFreeze?.event_status === "closed") {
-          return {
-            tone: "warn",
-            tag: "Closed without freeze artifact",
-            title: "Event is closed but the official report package is incomplete",
-            body: "Ask organizer ops to re-run the freeze workflow so the official snapshot and export package stay aligned."
-          };
-        }
-        return {
-          tone: "live",
-          tag: "Live reporting",
-          title: "You are viewing live aggregate metrics",
-          body: reportFreeze?.unresolved_incidents
-            ? `Metrics are still live and organizer ops has ${number(reportFreeze.unresolved_incidents)} unresolved incidents to clear before final freeze.`
-            : "Metrics can still move until organizer ops freezes the official event report."
-        };
-      }
-
-      function buildNextSponsorAction(dashboard, reportFreeze) {
-        if (!dashboard.latest_snapshot) {
-          return {
-            title: "Publish the first sponsor snapshot",
-            body: "The dashboard is live, but there is no frozen sponsor cut yet. Publish a snapshot before sharing numbers outside the core event team.",
-            tone: "accent"
-          };
-        }
-        if (!reportFreeze?.latest_official_export) {
-          return {
-            title: "Wait for organizer freeze before final delivery",
-            body: "Sponsor snapshots are available, but the organizer has not produced the official frozen export package yet.",
-            tone: "good"
-          };
-        }
-        if (reportFreeze.latest_official_export.status !== "generated") {
-          return {
-            title: "Track the official export queue",
-            body: `The latest official export is currently ${humanizeKey(reportFreeze.latest_official_export.status)}. Keep sponsors on the live board until the artifact is generated.`,
-            tone: "dark"
-          };
-        }
-        return {
-          title: "Share the official sponsor package",
-          body: "The freeze package exists and the latest official export is generated. Sponsors can use the official artifact for post-event reporting.",
-          tone: "good"
-        };
-      }
-
-      function describeFreezePosture(reportFreeze) {
-        return summarizeFreezePosture(reportFreeze).tag;
-      }
-
-      function clearSnapshotDetail() {
-        selectedSnapshot = null;
-        requestedSnapshotId = null;
-        snapshotDetailTitle.textContent = "Select a snapshot";
-        snapshotDetail.innerHTML = `<div class="item muted">Snapshot detail will appear here.</div>`;
-      }
-
-      function clearExportDetail() {
-        selectedExport = null;
-        requestedExportId = null;
-        exportDetailTitle.textContent = "Select an export";
-        exportDetail.innerHTML = `<div class="item muted">Export status and download link will appear here.</div>`;
-      }
-
-      function refreshNav() {
-        const shared = {
-          apiBase: apiBase === window.location.origin ? null : apiBase,
-          eventId: eventIdInput.value.trim() || null
-        };
-        navOrganizer.href = buildUrl("./organizer.html", shared);
-        navSponsor.href = buildUrl("./sponsor.html", {
-          ...shared,
-          sponsorId: sponsorIdInput.value.trim() || null,
-          snapshotId: selectedSnapshot?.id || requestedSnapshotId || null,
-          exportId: selectedExport?.id || requestedExportId || null
-        });
-        officialReportLink.href = buildUrl("./organizer.html", {
-          ...shared,
-          adminAuth: params.get("adminAuth") || null
-        });
-      }
-
-      function syncQueryState() {
-        const next = new URL(window.location.href);
-        writeParam(next.searchParams, "apiBase", apiBase === window.location.origin ? null : apiBase);
-        writeParam(next.searchParams, "eventId", eventIdInput.value.trim() || null);
-        writeParam(next.searchParams, "sponsorId", sponsorIdInput.value.trim() || null);
-        writeParam(next.searchParams, "auth", authSession?.isSecureMode ? null : authTokenInput.value.trim() || null);
-        writeParam(next.searchParams, "snapshotId", selectedSnapshot?.id || requestedSnapshotId || null);
-        writeParam(next.searchParams, "exportId", selectedExport?.id || requestedExportId || null);
-        window.history.replaceState({}, "", next);
-        refreshNav();
-      }
-
-      function buildUrl(path, entries) {
-        const url = new URL(path, window.location.href);
-        for (const [key, value] of Object.entries(entries)) {
-          writeParam(url.searchParams, key, value);
-        }
-        return url.pathname + url.search;
-      }
-
-      function writeParam(searchParams, key, value) {
-        if (value === null || value === undefined || value === "") {
-          searchParams.delete(key);
-        } else {
-          searchParams.set(key, value);
-        }
-      }
-
-      function number(value) {
-        return new Intl.NumberFormat("en-US").format(Number(value || 0));
-      }
-
-      function humanizeKey(value) {
-        return String(value || "unknown")
-          .replaceAll("_", " ")
-          .replace(/\b\w/g, (match) => match.toUpperCase());
-      }
-
-      function formatDate(value) {
-        if (!value) {
-          return "Unknown";
-        }
-        return new Date(value).toLocaleString([], {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit"
-        });
-      }
-
-      function escapeHtml(value) {
-        return String(value ?? "")
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll("\"", "&quot;")
-          .replaceAll("'", "&#39;");
-      }
-
-      function showMessage(text, type) {
-        message.hidden = !text;
-        message.textContent = text || "";
-        message.className = `status ${type}`;
-      }
-
-      async function api(path, options = {}) {
-        const bearerToken = authSession?.getBearerToken?.() || authTokenInput.value.trim();
-        if (!bearerToken) {
-          throw new Error("Sign in with SSO to continue.");
-        }
-        const headers = {
-          "content-type": "application/json",
-          authorization: `Bearer ${bearerToken}`,
-          ...(options.headers || {})
-        };
-        const response = await fetch(`${apiBase}${path}`, {
-          method: options.method || "GET",
-          headers,
-          cache: "no-store",
-          body: options.body ? JSON.stringify(options.body) : undefined
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(payload.error || `Request failed with ${response.status}`);
-        }
+      async function api(path,options={}){
+        const token=$id("auth-token").value.trim();
+        if(!token) throw new Error("Auth token required.");
+        const resp=await fetch(`${apiBase}${path}`,{method:options.method||"GET",headers:{"content-type":"application/json","authorization":`Bearer ${token}`,"x-tenant-id":"tenant-demo",...(options.headers||{})},cache:"no-store",body:options.body?JSON.stringify(options.body):undefined});
+        const payload=await resp.json().catch(()=>({}));
+        if(!resp.ok) throw new Error(payload.error||`Request failed with ${resp.status}`);
         return payload;
       }
     </script>
