@@ -1,0 +1,28 @@
+# Node
+node_modules/
+.npm/
+*.log
+npm-debug.log*
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+dist/
+build/
+.cache/
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Migration lock (keep the SQL files, not the lock state)
+*.migration-lock
