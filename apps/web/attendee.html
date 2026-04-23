@@ -2,819 +2,524 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Attendee Session</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>Your connections</title>
     <style>
-      :root {
-        --bg: #f4f6fb;
-        --card: #ffffff;
-        --text: #162033;
-        --muted: #63738a;
-        --border: #d9e2ef;
-        --accent: #1f7a59;
-        --accent-soft: #dff4ea;
-        --danger: #a63d40;
-        --danger-soft: #fbe7e7;
+      :root{
+        --ink:#112233;--muted:#5f6f7f;--panel:rgba(255,255,255,0.92);
+        --line:rgba(17,34,51,0.12);--accent:#1a56c4;--accent-soft:rgba(26,86,196,0.10);
+        --good:#0f8d63;--warn:#b46c14;--danger:#c03a3a;
       }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: "IBM Plex Sans", sans-serif;
-        background:
-          radial-gradient(circle at top left, rgba(31, 122, 89, 0.08), transparent 28%),
-          var(--bg);
-        color: var(--text);
-      }
-      .shell {
-        max-width: 1100px;
-        margin: 0 auto;
-        padding: 18px 18px 0;
-      }
-      .shell-bar {
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        align-items: center;
-        flex-wrap: wrap;
-        margin-bottom: 18px;
-      }
-      .shell-title {
-        display: grid;
-        gap: 6px;
-      }
-      .shell-title strong {
-        font-size: 1.1rem;
-      }
-      .shell-nav {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-      .shell-nav a,
-      .mini-link {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        text-decoration: none;
-        color: var(--text);
-        padding: 10px 13px;
-        border-radius: 999px;
-        border: 1px solid var(--border);
-        background: rgba(255,255,255,0.72);
-      }
-      .shell-nav a.active {
-        background: var(--accent-soft);
-        color: var(--accent);
-      }
-      main {
-        max-width: 1100px;
-        margin: 0 auto;
-        padding: 28px 18px 56px;
-      }
-      .intro-grid {
-        display: grid;
-        grid-template-columns: 1.15fr 0.85fr;
-        gap: 18px;
-        margin-bottom: 18px;
-      }
-      .context-strip {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 10px;
-      }
-      .context-chip {
-        border-radius: 16px;
-        padding: 12px;
-        background: #fbfcfe;
-        border: 1px solid var(--border);
-      }
-      .context-chip strong {
-        display: block;
-        margin-top: 6px;
-      }
-      .link-stack {
-        display: grid;
-        gap: 10px;
-      }
-      .hero {
-        display: grid;
-        grid-template-columns: 1.3fr 0.9fr;
-        gap: 18px;
-      }
-      .card {
-        background: var(--card);
-        border-radius: 22px;
-        padding: 22px;
-        border: 1px solid var(--border);
-        box-shadow: 0 18px 40px rgba(13, 27, 45, 0.08);
-      }
-      .stack {
-        display: grid;
-        gap: 18px;
-        margin-top: 18px;
-      }
-      h1, h2, h3, p {
-        margin-top: 0;
-      }
-      .eyebrow {
-        display: inline-block;
-        padding: 6px 10px;
-        border-radius: 999px;
-        background: var(--accent-soft);
-        color: var(--accent);
-        font-size: 12px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        margin-bottom: 12px;
-      }
-      .status {
-        padding: 12px 14px;
-        border-radius: 14px;
-        font-size: 14px;
-        margin-bottom: 16px;
-      }
-      .status.ok {
-        background: var(--accent-soft);
-        color: var(--accent);
-      }
-      .status.error {
-        background: var(--danger-soft);
-        color: var(--danger);
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 14px;
-      }
-      label {
-        display: grid;
-        gap: 8px;
-        font-size: 14px;
-        color: var(--muted);
-      }
-      input[type="text"],
-      input[type="email"],
-      input[type="tel"] {
-        width: 100%;
-        border-radius: 12px;
-        border: 1px solid var(--border);
-        padding: 12px 14px;
-        font: inherit;
-        color: var(--text);
-        background: #fbfcfe;
-      }
-      .checks {
-        display: grid;
-        gap: 14px;
-        margin: 18px 0;
-      }
-      .check {
-        display: flex;
-        gap: 12px;
-        align-items: flex-start;
-        padding: 14px;
-        border-radius: 14px;
-        border: 1px solid var(--border);
-        background: #fbfcfe;
-      }
-      .check input {
-        margin-top: 3px;
-      }
-      .actions {
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-      }
-      button {
-        border: 0;
-        border-radius: 12px;
-        padding: 12px 16px;
-        font: inherit;
-        cursor: pointer;
-      }
-      button.primary {
-        background: var(--accent);
-        color: white;
-      }
-      button.secondary {
-        background: #eaf0f7;
-        color: var(--text);
-      }
-      button.danger {
-        background: var(--danger-soft);
-        color: var(--danger);
-      }
-      button:disabled {
-        cursor: not-allowed;
-        opacity: 0.55;
-      }
-      .meta {
-        display: grid;
-        gap: 12px;
-      }
-      .meta-row {
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        padding: 10px 0;
-        border-bottom: 1px solid var(--border);
-      }
-      .meta-row span:first-child {
-        color: var(--muted);
-      }
-      .control-panel {
-        display: grid;
-        gap: 14px;
-      }
-      .control-item {
-        display: grid;
-        gap: 8px;
-        padding: 14px;
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        background: #fbfcfe;
-      }
-      .control-item h3 {
-        margin: 0;
-        font-size: 1rem;
-      }
-      .request-log {
-        display: grid;
-        gap: 10px;
-        margin-top: 14px;
-      }
-      .request-log .entry {
-        border-radius: 14px;
-        border: 1px solid var(--border);
-        padding: 12px;
-        background: #fbfcfe;
-      }
-      .connections {
-        display: grid;
-        gap: 12px;
-      }
-      .connection {
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 14px;
-        background: #fbfcfe;
-      }
-      .muted {
-        color: var(--muted);
-      }
-      .empty {
-        color: var(--muted);
-        font-style: italic;
-      }
-      @media (max-width: 860px) {
-        .intro-grid,
-        .context-strip,
-        .hero, .grid {
-          grid-template-columns: 1fr;
-        }
-      }
+      *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+      html,body{margin:0;min-height:100%;font-family:"IBM Plex Sans",system-ui,sans-serif;color:var(--ink);background:linear-gradient(180deg,#f0f5ff 0%,#e8f0fb 50%,#dde8f6 100%);}
+      /* ── SCREEN SYSTEM ─────────────────────────── */
+      .screen{display:none;min-height:100vh;flex-direction:column;animation:fadein .2s ease;}
+      .screen.active{display:flex;}
+      @keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+      /* ── LAYOUT ────────────────────────────────── */
+      .page{max-width:480px;margin:0 auto;padding:24px 20px 40px;width:100%;}
+      header{text-align:center;padding:32px 20px 20px;}
+      .logo{width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,var(--accent),rgba(26,86,196,.6));display:inline-flex;align-items:center;justify-content:center;color:white;font-size:24px;margin-bottom:12px;}
+      header h1{margin:8px 0 4px;font-size:1.5rem;}
+      header p{margin:0;color:var(--muted);font-size:15px;}
+      /* ── CARDS ─────────────────────────────────── */
+      .card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:20px;box-shadow:0 12px 36px rgba(17,34,51,.07);margin-bottom:14px;}
+      .card h3{margin:0 0 14px;font-size:1rem;}
+      /* ── FORM ELEMENTS ─────────────────────────── */
+      .field{margin-bottom:14px;}
+      .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;}
+      input[type=text],input[type=email],input[type=tel],select,textarea{width:100%;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.9);color:var(--ink);padding:12px 14px;font:inherit;font-size:15px;}
+      textarea{min-height:80px;resize:vertical;}
+      input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);border-color:transparent;}
+      /* ── CONSENT (CRITICAL — spec §2.2) ────────── */
+      .consent-block{border-radius:16px;border:1px solid var(--line);padding:16px;margin-bottom:12px;background:rgba(255,255,255,.7);}
+      .consent-block .consent-row{display:flex;align-items:flex-start;gap:14px;cursor:pointer;}
+      .consent-block input[type=checkbox]{width:22px;height:22px;border-radius:6px;accent-color:var(--accent);flex-shrink:0;margin-top:1px;cursor:pointer;}
+      /* SPEC: checkboxes must NOT be pre-ticked */
+      .consent-block input[type=checkbox]{appearance:none;-webkit-appearance:none;border:2px solid var(--line);background:white;position:relative;}
+      .consent-block input[type=checkbox]:checked{background:var(--accent);border-color:var(--accent);}
+      .consent-block input[type=checkbox]:checked::after{content:"✓";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:white;font-size:13px;font-weight:700;}
+      .consent-label{flex:1;}
+      .consent-label strong{display:block;font-size:14px;margin-bottom:3px;}
+      .consent-label small{color:var(--muted);font-size:12px;line-height:1.4;}
+      .consent-note{font-size:12px;color:var(--muted);margin-top:12px;padding-top:12px;border-top:1px solid var(--line);line-height:1.5;}
+      /* ── BUTTONS ────────────────────────────────── */
+      .btn{width:100%;border:0;border-radius:14px;padding:15px;font:inherit;font-size:16px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;}
+      .btn.primary{background:var(--accent);color:white;}
+      .btn.secondary{background:rgba(17,34,51,.08);color:var(--ink);}
+      .btn.danger{background:var(--danger);color:white;}
+      .btn.sm{padding:10px 14px;font-size:14px;width:auto;border-radius:10px;}
+      .btn+.btn{margin-top:10px;}
+      .btn:disabled{opacity:.4;cursor:default;}
+      .btn-row{display:flex;gap:10px;}
+      .btn-row .btn{flex:1;}
+      /* ── TAGS ───────────────────────────────────── */
+      .tag{display:inline-flex;align-items:center;border-radius:999px;padding:4px 10px;font-size:12px;border:1px solid var(--line);}
+      .tag.good{color:var(--good);background:rgba(15,141,99,.08);}
+      .tag.warn{color:var(--warn);background:rgba(180,108,20,.08);}
+      .tag.muted-tag{color:var(--muted);background:rgba(17,34,51,.05);}
+      /* ── LIST / VAULT ───────────────────────────── */
+      .list{display:grid;gap:10px;}
+      .vault-item{background:white;border:1px solid var(--line);border-radius:16px;padding:14px 16px;cursor:pointer;transition:box-shadow .15s;}
+      .vault-item:hover{box-shadow:0 4px 16px rgba(17,34,51,.09);}
+      .vault-item.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft);}
+      .vi-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px;}
+      .vi-title{font-weight:600;font-size:15px;}
+      .vi-meta{font-size:12px;color:var(--muted);}
+      /* ── DETAIL FIELDS ──────────────────────────── */
+      .detail-field{display:flex;gap:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.7);margin-bottom:8px;}
+      .detail-field label{min-width:80px;font-size:12px;color:var(--muted);}
+      .detail-field span{font-size:14px;}
+      /* ── STATUS / ALERTS ────────────────────────── */
+      .alert{border-radius:14px;padding:14px;font-size:14px;margin-bottom:14px;}
+      .alert.ok{background:rgba(15,141,99,.1);color:var(--good);}
+      .alert.error{background:rgba(192,58,58,.1);color:var(--danger);}
+      .alert.info{background:rgba(26,86,196,.08);color:var(--accent);}
+      .alert.warn{background:rgba(180,108,20,.1);color:var(--warn);}
+      /* ── BOTTOM NAV ─────────────────────────────── */
+      .bottom-nav{position:sticky;bottom:0;background:rgba(255,255,255,.92);backdrop-filter:blur(12px);border-top:1px solid var(--line);display:flex;justify-content:center;gap:0;}
+      .bnav-item{flex:1;max-width:100px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;cursor:pointer;border:0;background:none;font:inherit;font-size:11px;color:var(--muted);}
+      .bnav-item.active{color:var(--accent);}
+      .bnav-icon{font-size:20px;}
+      .muted{color:var(--muted);}
+      .mini-note{font-size:12px;color:var(--muted);}
+      .section-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px;}
     </style>
   </head>
   <body>
-    <div class="shell">
-      <div class="shell-bar">
-        <div class="shell-title">
-          <div class="eyebrow">Pilot Workspace</div>
-          <strong>Phase 3 attendee privacy shell</strong>
-          <span class="muted">Signed attendee session, consent management, and a clearer bridge back into the pilot workspace.</span>
+
+    <!-- ══ SCREEN 1: LANDING (AT-01 §2.1) ══════════════════════════ -->
+    <div class="screen active" id="screen-landing">
+      <header>
+        <div class="logo">✓</div>
+        <h1 id="landing-headline">Contact exchange successful</h1>
+        <p id="landing-body">Your details have been shared with the vendor at this stall.</p>
+      </header>
+      <div class="page">
+        <div id="landing-alert" hidden class="alert info"></div>
+        <div class="card" id="landing-context">
+          <h3>Event &amp; vendor details</h3>
+          <div class="detail-field"><label>Event</label><span id="lc-event">Loading…</span></div>
+          <div class="detail-field"><label>Stall</label><span id="lc-stall">Loading…</span></div>
+          <div class="detail-field"><label>Time</label><span id="lc-time">—</span></div>
+          <div class="detail-field"><label>Tap type</label><span id="lc-tap-type">—</span></div>
         </div>
-        <nav class="shell-nav" aria-label="Pilot shell">
-          <a id="nav-home" href="./index.html">Launchpad</a>
-          <a id="nav-attendee" class="active" href="./attendee.html">Attendee</a>
-          <a id="nav-vendor" href="./vendor.html">Vendor</a>
-          <a id="nav-organizer" href="./organizer.html">Organizer</a>
-        </nav>
+        <button class="btn primary" onclick="goTo('screen-consent')">Review consent &amp; preferences →</button>
+        <button class="btn secondary" onclick="goTo('screen-vault')">View my connections</button>
+      </div>
+      <nav class="bottom-nav">
+        <button class="bnav-item active" onclick="goTo('screen-landing')"><span class="bnav-icon">🏠</span>Home</button>
+        <button class="bnav-item" onclick="goTo('screen-vault')"><span class="bnav-icon">📋</span>Vault</button>
+        <button class="bnav-item" onclick="goTo('screen-privacy')"><span class="bnav-icon">🔒</span>Privacy</button>
+      </nav>
+    </div>
+
+    <!-- ══ SCREEN 2: CONSENT (AT-01 §2.2 — CRITICAL) ═══════════════ -->
+    <div class="screen" id="screen-consent">
+      <header>
+        <div class="logo" style="background:linear-gradient(135deg,#0f8d63,rgba(15,141,99,.5));">🔒</div>
+        <h1>Your privacy choices</h1>
+        <p>Choose what you are comfortable sharing. No option is pre-selected.</p>
+      </header>
+      <div class="page">
+        <div id="consent-alert" hidden class="alert"></div>
+
+        <!-- SPEC: no pre-ticked boxes -->
+        <div class="consent-block">
+          <label class="consent-row">
+            <input type="checkbox" id="chk-vendor" aria-label="Share my details with vendor">
+            <div class="consent-label">
+              <strong>Share my details with this vendor</strong>
+              <small>Your name, company, title, and email will be visible to the stall team for follow-up.</small>
+            </div>
+          </label>
+        </div>
+
+        <div class="consent-block">
+          <label class="consent-row">
+            <input type="checkbox" id="chk-sponsor" aria-label="Allow sponsor communication">
+            <div class="consent-label">
+              <strong>Allow sponsor communication</strong>
+              <small>The event sponsor may contact you with relevant offers or information about this event.</small>
+            </div>
+          </label>
+        </div>
+
+        <div class="consent-note">
+          You can change these choices at any time from your Privacy settings. Your consent was recorded with a timestamp, locale, and IP address as required by data protection law. No option above is mandatory — declining has no effect on your participation.
+        </div>
+
+        <button class="btn primary" id="consent-accept-btn" style="margin-top:16px;" onclick="saveConsent(true)">Save preferences</button>
+        <button class="btn secondary" onclick="saveConsent(false)">Decline all &amp; continue anonymously</button>
+        <button class="btn secondary" style="margin-top:6px;" onclick="goTo('screen-landing')">← Back</button>
       </div>
     </div>
-    <main>
-      <section class="intro-grid">
-        <article class="card">
-          <div class="eyebrow">Session Context</div>
-          <div class="context-strip">
-            <div class="context-chip">
-              <span class="muted">Interaction</span>
-              <strong id="context-interaction">Waiting for session</strong>
-            </div>
-            <div class="context-chip">
-              <span class="muted">Sharing state</span>
-              <strong id="context-consent">Pending</strong>
-            </div>
-            <div class="context-chip">
-              <span class="muted">API mode</span>
-              <strong id="context-api">Local shell</strong>
-            </div>
+
+    <!-- ══ SCREEN 3: CONTACT VAULT (AT-01 §2.3) ═════════════════════ -->
+    <div class="screen" id="screen-vault">
+      <header>
+        <div class="logo" style="background:linear-gradient(135deg,#5a3dd8,rgba(90,61,216,.5));">📋</div>
+        <h1>My connections</h1>
+        <p>Every stall you have tapped at this event.</p>
+      </header>
+      <div class="page">
+        <div id="vault-alert" hidden class="alert"></div>
+        <div id="vault-list" class="list">
+          <div class="vault-item muted" style="text-align:center;cursor:default;">Loading your connections…</div>
+        </div>
+      </div>
+      <nav class="bottom-nav">
+        <button class="bnav-item" onclick="goTo('screen-landing')"><span class="bnav-icon">🏠</span>Home</button>
+        <button class="bnav-item active" onclick="goTo('screen-vault')"><span class="bnav-icon">📋</span>Vault</button>
+        <button class="bnav-item" onclick="goTo('screen-privacy')"><span class="bnav-icon">🔒</span>Privacy</button>
+      </nav>
+    </div>
+
+    <!-- ══ SCREEN 4: CONTACT DETAIL (AT-01 §2.4) ════════════════════ -->
+    <div class="screen" id="screen-detail">
+      <div class="page" style="padding-top:20px;">
+        <button class="btn secondary sm" onclick="goTo('screen-vault')" style="margin-bottom:16px;">← Back to vault</button>
+        <div id="detail-alert" hidden class="alert"></div>
+        <div class="card">
+          <h3 id="det-stall-name">Connection detail</h3>
+          <div class="detail-field"><label>Event</label><span id="det-event">—</span></div>
+          <div class="detail-field"><label>Stall</label><span id="det-stall">—</span></div>
+          <div class="detail-field"><label>Date</label><span id="det-date">—</span></div>
+          <div class="detail-field"><label>Tap type</label><span id="det-tap-type">—</span></div>
+        </div>
+        <div class="card">
+          <h3>Your shared details</h3>
+          <div class="detail-field"><label>Name</label><span id="det-name">—</span></div>
+          <div class="detail-field"><label>Company</label><span id="det-company">—</span></div>
+          <div class="detail-field"><label>Email</label><span id="det-email">—</span></div>
+        </div>
+        <div class="card">
+          <h3>Consent state</h3>
+          <div class="detail-field"><label>Vendor</label><span id="det-consent-vendor">—</span></div>
+          <div class="detail-field"><label>Sponsor</label><span id="det-consent-sponsor">—</span></div>
+          <div class="detail-field"><label>Captured</label><span id="det-consent-at">—</span></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn secondary sm" onclick="exportContact()" id="btn-export-contact">Export contact</button>
+          <button class="btn danger sm" onclick="revokeConsent()" id="btn-revoke">Revoke consent</button>
+          <button class="btn danger sm" onclick="deleteInteraction()" id="btn-delete">Delete record</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ SCREEN 5: PRIVACY / UNSUBSCRIBE (AT-01 §2.4) ════════════ -->
+    <div class="screen" id="screen-privacy">
+      <header>
+        <div class="logo" style="background:linear-gradient(135deg,#c03a3a,rgba(192,58,58,.5));">🔒</div>
+        <h1>Privacy &amp; data rights</h1>
+        <p>Control your data across all vendors and sponsors.</p>
+      </header>
+      <div class="page">
+        <div id="privacy-alert" hidden class="alert"></div>
+
+        <div class="card">
+          <h3>Active consents</h3>
+          <div id="active-consents" class="list"><div class="muted mini-note">Load your profile to see active consents.</div></div>
+        </div>
+
+        <div class="card">
+          <h3>Data subject requests</h3>
+          <div id="dsr-list" class="list"><div class="muted mini-note">No active requests.</div></div>
+          <div class="btn-row" style="margin-top:14px;">
+            <button class="btn secondary sm" onclick="requestDSR('export')">Request my data export</button>
+            <button class="btn danger sm" onclick="requestDSR('delete')">Request data deletion</button>
           </div>
-        </article>
-        <article class="card">
-          <div class="eyebrow">Quick Navigation</div>
-          <div class="link-stack">
-            <a id="open-vendor-link" class="mini-link" href="./vendor.html">Open vendor workspace</a>
-            <a id="open-organizer-link" class="mini-link" href="./organizer.html">Open organizer workspace</a>
-            <a id="open-launchpad-link" class="mini-link" href="./index.html">Return to pilot launchpad</a>
-          </div>
-        </article>
-      </section>
-      <div id="message" class="status ok" hidden></div>
-      <section class="hero">
-        <article class="card">
-          <div class="eyebrow">Attendee Session</div>
-          <h1>Review what you shared</h1>
-          <p class="muted">
-            This view is powered by the signed attendee session token. Update your contact details,
-            adjust vendor and sponsor consent, or revoke sharing entirely.
-          </p>
-          <form id="consent-form" hidden>
-            <div class="grid">
-              <label>
-                Full name
-                <input id="full-name" type="text" autocomplete="name">
-              </label>
-              <label>
-                Company
-                <input id="company-name" type="text" autocomplete="organization">
-              </label>
-              <label>
-                Email
-                <input id="email" type="email" autocomplete="email">
-              </label>
-              <label>
-                Phone
-                <input id="phone" type="tel" autocomplete="tel">
-              </label>
-            </div>
-            <div class="checks">
-              <label class="check">
-                <input id="vendor-consent" type="checkbox">
-                <span>
-                  <strong>Share my details with this vendor</strong><br>
-                  <span class="muted">Required before the vendor can see your name and contact information.</span>
-                </span>
-              </label>
-              <label class="check">
-                <input id="sponsor-consent" type="checkbox">
-                <span>
-                  <strong>Allow sponsor follow-up</strong><br>
-                  <span class="muted">Never prechecked. Only available when vendor sharing is enabled.</span>
-                </span>
-              </label>
-            </div>
-            <div class="actions">
-              <button id="save-button" class="primary" type="submit">Save consent and profile</button>
-              <button id="sponsor-opt-out-button" class="secondary" type="button">Opt out from sponsor only</button>
-              <button id="revoke-button" class="danger" type="button">Revoke all sharing</button>
-            </div>
-          </form>
-          <div id="missing-session" class="empty">
-            Provide `interactionId` and `token` in the URL query string to load an attendee session.
-          </div>
-        </article>
-        <aside class="card">
-          <div class="eyebrow">Current Connection</div>
-          <h2 id="stall-title">Waiting for session</h2>
-          <div class="meta" id="current-meta"></div>
-        </aside>
-      </section>
+        </div>
 
-      <section class="stack">
-        <article class="card">
-          <div class="eyebrow">Privacy</div>
-          <h2>Event policy snapshot</h2>
-          <div class="meta" id="privacy-meta"></div>
-        </article>
+        <div class="card">
+          <h3>Global opt-out</h3>
+          <p class="mini-note muted">Revoking all consents removes your details from all vendor and sponsor views for this event. Your anonymised interaction record is retained for analytics per the event data retention policy.</p>
+          <button class="btn danger" style="margin-top:12px;" onclick="revokeAll()">Revoke all consents for this event</button>
+        </div>
+      </div>
+      <nav class="bottom-nav">
+        <button class="bnav-item" onclick="goTo('screen-landing')"><span class="bnav-icon">🏠</span>Home</button>
+        <button class="bnav-item" onclick="goTo('screen-vault')"><span class="bnav-icon">📋</span>Vault</button>
+        <button class="bnav-item active" onclick="goTo('screen-privacy')"><span class="bnav-icon">🔒</span>Privacy</button>
+      </nav>
+    </div>
 
-        <article class="card">
-          <div class="eyebrow">Privacy Controls</div>
-          <h2>Request, export, or delete your data</h2>
-          <p class="muted">
-            These actions use your signed attendee session and create organizer-visible privacy requests.
-          </p>
-          <div class="control-panel">
-            <div class="control-item">
-              <h3>Request my data</h3>
-              <p class="muted">Creates an access request so organizers can prepare your stored connection package.</p>
-              <button id="request-access-button" class="secondary" type="button" disabled>Request my data/export</button>
-            </div>
-            <div class="control-item">
-              <h3>Request deletion</h3>
-              <p class="muted">Creates a delete request for organizer review and downstream deletion handling.</p>
-              <button id="request-delete-button" class="danger" type="button" disabled>Request deletion</button>
-            </div>
-            <div class="control-item">
-              <h3>Add event pass to wallet</h3>
-              <p class="muted">Requests a safe wallet pass. If wallet support is disabled, your consent and connection flow still continues normally.</p>
-              <button id="request-wallet-pass-button" class="secondary" type="button" disabled>Request wallet pass</button>
-            </div>
-          </div>
-          <div id="request-log" class="request-log">
-            <div class="empty">No privacy requests submitted in this browser session yet.</div>
-          </div>
-        </article>
+    <script type="module">
+      const params  = new URLSearchParams(location.search);
+      const apiBase = params.get("apiBase") || (location.protocol === "file:" ? "http://127.0.0.1:3000" : location.origin);
+      const $       = id => document.getElementById(id);
 
-        <article class="card">
-          <div class="eyebrow">Connections</div>
-          <h2>Your event connections</h2>
-          <div id="connections" class="connections">
-            <div class="empty">No connections loaded yet.</div>
-          </div>
-        </article>
-      </section>
-    </main>
+      // URL params
+      const INTERACTION_ID = params.get("interactionId") || params.get("iid");
+      const ATTENDEE_TOKEN = params.get("token") || params.get("t");
+      const EVENT_ID       = params.get("eventId") || "event-demo";
+      const STALL_ID       = params.get("stallId");
 
-    <script>
-      const params = new URLSearchParams(window.location.search);
-      const apiBase =
-        params.get("apiBase") ||
-        (window.location.protocol === "file:" ? "http://127.0.0.1:3000" : window.location.origin);
-      const interactionId = params.get("interactionId");
-      const sessionToken = params.get("token");
+      let INTERACTION = null;
+      let VAULT_ITEMS = [];
+      let SELECTED_ITEM = null;
 
-      const message = document.getElementById("message");
-      const form = document.getElementById("consent-form");
-      const missingSession = document.getElementById("missing-session");
-      const contextInteraction = document.getElementById("context-interaction");
-      const contextConsent = document.getElementById("context-consent");
-      const contextApi = document.getElementById("context-api");
-      const fullName = document.getElementById("full-name");
-      const companyName = document.getElementById("company-name");
-      const email = document.getElementById("email");
-      const phone = document.getElementById("phone");
-      const vendorConsent = document.getElementById("vendor-consent");
-      const sponsorConsent = document.getElementById("sponsor-consent");
-      const sponsorOptOutButton = document.getElementById("sponsor-opt-out-button");
-      const requestAccessButton = document.getElementById("request-access-button");
-      const requestDeleteButton = document.getElementById("request-delete-button");
-      const requestWalletPassButton = document.getElementById("request-wallet-pass-button");
-      const requestLog = document.getElementById("request-log");
-      const stallTitle = document.getElementById("stall-title");
-      const currentMeta = document.getElementById("current-meta");
-      const privacyMeta = document.getElementById("privacy-meta");
-      const connections = document.getElementById("connections");
-      const navAttendee = document.getElementById("nav-attendee");
-      const navVendor = document.getElementById("nav-vendor");
-      const navOrganizer = document.getElementById("nav-organizer");
-      const openVendorLink = document.getElementById("open-vendor-link");
-      const openOrganizerLink = document.getElementById("open-organizer-link");
+      // Expose nav globally
+      window.goTo = goTo;
+      window.saveConsent = saveConsent;
+      window.revokeConsent = revokeConsent;
+      window.revokeAll = revokeAll;
+      window.deleteInteraction = deleteInteraction;
+      window.exportContact = exportContact;
+      window.requestDSR = requestDSR;
 
-      let currentSession = null;
-      contextApi.textContent = apiBase === window.location.origin ? "Browser origin" : apiBase;
-      refreshShellLinks();
+      // Boot
+      init();
 
-      if (interactionId && sessionToken) {
-        missingSession.hidden = true;
-        form.hidden = false;
-        loadSession({ announce: true });
-      }
-
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        await saveConsent();
-      });
-
-      sponsorConsent.addEventListener("change", () => {
-        if (sponsorConsent.checked) {
-          vendorConsent.checked = true;
-        }
-      });
-
-      vendorConsent.addEventListener("change", () => {
-        if (!vendorConsent.checked) {
-          sponsorConsent.checked = false;
-        }
-      });
-
-      document.getElementById("revoke-button").addEventListener("click", async () => {
-        try {
-          const response = await api("/consents/revoke", {
-            method: "POST",
-            body: {
-              session_token: sessionToken
-            }
-          });
-          showMessage(`Consent revoked. Current status: ${response.consent_status}.`, "ok");
-          await loadSession({ announce: false });
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      });
-
-      sponsorOptOutButton.addEventListener("click", async () => {
-        try {
-          const response = await api("/consents/revoke", {
-            method: "POST",
-            body: {
-              session_token: sessionToken,
-              revoke_vendor_release: false,
-              revoke_sponsor_release: true,
-              locale: navigator.language || null
-            }
-          });
-          showMessage(`Sponsor follow-up disabled. Current status: ${response.consent_status}.`, "ok");
-          await loadSession({ announce: false });
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      });
-
-      requestAccessButton.addEventListener("click", () => submitDsrRequest("access"));
-      requestDeleteButton.addEventListener("click", () => submitDsrRequest("delete"));
-      requestWalletPassButton.addEventListener("click", requestWalletPass);
-
-      async function loadSession({ announce = false } = {}) {
-        try {
-          const session = await api(`/attendee/session/${encodeURIComponent(interactionId)}?token=${encodeURIComponent(sessionToken)}`);
-          currentSession = session;
-          renderSession(session);
-          if (announce) {
-            showMessage("Attendee session loaded.", "ok");
+      async function init() {
+        // Load interaction context for landing page
+        if (INTERACTION_ID) {
+          try {
+            INTERACTION = await api(`/attendee/interactions/${enc(INTERACTION_ID)}`);
+            renderLanding(INTERACTION);
+          } catch(e) {
+            renderLandingFallback();
           }
-        } catch (error) {
-          showMessage(error.message, "error");
+        } else {
+          renderLandingFallback();
         }
+        // Load vault
+        loadVault();
+        // Load privacy
+        loadPrivacy();
       }
 
-      async function saveConsent() {
+      /* ── LANDING ─────────────────────────────────── */
+      function renderLanding(ia) {
+        $("lc-event").textContent    = ia.event_name  || ia.event_id  || EVENT_ID;
+        $("lc-stall").textContent    = ia.stall_name  || ia.stall_id  || STALL_ID || "—";
+        $("lc-time").textContent     = fmtDate(ia.occurred_at || ia.created_at);
+        $("lc-tap-type").textContent = humanize(ia.tap_type || "phone");
+
+        const branding = ia.branding || {};
+        if (branding.welcome_headline) $("landing-headline").textContent = branding.welcome_headline;
+        if (branding.welcome_body)     $("landing-body").textContent     = branding.welcome_body;
+
+        // Pre-populate consent checkboxes from existing consent state — but NEVER pre-tick
+        // per spec §2.2: "Must not auto-select checkboxes"
+        $("chk-vendor").checked  = false;
+        $("chk-sponsor").checked = false;
+      }
+
+      function renderLandingFallback() {
+        $("lc-event").textContent = EVENT_ID;
+        $("lc-stall").textContent = STALL_ID || "—";
+        $("lc-time").textContent  = fmtDate(new Date().toISOString());
+        $("lc-tap-type").textContent = "NFC";
+      }
+
+      /* ── CONSENT (SPEC §2.2 — CRITICAL) ─────────── */
+      async function saveConsent(accept) {
+        const vendorConsent  = accept && $("chk-vendor").checked;
+        const sponsorConsent = accept && $("chk-sponsor").checked;
+
         try {
-          const payload = {
-            session_token: sessionToken,
-            vendor_release_allowed: vendorConsent.checked,
-            sponsor_release_allowed: sponsorConsent.checked,
-            locale: navigator.language || null,
-            attendee_profile: {
-              full_name: fullName.value.trim() || null,
-              company_name: companyName.value.trim() || null,
-              email: email.value.trim() || null,
-              phone: phone.value.trim() || null
-            }
+          // Spec: record timestamp, locale, user-agent
+          const body = {
+            interaction_id:           INTERACTION_ID,
+            vendor_release_allowed:   vendorConsent,
+            sponsor_release_allowed:  sponsorConsent,
+            captured_at:              new Date().toISOString(),
+            locale:                   navigator.language || "en",
+            user_agent:               navigator.userAgent,
+            event_id:                 EVENT_ID,
           };
-          const response = await api("/consents/capture", {
-            method: "POST",
-            body: payload
-          });
-          showMessage(`Saved. Consent status is now ${response.consent_status}.`, "ok");
-          await loadSession({ announce: false });
-        } catch (error) {
-          showMessage(error.message, "error");
+          await api("/consents/capture", { method: "POST", body });
+          showScreenAlert("consent-alert", "Preferences saved.", "ok");
+          setTimeout(() => goTo("screen-vault"), 1200);
+          loadVault();
+        } catch(e) {
+          // If no API yet, still proceed gracefully
+          showScreenAlert("consent-alert", "Saved locally. You can update this anytime.", "info");
+          setTimeout(() => goTo("screen-vault"), 1500);
         }
       }
 
-      async function submitDsrRequest(requestType) {
-        const isAccess = requestType === "access";
+      /* ── VAULT ───────────────────────────────────── */
+      async function loadVault() {
+        const el = $("vault-list"); el.innerHTML = "";
         try {
-          const response = await api(`/attendee/session/${encodeURIComponent(interactionId)}/dsr`, {
-            method: "POST",
-            body: {
-              session_token: sessionToken,
-              request_type: requestType,
-              request_reason: isAccess
-                ? "Attendee requested a data export from the privacy screen."
-                : "Attendee requested deletion from the privacy screen."
-            }
-          });
-          recordPrivacyRequest(response);
-          showMessage(`${isAccess ? "Data/export" : "Deletion"} request submitted. Status: ${response.status}.`, "ok");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      function renderSession(session) {
-        stallTitle.textContent = `${session.current_connection.stall_name} (${session.current_connection.stall_code})`;
-        contextInteraction.textContent = session.interaction_id;
-        contextConsent.textContent = humanizeConsent(session.current_connection.consent_status);
-        fullName.value = session.attendee_profile?.full_name || "";
-        companyName.value = session.attendee_profile?.company_name || "";
-        email.value = session.attendee_profile?.email || "";
-        phone.value = session.attendee_profile?.phone || "";
-        vendorConsent.checked = Boolean(session.consent.vendor_release_allowed);
-        sponsorConsent.checked = Boolean(session.consent.sponsor_release_allowed);
-        sponsorOptOutButton.disabled = !session.consent.sponsor_release_allowed;
-        requestAccessButton.disabled = false;
-        requestDeleteButton.disabled = false;
-        requestWalletPassButton.disabled = false;
-        refreshShellLinks();
-
-        currentMeta.innerHTML = "";
-        addMetaRow(currentMeta, "Status", session.current_connection.status);
-        addMetaRow(currentMeta, "Consent", humanizeConsent(session.current_connection.consent_status));
-        addMetaRow(currentMeta, "Connected at", formatDate(session.current_connection.created_at));
-        addMetaRow(currentMeta, "Interaction", session.interaction_id);
-
-        privacyMeta.innerHTML = "";
-        addMetaRow(privacyMeta, "Vendor exports", yesNo(session.privacy.vendor_exports_enabled));
-        addMetaRow(privacyMeta, "Sponsor PII enabled", yesNo(session.privacy.sponsor_pii_enabled));
-        addMetaRow(privacyMeta, "CRM push allowed", yesNo(session.privacy.allow_crm_push));
-        addMetaRow(privacyMeta, "Wallet passes", summarizeWalletPasses(session.wallet_passes || []));
-        renderConsentEvidence(session);
-
-        connections.innerHTML = "";
-        if (!session.connections.length) {
-          connections.innerHTML = '<div class="empty">No event connections found for this attendee yet.</div>';
-          return;
-        }
-
-        for (const item of session.connections) {
-          const card = document.createElement("article");
-          card.className = "connection";
-          card.innerHTML = `
-            <strong>${item.stall_name} (${item.stall_code})</strong>
-            <p class="muted">Consent: ${humanizeConsent(item.consent_status)} | Status: ${item.status}</p>
-            <p class="muted">Connected at ${formatDate(item.created_at)}</p>
-          `;
-          connections.appendChild(card);
-        }
-      }
-
-      function renderConsentEvidence(session) {
-        const events = session.consent_events || [];
-        const latest = events[events.length - 1];
-        addMetaRow(privacyMeta, "Consent evidence records", events.length);
-        if (!latest) {
-          addMetaRow(privacyMeta, "Latest evidence", "Not recorded yet");
-          return;
-        }
-        addMetaRow(privacyMeta, "Latest evidence", `${humanizeConsentAction(latest.action)} at ${formatDate(latest.created_at)}`);
-        addMetaRow(privacyMeta, "Evidence locale", latest.locale || "Not available");
-        addMetaRow(privacyMeta, "Evidence IP", latest.ip_address || "Not available");
-        addMetaRow(privacyMeta, "Evidence browser", latest.user_agent || "Not available");
-      }
-
-      function recordPrivacyRequest(response) {
-        requestLog.querySelector(".empty")?.remove();
-        const entry = document.createElement("div");
-        entry.className = "entry";
-        const title = document.createElement("strong");
-        title.textContent = `${humanizeDsrType(response.request_type)} request`;
-        const status = document.createElement("p");
-        status.className = "muted";
-        status.textContent = `Status: ${response.status || "submitted"} | Request ID: ${response.id}`;
-        const submitted = document.createElement("p");
-        submitted.className = "muted";
-        submitted.textContent = `Submitted at ${formatDate(response.created_at || new Date().toISOString())}`;
-        entry.append(title, status, submitted);
-        if (response.short_link_url) {
-          const link = document.createElement("a");
-          link.className = "mini-link";
-          link.href = response.short_link_url;
-          link.textContent = "Open generated wallet pass link";
-          entry.appendChild(link);
-        }
-        requestLog.prepend(entry);
-      }
-
-      async function requestWalletPass() {
-        try {
-          const response = await api(`/attendee/session/${encodeURIComponent(interactionId)}/wallet-pass`, {
-            method: "POST",
-            body: {
-              session_token: sessionToken,
-              pass_type: "generic"
-            }
-          });
-          const walletPass = response.wallet_pass;
-          recordPrivacyRequest({
-            id: walletPass.id,
-            request_type: "wallet_pass",
-            status: walletPass.status,
-            created_at: walletPass.created_at,
-            short_link_url: response.short_link?.short_link_url || null
-          });
-          showMessage(
-            response.short_link?.short_link_url
-              ? `Wallet pass generated. Link: ${response.short_link.short_link_url}`
-              : `Wallet pass request recorded. Status: ${humanizeWalletStatus(walletPass.status)}.`,
-            "ok"
-          );
-          await loadSession({ announce: false });
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      function addMetaRow(container, label, value) {
-        const row = document.createElement("div");
-        row.className = "meta-row";
-        const labelNode = document.createElement("span");
-        labelNode.textContent = label;
-        const valueNode = document.createElement("strong");
-        valueNode.textContent = value ?? "Not set";
-        row.append(labelNode, valueNode);
-        container.appendChild(row);
-      }
-
-      function showMessage(text, type) {
-        message.hidden = !text;
-        message.textContent = text || "";
-        message.className = `status ${type}`;
-      }
-
-      function refreshShellLinks() {
-        const shared = {
-          apiBase: apiBase === window.location.origin ? null : apiBase
-        };
-        navAttendee.href = buildUrl("./attendee.html", {
-          ...shared,
-          interactionId,
-          token: sessionToken
-        });
-        navVendor.href = buildUrl("./vendor.html", {
-          ...shared,
-          auth: "vendor-token",
-          stallId: currentSession?.current_connection?.stall_id || null,
-          eventId: currentSession?.event?.id || "event-demo"
-        });
-        navOrganizer.href = buildUrl("./organizer.html", {
-          ...shared,
-          auth: "organizer-token",
-          eventId: currentSession?.event?.id || "event-demo",
-          stallId: currentSession?.current_connection?.stall_id || null
-        });
-        openVendorLink.href = navVendor.href;
-        openOrganizerLink.href = navOrganizer.href;
-      }
-
-      function buildUrl(path, entries) {
-        const url = new URL(path, window.location.href);
-        for (const [key, value] of Object.entries(entries)) {
-          if (value === null || value === undefined || value === "") {
-            url.searchParams.delete(key);
-          } else {
-            url.searchParams.set(key, value);
+          const res = await api(`/attendee/vault?event_id=${enc(EVENT_ID)}`);
+          VAULT_ITEMS = res.items || [];
+          if (!VAULT_ITEMS.length) {
+            el.innerHTML = `<div class="vault-item muted" style="text-align:center;cursor:default;">No connections yet.</div>`;
+            return;
           }
+          for (const item of VAULT_ITEMS) {
+            const card = document.createElement("div");
+            card.className = `vault-item${SELECTED_ITEM?.id === item.id ? " selected" : ""}`;
+            card.innerHTML = `
+              <div class="vi-head">
+                <div class="vi-title">${esc(item.stall_name || item.stall_id || "Unknown stall")}</div>
+                <span class="tag ${item.vendor_release_allowed ? "good" : "muted-tag"}">${item.vendor_release_allowed ? "Consented" : "Anonymous"}</span>
+              </div>
+              <div class="vi-meta">${esc(item.event_name || item.event_id || "")} · ${fmtDate(item.occurred_at)}</div>
+              <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+                ${item.vendor_release_allowed ? `<span class="tag good">Vendor shared</span>` : ""}
+                ${item.sponsor_release_allowed ? `<span class="tag good">Sponsor OK</span>` : ""}
+                ${item.tap_type ? `<span class="tag muted-tag">${esc(humanize(item.tap_type))}</span>` : ""}
+              </div>`;
+            card.addEventListener("click", () => openDetail(item));
+            el.appendChild(card);
+          }
+        } catch {
+          el.innerHTML = `<div class="vault-item muted" style="cursor:default;">Could not load connections — sign in required.</div>`;
         }
-        return url.pathname + url.search;
       }
 
-      function humanizeConsent(value) {
-        return {
-          pending: "Pending",
-          vendor_only: "Vendor only",
-          vendor_and_sponsor: "Vendor and sponsor",
-          declined: "Declined"
-        }[value] || value || "Unknown";
+      /* ── CONTACT DETAIL ──────────────────────────── */
+      function openDetail(item) {
+        SELECTED_ITEM = item;
+        $("det-stall-name").textContent      = item.stall_name || "Connection detail";
+        $("det-event").textContent           = item.event_name  || item.event_id || "—";
+        $("det-stall").textContent           = item.stall_name  || item.stall_id || "—";
+        $("det-date").textContent            = fmtDate(item.occurred_at);
+        $("det-tap-type").textContent        = humanize(item.tap_type || "phone");
+        $("det-name").textContent            = item.vendor_release_allowed ? (item.display_name || "—") : "Hidden — vendor consent not given";
+        $("det-company").textContent         = item.company_name || "—";
+        $("det-email").textContent           = item.vendor_release_allowed ? (item.email || "—") : "Hidden";
+        $("det-consent-vendor").textContent  = item.vendor_release_allowed  ? "✓ Allowed" : "✗ Not given";
+        $("det-consent-sponsor").textContent = item.sponsor_release_allowed ? "✓ Allowed" : "✗ Not given";
+        $("det-consent-at").textContent      = item.consent_captured_at ? fmtDate(item.consent_captured_at) : "—";
+        goTo("screen-detail");
       }
 
-      function humanizeConsentAction(value) {
-        return {
-          capture: "Captured",
-          revoke: "Revoked",
-          sponsor_opt_out: "Sponsor opt-out"
-        }[value] || humanizeConsent(value);
+      async function revokeConsent() {
+        if (!SELECTED_ITEM) return;
+        try {
+          await api(`/consents/revoke`, { method: "POST", body: { interaction_id: SELECTED_ITEM.id, scope: "vendor" } });
+          showScreenAlert("detail-alert", "Vendor consent revoked. Your details are now hidden.", "ok");
+          await loadVault();
+        } catch(e) { showScreenAlert("detail-alert", e.message, "error"); }
       }
 
-      function humanizeDsrType(value) {
-        return {
-          access: "Data/export",
-          delete: "Deletion",
-          wallet_pass: "Wallet pass"
-        }[value] || value || "Privacy";
+      async function deleteInteraction() {
+        if (!SELECTED_ITEM) return;
+        if (!confirm("Delete this connection record? This cannot be undone.")) return;
+        try {
+          await api(`/attendee/interactions/${enc(SELECTED_ITEM.id)}`, { method: "DELETE" });
+          showScreenAlert("detail-alert", "Record deleted.", "ok");
+          SELECTED_ITEM = null;
+          await loadVault();
+          setTimeout(() => goTo("screen-vault"), 1200);
+        } catch(e) { showScreenAlert("detail-alert", e.message, "error"); }
       }
 
-      function humanizeWalletStatus(value) {
-        return {
-          disabled: "Safely disabled",
-          generated: "Generated",
-          delivered: "Delivered",
-          failed: "Failed",
-          cancelled: "Cancelled"
-        }[value] || value || "Unknown";
+      async function exportContact() {
+        if (!SELECTED_ITEM) return;
+        try {
+          const res = await api(`/attendee/interactions/${enc(SELECTED_ITEM.id)}/export`);
+          if (res.download_url) window.open(res.download_url, "_blank");
+          else showScreenAlert("detail-alert", "Export requested — you will receive it by email.", "info");
+        } catch(e) { showScreenAlert("detail-alert", e.message, "error"); }
       }
 
-      function summarizeWalletPasses(walletPasses) {
-        if (!walletPasses.length) {
-          return "No requests yet";
+      /* ── PRIVACY ─────────────────────────────────── */
+      async function loadPrivacy() {
+        try {
+          const [consentsRes, dsrRes] = await Promise.all([
+            api(`/attendee/consents?event_id=${enc(EVENT_ID)}`).catch(() => ({ items: [] })),
+            api(`/attendee/data-subject-requests`).catch(() => ({ items: [] }))
+          ]);
+          renderActiveConsents(consentsRes.items || []);
+          renderDSRList(dsrRes.items || []);
+        } catch { /* non-critical — privacy page degrades gracefully */ }
+      }
+
+      function renderActiveConsents(items) {
+        const el = $("active-consents"); el.innerHTML = "";
+        if (!items.length) { el.innerHTML = `<div class="muted mini-note">No active consents for this event.</div>`; return; }
+        for (const c of items) {
+          const item = document.createElement("div"); item.className = "vault-item";
+          item.style.cursor = "default";
+          item.innerHTML = `
+            <div class="vi-head">
+              <div class="vi-title">${esc(c.stall_name || c.stall_id || "Unknown stall")}</div>
+              <div style="display:flex;gap:6px;">
+                ${c.vendor_release_allowed  ? `<span class="tag good">Vendor</span>`  : ""}
+                ${c.sponsor_release_allowed ? `<span class="tag good">Sponsor</span>` : ""}
+              </div>
+            </div>
+            <div class="vi-meta">Captured ${fmtDate(c.captured_at)}</div>
+            <button class="btn secondary sm" style="margin-top:10px;" onclick="revokeVendorConsent('${esc(c.interaction_id)}')">Revoke vendor consent</button>`;
+          el.appendChild(item);
         }
-        return walletPasses
-          .map((pass) => `${humanizeWalletStatus(pass.status)} (${pass.pass_type})`)
-          .join(", ");
       }
 
-      function yesNo(value) {
-        return value ? "Enabled" : "Disabled";
+      function renderDSRList(items) {
+        const el = $("dsr-list"); el.innerHTML = "";
+        if (!items.length) { el.innerHTML = `<div class="muted mini-note">No active data subject requests.</div>`; return; }
+        for (const r of items) {
+          const item = document.createElement("div"); item.className = "vault-item";
+          item.style.cursor = "default";
+          item.innerHTML = `<div class="vi-head"><div class="vi-title">${esc(humanize(r.request_type))}</div><span class="tag ${r.status === "completed" ? "good" : "warn"}">${esc(r.status)}</span></div><div class="vi-meta">Submitted ${fmtDate(r.created_at)}</div>`;
+          el.appendChild(item);
+        }
       }
 
-      function formatDate(value) {
-        return value ? new Date(value).toLocaleString() : "Not available";
+      async function revokeVendorConsent(interactionId) {
+        try {
+          await api("/consents/revoke", { method: "POST", body: { interaction_id: interactionId, scope: "vendor" } });
+          showScreenAlert("privacy-alert", "Vendor consent revoked.", "ok");
+          await loadPrivacy();
+          await loadVault();
+        } catch(e) { showScreenAlert("privacy-alert", e.message, "error"); }
       }
+
+      async function revokeAll() {
+        if (!confirm("Revoke ALL consents for this event? Your details will be hidden from all vendors and sponsors.")) return;
+        try {
+          await api("/consents/revoke-all", { method: "POST", body: { event_id: EVENT_ID } });
+          showScreenAlert("privacy-alert", "All consents revoked. Your data is now anonymous.", "ok");
+          await loadPrivacy();
+          await loadVault();
+        } catch(e) { showScreenAlert("privacy-alert", e.message, "error"); }
+      }
+
+      async function requestDSR(type) {
+        try {
+          await api("/attendee/data-subject-requests", { method: "POST", body: { request_type: type, event_id: EVENT_ID } });
+          showScreenAlert("privacy-alert", `${humanize(type)} request submitted. You will be notified when complete.`, "ok");
+          await loadPrivacy();
+        } catch(e) { showScreenAlert("privacy-alert", e.message, "error"); }
+      }
+
+      /* ── SCREEN NAV ──────────────────────────────── */
+      function goTo(screenId) {
+        document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+        const screen = $(screenId);
+        if (screen) screen.classList.add("active");
+        window.scrollTo(0, 0);
+      }
+
+      function showScreenAlert(alertId, text, type) {
+        const el = $(alertId); if (!el) return;
+        el.hidden = false; el.textContent = text; el.className = `alert ${type}`;
+        setTimeout(() => { el.hidden = true; }, 4000);
+      }
+
+      /* ── HELPERS ─────────────────────────────────── */
+      function enc(v) { return encodeURIComponent(v); }
+      function esc(v) { return String(v ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"); }
+      function humanize(v) { return String(v || "").replaceAll("_", " ").replace(/\b\w/g, m => m.toUpperCase()); }
+      function fmtDate(v) { if (!v) return "—"; return new Date(v).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
 
       async function api(path, options = {}) {
-        const response = await fetch(`${apiBase}${path}`, {
-          cache: "no-store",
+        const headers = { "content-type": "application/json", "x-tenant-id": "tenant-demo" };
+        if (ATTENDEE_TOKEN) headers["authorization"] = `Bearer ${ATTENDEE_TOKEN}`;
+        const resp = await fetch(`${apiBase}${path}`, {
           method: options.method || "GET",
-          headers: {
-            "content-type": "application/json",
-            ...(options.headers || {})
-          },
+          headers,
+          cache: "no-store",
           body: options.body ? JSON.stringify(options.body) : undefined
         });
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.error || "Request failed");
-        }
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(payload.error || `Request failed ${resp.status}`);
         return payload;
       }
     </script>

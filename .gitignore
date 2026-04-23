@@ -1,45 +1,9 @@
-# Node
 node_modules/
-.npm/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-*.log
-
-# Environment / secrets — NEVER commit these
 .env
 .env.*
 !.env.example
-*.key
-*.pem
-*.p12
-*.pfx
-
-# OS artefacts
+*.log
 .DS_Store
-.DS_Store?
-._*
-Thumbs.db
-ehthumbs.db
-
-# Build outputs
 dist/
 build/
 .cache/
-.parcel-cache/
-coverage/
-
-# IDE
-.vscode/settings.json
-.vscode/launch.json
-.idea/
-*.swp
-*.swo
-
-# Migration lock state (keep SQL files, not run state)
-*.migration-lock
-.migrate
-
-# Temp
-tmp/
-temp/
