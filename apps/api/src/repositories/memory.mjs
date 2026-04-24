@@ -112,27 +112,56 @@ export function createMemoryRepositories(state) {
       }
     },
     events: {
+      async create(record) {
+        state.events.push(record);
+        return record;
+      },
       async findById(tenantId, id) {
         return findById(state.events, tenantId, id, "Event");
       },
       async listByTenant(tenantId) {
         return state.events.filter((entry) => entry.tenant_id === tenantId);
       },
+      async listByIds(tenantId, ids) {
+        const set = new Set(ids);
+        return state.events.filter((entry) => entry.tenant_id === tenantId && set.has(entry.id));
+      },
       async update(record) {
         const index = state.events.findIndex((entry) => entry.id === record.id);
-        if (index === -1) {
-          throw new HttpError(404, "Event not found");
-        }
+        if (index === -1) throw new HttpError(404, "Event not found");
         state.events[index] = record;
         return record;
       }
     },
     halls: {
+      async create(record) {
+        state.halls.push(record);
+        return record;
+      },
       async findById(tenantId, id) {
         return findById(state.halls, tenantId, id, "Hall");
+      },
+      async listByEvent(tenantId, eventId) {
+        return state.halls.filter((entry) => entry.tenant_id === tenantId && entry.event_id === eventId);
+      },
+      async update(record) {
+        const index = state.halls.findIndex((entry) => entry.id === record.id);
+        if (index === -1) throw new HttpError(404, "Hall not found");
+        state.halls[index] = record;
+        return record;
+      },
+      async deleteById(tenantId, id) {
+        const index = state.halls.findIndex((entry) => entry.tenant_id === tenantId && entry.id === id);
+        if (index === -1) throw new HttpError(404, "Hall not found");
+        const [deleted] = state.halls.splice(index, 1);
+        return deleted;
       }
     },
     stalls: {
+      async create(record) {
+        state.stalls.push(record);
+        return record;
+      },
       async findById(tenantId, id) {
         return findById(state.stalls, tenantId, id, "Stall");
       },
@@ -141,6 +170,65 @@ export function createMemoryRepositories(state) {
       },
       async listByEvent(tenantId, eventId) {
         return state.stalls.filter((entry) => entry.tenant_id === tenantId && entry.event_id === eventId);
+      },
+      async update(record) {
+        const index = state.stalls.findIndex((entry) => entry.id === record.id);
+        if (index === -1) throw new HttpError(404, "Stall not found");
+        state.stalls[index] = record;
+        return record;
+      },
+      async deleteById(tenantId, id) {
+        const index = state.stalls.findIndex((entry) => entry.tenant_id === tenantId && entry.id === id);
+        if (index === -1) throw new HttpError(404, "Stall not found");
+        const [deleted] = state.stalls.splice(index, 1);
+        return deleted;
+      }
+    },
+    sponsorPackages: {
+      async create(record) {
+        state.sponsorPackages.push(record);
+        return record;
+      },
+      async findById(tenantId, id) {
+        return findById(state.sponsorPackages, tenantId, id, "Sponsor package");
+      },
+      async listByEvent(tenantId, eventId) {
+        return state.sponsorPackages.filter(
+          (entry) => entry.tenant_id === tenantId && entry.event_id === eventId
+        );
+      },
+      async update(record) {
+        const index = state.sponsorPackages.findIndex((entry) => entry.id === record.id);
+        if (index === -1) throw new HttpError(404, "Sponsor package not found");
+        state.sponsorPackages[index] = record;
+        return record;
+      },
+      async deleteById(tenantId, id) {
+        const index = state.sponsorPackages.findIndex(
+          (entry) => entry.tenant_id === tenantId && entry.id === id
+        );
+        if (index === -1) throw new HttpError(404, "Sponsor package not found");
+        const [deleted] = state.sponsorPackages.splice(index, 1);
+        return deleted;
+      }
+    },
+    brandingAssets: {
+      async findActiveByEvent(tenantId, eventId) {
+        return (
+          state.brandingAssets.find(
+            (entry) => entry.tenant_id === tenantId && entry.event_id === eventId && entry.status === "active"
+          ) ?? null
+        );
+      },
+      async create(record) {
+        state.brandingAssets.push(record);
+        return record;
+      },
+      async update(record) {
+        const index = state.brandingAssets.findIndex((entry) => entry.id === record.id);
+        if (index === -1) throw new HttpError(404, "Branding asset not found");
+        state.brandingAssets[index] = record;
+        return record;
       }
     },
     eventPolicies: {
@@ -262,6 +350,11 @@ export function createMemoryRepositories(state) {
       async listByEvent(tenantId, eventId) {
         return state.deviceAssignments.filter(
           (entry) => entry.tenant_id === tenantId && entry.event_id === eventId && entry.active
+        );
+      },
+      async listByStall(tenantId, stallId) {
+        return state.deviceAssignments.filter(
+          (entry) => entry.tenant_id === tenantId && entry.stall_id === stallId && entry.active
         );
       }
     },

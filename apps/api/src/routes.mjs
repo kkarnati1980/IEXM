@@ -5277,6 +5277,706 @@ export function registerRoutes(router) {
       return updated;
     }
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Phase 4 — Event Management API
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const LOCKED_STATUSES = ["live", "closed", "archived"];
+  const VALID_TIERS = ["bronze", "silver", "gold", "custom"];
+  const VALID_RETENTION_DAYS = [30, 60, 90, 180, 365];
+
+  function assertEventEditable(event) {
+    if (LOCKED_STATUSES.includes(event.status)) {
+      throw new HttpError(400, "EVENT_LOCKED: Event configuration cannot be changed after going live");
+    }
+  }
+
+  function isEventScoped(principal, eventId) {
+    if (principal.role === "platform_admin") return true;
+    const ids = principal.event_ids ?? [];
+    return ids.includes(eventId);
+  }
+
+  function assertEventScoped(principal, eventId) {
+    if (!isEventScoped(principal, eventId)) {
+      throw new HttpError(403, "Event not in your scope");
+    }
+  }
+
+  async function computeEventCounts(repos, tenantId, eventId) {
+    const [halls, stalls, devices] = await Promise.all([
+      repos.halls.listByEvent(tenantId, eventId),
+      repos.stalls.listByEvent(tenantId, eventId),
+      repos.deviceAssignments.listByEvent(tenantId, eventId)
+    ]);
+    return { hall_count: halls.length, stall_count: stalls.length, device_count: devices.length };
+  }
+
+  function formatEvent(event, counts = {}) {
+    return {
+      id: event.id,
+      name: event.name,
+      venue_name: event.venue_name ?? null,
+      city: event.city ?? null,
+      country: event.country ?? null,
+      starts_at: event.starts_at ?? null,
+      ends_at: event.ends_at ?? null,
+      status: event.status,
+      organizer_org_id: event.organizer_organization_id ?? null,
+      tenant_id: event.tenant_id,
+      created_at: event.created_at,
+      hall_count: counts.hall_count ?? 0,
+      stall_count: counts.stall_count ?? 0,
+      device_count: counts.device_count ?? 0
+    };
+  }
+
+  async function computeChecklist(repos, tenantId, eventId) {
+    const [halls, stalls, packages, policy, assignments, branding] = await Promise.all([
+      repos.halls.listByEvent(tenantId, eventId),
+      repos.stalls.listByEvent(tenantId, eventId),
+      repos.sponsorPackages.listByEvent(tenantId, eventId),
+      repos.eventPolicies.findByEventId(tenantId, eventId),
+      repos.userRoleAssignments.listByTenant(tenantId),
+      repos.brandingAssets.findActiveByEvent(tenantId, eventId)
+    ]);
+    const organizerAssigned = assignments.some(
+      (a) => a.event_id === eventId && a.role === "organizer_admin"
+    );
+    const items = {
+      has_halls: halls.length > 0,
+      has_stalls: stalls.length > 0,
+      has_sponsor_packages: packages.length > 0,
+      has_data_policy: !policy.missing_policy_row,
+      has_organizer_admin_user: organizerAssigned,
+      has_branding_approved: branding?.branding_approved === true,
+      has_device_assigned: false
+    };
+    // check for recent device heartbeat
+    const deviceAssignments = await repos.deviceAssignments.listByEvent(tenantId, eventId);
+    if (deviceAssignments.length > 0) {
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      for (const da of deviceAssignments) {
+        const beats = await repos.heartbeats.listByDevice(tenantId, da.device_id);
+        const recent = beats.some((b) => new Date(b.received_at ?? b.created_at) > tenMinutesAgo);
+        if (recent) { items.has_device_assigned = true; break; }
+      }
+    }
+    const publishItems = [
+      items.has_halls, items.has_stalls, items.has_sponsor_packages,
+      items.has_data_policy, items.has_organizer_admin_user
+    ];
+    const ready_to_publish = publishItems.every(Boolean);
+    const ready_to_go_live = ready_to_publish && items.has_branding_approved && items.has_device_assigned;
+    return { items, ready_to_publish, ready_to_go_live };
+  }
+
+  // POST /events
+  router.addRoute({
+    id: "events-create",
+    method: "POST",
+    path: "/events",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, principal, repos }) => {
+      const { name, venue_name, city, country, start_at, end_at, organizer_org_id } = body;
+
+      if (!name || typeof name !== "string" || name.trim().length < 2 || name.trim().length > 200) {
+        throw new HttpError(400, "name must be 2–200 characters");
+      }
+      if (!venue_name || typeof venue_name !== "string") throw new HttpError(400, "venue_name is required");
+      if (!city || typeof city !== "string") throw new HttpError(400, "city is required");
+      if (!country || typeof country !== "string") throw new HttpError(400, "country is required");
+      if (!start_at) throw new HttpError(400, "start_at is required");
+      if (!end_at) throw new HttpError(400, "end_at is required");
+
+      const startsAt = new Date(start_at);
+      const endsAt = new Date(end_at);
+      if (isNaN(startsAt.getTime())) throw new HttpError(400, "start_at must be a valid ISO8601 datetime");
+      if (isNaN(endsAt.getTime())) throw new HttpError(400, "end_at must be a valid ISO8601 datetime");
+      if (endsAt <= startsAt) throw new HttpError(400, "end_at must be after start_at");
+
+      const tenantId = principal.tenant_id;
+      const orgId = organizer_org_id ?? principal.org_id ?? null;
+      const now = new Date().toISOString();
+
+      const event = await repos.events.create({
+        id: nextId("event"),
+        tenant_id: tenantId,
+        organizer_organization_id: orgId,
+        name: name.trim(),
+        venue_name: venue_name.trim(),
+        city: city.trim(),
+        country: country.trim(),
+        status: "draft",
+        metrics_definition_version: 1,
+        report_snapshot_version: 1,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        created_at: now
+      });
+
+      return { event_id: event.id, name: event.name, status: event.status };
+    }
+  });
+
+  // GET /events
+  router.addRoute({
+    id: "events-list",
+    method: "GET",
+    path: "/events",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin", "vendor_manager", "sponsor_user", "ops_user"],
+    handler: async ({ query, principal, repos }) => {
+      const { status, page = "1", page_size = "20" } = query ?? {};
+      const pageNum = Math.max(1, parseInt(page, 10) || 1);
+      const pageSize = Math.min(100, Math.max(1, parseInt(page_size, 10) || 20));
+
+      let events;
+      if (principal.role === "platform_admin") {
+        events = await repos.events.listByTenant(principal.tenant_id);
+      } else {
+        const ids = principal.event_ids ?? [];
+        events = ids.length > 0
+          ? await repos.events.listByIds(principal.tenant_id, ids)
+          : [];
+      }
+
+      if (status) events = events.filter((e) => e.status === status);
+
+      const total = events.length;
+      const paginated = events.slice((pageNum - 1) * pageSize, pageNum * pageSize);
+
+      const withCounts = await Promise.all(
+        paginated.map(async (e) => {
+          const counts = await computeEventCounts(repos, principal.tenant_id, e.id);
+          return formatEvent(e, counts);
+        })
+      );
+
+      return { events: withCounts, total, page: pageNum, page_size: pageSize };
+    }
+  });
+
+  // GET /events/:eventId
+  router.addRoute({
+    id: "events-get",
+    method: "GET",
+    path: "/events/:eventId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin", "vendor_manager", "sponsor_user", "ops_user"],
+    handler: async ({ params, principal, repos }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const counts = await computeEventCounts(repos, principal.tenant_id, event.id);
+      return formatEvent(event, counts);
+    }
+  });
+
+  // PATCH /events/:eventId
+  router.addRoute({
+    id: "events-patch",
+    method: "PATCH",
+    path: "/events/:eventId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, params, principal, repos }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      assertEventEditable(event);
+
+      const updates = {};
+      if (body.name !== undefined) {
+        const n = String(body.name).trim();
+        if (n.length < 2 || n.length > 200) throw new HttpError(400, "name must be 2–200 characters");
+        updates.name = n;
+      }
+      if (body.venue_name !== undefined) updates.venue_name = String(body.venue_name).trim();
+      if (body.city !== undefined) updates.city = String(body.city).trim();
+      if (body.country !== undefined) updates.country = String(body.country).trim();
+      if (body.start_at !== undefined) {
+        const d = new Date(body.start_at);
+        if (isNaN(d.getTime())) throw new HttpError(400, "start_at must be a valid ISO8601 datetime");
+        updates.starts_at = d.toISOString();
+      }
+      if (body.end_at !== undefined) {
+        const d = new Date(body.end_at);
+        if (isNaN(d.getTime())) throw new HttpError(400, "end_at must be a valid ISO8601 datetime");
+        updates.ends_at = d.toISOString();
+      }
+      const startsAt = new Date(updates.starts_at ?? event.starts_at ?? 0);
+      const endsAt = new Date(updates.ends_at ?? event.ends_at ?? Infinity);
+      if (updates.starts_at || updates.ends_at) {
+        if (endsAt <= startsAt) throw new HttpError(400, "end_at must be after start_at");
+      }
+
+      const updated = await repos.events.update({ ...event, ...updates });
+      const counts = await computeEventCounts(repos, principal.tenant_id, updated.id);
+      return formatEvent(updated, counts);
+    }
+  });
+
+  // POST /events/:eventId/publish
+  router.addRoute({
+    id: "events-publish",
+    method: "POST",
+    path: "/events/:eventId/publish",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ params, principal, repos }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      if (event.status !== "draft") {
+        throw new HttpError(400, "INVALID_STATUS_TRANSITION: Event must be in draft status to publish");
+      }
+
+      const { items, ready_to_publish } = await computeChecklist(repos, principal.tenant_id, event.id);
+      const checklist = {
+        has_halls: items.has_halls,
+        has_stalls: items.has_stalls,
+        has_sponsor_packages: items.has_sponsor_packages,
+        has_data_policy: items.has_data_policy,
+        has_organizer_admin_user: items.has_organizer_admin_user
+      };
+
+      if (!ready_to_publish) {
+        const failing_items = Object.entries(checklist)
+          .filter(([, v]) => !v)
+          .map(([k]) => k.replace(/^has_/, "no_"));
+        throw new HttpError(422, "CHECKLIST_INCOMPLETE", { failing_items });
+      }
+
+      const updated = await repos.events.update({ ...event, status: "published" });
+      return {
+        event_id: updated.id,
+        status: "published",
+        checklist: Object.fromEntries(Object.entries(checklist).map(([k, v]) => [k, v ? "pass" : "fail"]))
+      };
+    }
+  });
+
+  // POST /events/:eventId/go-live
+  router.addRoute({
+    id: "events-go-live",
+    method: "POST",
+    path: "/events/:eventId/go-live",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ params, principal, repos }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      if (event.status !== "published") {
+        throw new HttpError(400, "INVALID_STATUS_TRANSITION: Event must be in published status to go live");
+      }
+
+      const { items } = await computeChecklist(repos, principal.tenant_id, event.id);
+      const failing_items = [];
+      if (!items.has_branding_approved) failing_items.push("branding_not_approved");
+      if (!items.has_device_assigned) failing_items.push("no_device_with_recent_heartbeat");
+
+      if (failing_items.length > 0) {
+        throw new HttpError(422, "GO_LIVE_BLOCKED", { failing_items });
+      }
+
+      const updated = await repos.events.update({ ...event, status: "live" });
+      console.log(`TODO: broadcast config update to assigned devices for event ${event.id} to enable tap ingestion`);
+      return { event_id: updated.id, status: "live" };
+    }
+  });
+
+  // POST /events/:eventId/close
+  router.addRoute({
+    id: "events-close",
+    method: "POST",
+    path: "/events/:eventId/close",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, params, principal, repos }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      if (event.status !== "live") {
+        throw new HttpError(400, "INVALID_STATUS_TRANSITION: Event must be in live status to close");
+      }
+      if (!body.confirm_event_name || body.confirm_event_name !== event.name) {
+        throw new HttpError(400, "CONFIRMATION_NAME_MISMATCH: Type the event name exactly to confirm");
+      }
+
+      const updated = await repos.events.update({ ...event, status: "closed" });
+      console.log(`TODO: broadcast config update to assigned devices for event ${event.id} to stop tap ingestion`);
+      return { event_id: updated.id, status: "closed" };
+    }
+  });
+
+  // POST /events/:eventId/archive (platform_admin only)
+  router.addRoute({
+    id: "events-archive",
+    method: "POST",
+    path: "/events/:eventId/archive",
+    authRequired: true,
+    allowedRoles: ["platform_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ params, principal, repos }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      if (event.status !== "closed") {
+        throw new HttpError(400, "INVALID_STATUS_TRANSITION: Event must be in closed status to archive");
+      }
+      const updated = await repos.events.update({ ...event, status: "archived" });
+      console.log(`TODO: mark all event-scoped user_role_assignments as inactive for event ${event.id}`);
+      return { event_id: updated.id, status: "archived" };
+    }
+  });
+
+  // GET /events/:eventId/checklist
+  router.addRoute({
+    id: "events-checklist",
+    method: "GET",
+    path: "/events/:eventId/checklist",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ params, principal, repos }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const { items, ready_to_publish, ready_to_go_live } = await computeChecklist(
+        repos, principal.tenant_id, event.id
+      );
+      const allPassed = Object.values(items).every(Boolean);
+      return {
+        event_id: event.id,
+        status: allPassed ? "complete" : "incomplete",
+        items,
+        ready_to_publish,
+        ready_to_go_live
+      };
+    }
+  });
+
+  // POST /events/:eventId/data-policy
+  router.addRoute({
+    id: "events-data-policy",
+    method: "POST",
+    path: "/events/:eventId/data-policy",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, params, principal, repos }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+
+      const {
+        vendor_exports_enabled,
+        sponsor_pii_enabled,
+        require_export_approval,
+        allow_crm_push,
+        retention_days,
+        allow_cross_event_identity_graph
+      } = body;
+
+      if (retention_days !== undefined && !VALID_RETENTION_DAYS.includes(Number(retention_days))) {
+        throw new HttpError(400, "INVALID_RETENTION_DAYS", { valid_values: VALID_RETENTION_DAYS });
+      }
+
+      const now = new Date().toISOString();
+      const existing = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      const base = existing.missing_policy_row ? {} : existing;
+
+      const policy = await repos.eventPolicies.upsert({
+        ...base,
+        event_id: event.id,
+        tenant_id: principal.tenant_id,
+        vendor_exports_enabled: vendor_exports_enabled ?? base.vendor_exports_enabled ?? false,
+        sponsor_pii_enabled: sponsor_pii_enabled ?? base.sponsor_pii_enabled ?? false,
+        require_export_approval: require_export_approval ?? base.require_export_approval ?? true,
+        allow_crm_push: allow_crm_push ?? base.allow_crm_push ?? false,
+        retention_days: Number(retention_days ?? base.retention_days ?? 30),
+        allow_cross_event_identity_graph: allow_cross_event_identity_graph ?? base.allow_cross_event_identity_graph ?? false,
+        created_at: base.created_at ?? now,
+        updated_at: now
+      });
+
+      console.log(`TODO: fire data_policy.changed webhook and notification for event ${event.id} (Phase 15/17)`);
+      return { policy };
+    }
+  });
+
+  // POST /events/:eventId/halls
+  router.addRoute({
+    id: "halls-create",
+    method: "POST",
+    path: "/events/:eventId/halls",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, params, principal, repos }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      assertEventEditable(event);
+
+      const { name, floor_plan_url } = body;
+      if (!name || typeof name !== "string" || name.trim().length < 1) {
+        throw new HttpError(400, "name is required");
+      }
+
+      const hall = await repos.halls.create({
+        id: nextId("hall"),
+        tenant_id: principal.tenant_id,
+        event_id: event.id,
+        name: name.trim(),
+        floor_plan_url: floor_plan_url ?? null,
+        created_at: new Date().toISOString()
+      });
+      return { hall_id: hall.id, name: hall.name, event_id: hall.event_id };
+    }
+  });
+
+  // PATCH /halls/:hallId
+  router.addRoute({
+    id: "halls-patch",
+    method: "PATCH",
+    path: "/halls/:hallId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, params, principal, repos }) => {
+      const hall = await repos.halls.findById(principal.tenant_id, params.hallId);
+      const event = await repos.events.findById(principal.tenant_id, hall.event_id);
+      assertEventScoped(principal, event.id);
+      assertEventEditable(event);
+
+      const updates = {};
+      if (body.name !== undefined) updates.name = String(body.name).trim();
+      if (body.floor_plan_url !== undefined) updates.floor_plan_url = body.floor_plan_url;
+
+      return repos.halls.update({ ...hall, ...updates });
+    }
+  });
+
+  // DELETE /halls/:hallId
+  router.addRoute({
+    id: "halls-delete",
+    method: "DELETE",
+    path: "/halls/:hallId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ params, principal, repos }) => {
+      const hall = await repos.halls.findById(principal.tenant_id, params.hallId);
+      const event = await repos.events.findById(principal.tenant_id, hall.event_id);
+      assertEventScoped(principal, event.id);
+      if (event.status !== "draft") {
+        throw new HttpError(400, "EVENT_LOCKED: Halls can only be deleted when event is in draft status");
+      }
+      const stalls = await repos.stalls.listByEvent(principal.tenant_id, event.id);
+      const hallStalls = stalls.filter((s) => s.hall_id === hall.id);
+      if (hallStalls.length > 0) {
+        throw new HttpError(400, "HALL_HAS_STALLS: Remove all stalls before deleting hall");
+      }
+      await repos.halls.deleteById(principal.tenant_id, hall.id);
+      return { deleted: true };
+    }
+  });
+
+  // POST /events/:eventId/stalls
+  router.addRoute({
+    id: "stalls-create",
+    method: "POST",
+    path: "/events/:eventId/stalls",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, params, principal, repos }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      assertEventEditable(event);
+
+      const { stall_code, name, hall_id, org_id } = body;
+      if (!stall_code || typeof stall_code !== "string") throw new HttpError(400, "stall_code is required");
+      if (!name || typeof name !== "string") throw new HttpError(400, "name is required");
+      if (!hall_id) throw new HttpError(400, "hall_id is required");
+
+      // verify hall belongs to this event
+      const hall = await repos.halls.findById(principal.tenant_id, hall_id);
+      if (hall.event_id !== event.id) throw new HttpError(400, "hall_id does not belong to this event");
+
+      // stall_code must be unique within event
+      const existing = await repos.stalls.listByEvent(principal.tenant_id, event.id);
+      if (existing.some((s) => s.code === stall_code)) {
+        throw new HttpError(409, "Stall code already exists for this event");
+      }
+
+      const stall = await repos.stalls.create({
+        id: nextId("stall"),
+        tenant_id: principal.tenant_id,
+        event_id: event.id,
+        hall_id,
+        vendor_organization_id: org_id ?? null,
+        sponsor_organization_id: null,
+        code: stall_code,
+        name: name.trim(),
+        created_at: new Date().toISOString()
+      });
+      return {
+        stall_id: stall.id,
+        stall_code: stall.code,
+        name: stall.name,
+        hall_id: stall.hall_id,
+        org_id: stall.vendor_organization_id
+      };
+    }
+  });
+
+  // PATCH /stalls/:stallId
+  router.addRoute({
+    id: "stalls-patch",
+    method: "PATCH",
+    path: "/stalls/:stallId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, params, principal, repos }) => {
+      const stall = await repos.stalls.findById(principal.tenant_id, params.stallId);
+      const event = await repos.events.findById(principal.tenant_id, stall.event_id);
+      assertEventScoped(principal, event.id);
+
+      if (body.org_id !== undefined && LOCKED_STATUSES.includes(event.status)) {
+        throw new HttpError(400, "EVENT_LOCKED: Org assignment changes only allowed when event is draft or published");
+      }
+
+      const updates = {};
+      if (body.name !== undefined) updates.name = String(body.name).trim();
+      if (body.org_id !== undefined) updates.vendor_organization_id = body.org_id;
+      if (body.hall_id !== undefined) {
+        const hall = await repos.halls.findById(principal.tenant_id, body.hall_id);
+        if (hall.event_id !== event.id) throw new HttpError(400, "hall_id does not belong to this event");
+        updates.hall_id = body.hall_id;
+      }
+
+      const updated = await repos.stalls.update({ ...stall, ...updates });
+      return {
+        stall_id: updated.id,
+        stall_code: updated.code,
+        name: updated.name,
+        hall_id: updated.hall_id,
+        org_id: updated.vendor_organization_id
+      };
+    }
+  });
+
+  // DELETE /stalls/:stallId
+  router.addRoute({
+    id: "stalls-delete",
+    method: "DELETE",
+    path: "/stalls/:stallId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ params, principal, repos }) => {
+      const stall = await repos.stalls.findById(principal.tenant_id, params.stallId);
+      const event = await repos.events.findById(principal.tenant_id, stall.event_id);
+      assertEventScoped(principal, event.id);
+      if (event.status !== "draft") {
+        throw new HttpError(400, "EVENT_LOCKED: Stalls can only be deleted when event is in draft status");
+      }
+      const deviceAssignments = await repos.deviceAssignments.listByStall(principal.tenant_id, stall.id);
+      if (deviceAssignments.length > 0) {
+        throw new HttpError(400, "STALL_HAS_DEVICE: Remove device assignment before deleting stall");
+      }
+      await repos.stalls.deleteById(principal.tenant_id, stall.id);
+      return { deleted: true };
+    }
+  });
+
+  // POST /events/:eventId/sponsor-packages
+  router.addRoute({
+    id: "sponsor-packages-create",
+    method: "POST",
+    path: "/events/:eventId/sponsor-packages",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, params, principal, repos }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+
+      const { name, tier, org_id } = body;
+      if (!name || typeof name !== "string") throw new HttpError(400, "name is required");
+      if (!tier || !VALID_TIERS.includes(tier)) {
+        throw new HttpError(400, `tier must be one of: ${VALID_TIERS.join(", ")}`);
+      }
+      if (org_id) {
+        const org = await repos.organizations.findById(principal.tenant_id, org_id);
+        if (org.type !== "sponsor") throw new HttpError(400, "org_id must reference an org with type 'sponsor'");
+      }
+
+      const pkg = await repos.sponsorPackages.create({
+        id: nextId("pkg"),
+        tenant_id: principal.tenant_id,
+        event_id: event.id,
+        name: name.trim(),
+        tier,
+        sponsor_organization_id: org_id ?? null,
+        created_at: new Date().toISOString()
+      });
+      return { package_id: pkg.id, name: pkg.name, tier: pkg.tier, org_id: pkg.sponsor_organization_id };
+    }
+  });
+
+  // PATCH /sponsor-packages/:packageId
+  router.addRoute({
+    id: "sponsor-packages-patch",
+    method: "PATCH",
+    path: "/sponsor-packages/:packageId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, params, principal, repos }) => {
+      const pkg = await repos.sponsorPackages.findById(principal.tenant_id, params.packageId);
+      assertEventScoped(principal, pkg.event_id);
+
+      const updates = {};
+      if (body.name !== undefined) updates.name = String(body.name).trim();
+      if (body.tier !== undefined) {
+        if (!VALID_TIERS.includes(body.tier)) {
+          throw new HttpError(400, `tier must be one of: ${VALID_TIERS.join(", ")}`);
+        }
+        updates.tier = body.tier;
+      }
+      if (body.org_id !== undefined) {
+        if (body.org_id) {
+          const org = await repos.organizations.findById(principal.tenant_id, body.org_id);
+          if (org.type !== "sponsor") throw new HttpError(400, "org_id must reference an org with type 'sponsor'");
+        }
+        updates.sponsor_organization_id = body.org_id ?? null;
+      }
+
+      const updated = await repos.sponsorPackages.update({ ...pkg, ...updates });
+      return { package_id: updated.id, name: updated.name, tier: updated.tier, org_id: updated.sponsor_organization_id };
+    }
+  });
+
+  // DELETE /sponsor-packages/:packageId
+  router.addRoute({
+    id: "sponsor-packages-delete",
+    method: "DELETE",
+    path: "/sponsor-packages/:packageId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ params, principal, repos }) => {
+      const pkg = await repos.sponsorPackages.findById(principal.tenant_id, params.packageId);
+      assertEventScoped(principal, pkg.event_id);
+      // check no sponsor_user role assignments linked to this package
+      const allAssignments = await repos.userRoleAssignments.listByTenant(principal.tenant_id);
+      const linked = allAssignments.filter((a) => a.sponsor_package_id === pkg.id);
+      if (linked.length > 0) {
+        throw new HttpError(400, "PACKAGE_HAS_USERS: Remove all user role assignments from this package before deleting");
+      }
+      await repos.sponsorPackages.deleteById(principal.tenant_id, pkg.id);
+      return { deleted: true };
+    }
+  });
 }
 
 async function resolveDeviceCredentialResources({ repos, principal, params }) {

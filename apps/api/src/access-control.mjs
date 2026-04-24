@@ -389,7 +389,28 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   "orgs-list": entry({ permission: "org.list", roles: organizerOrPlatform, scope: "tenant", description: "List organizations in tenant", sensitivity: "internal" }),
   "orgs-create": entry({ permission: "org.create", roles: platform, scope: "tenant", description: "Create a new organization", sensitivity: "internal" }),
   "orgs-get": entry({ permission: "org.view", roles: organizerOrPlatform, scope: "tenant", description: "View organization details", sensitivity: "internal" }),
-  "orgs-patch": entry({ permission: "org.update", roles: platform, scope: "tenant", description: "Update organization details", sensitivity: "internal" })
+  "orgs-patch": entry({ permission: "org.update", roles: platform, scope: "tenant", description: "Update organization details", sensitivity: "internal" }),
+
+  // Phase 4 — Event Management API
+  "events-create": entry({ permission: "event.create", roles: organizerOrPlatform, scope: "tenant", description: "Create a new event", sensitivity: "internal" }),
+  "events-list": entry({ permission: "event.list", roles: USER_ROLES, scope: "tenant", description: "List events scoped to caller's assignments", sensitivity: "internal" }),
+  "events-get": entry({ permission: "event.view", roles: USER_ROLES, scope: "tenant", description: "View event details", sensitivity: "internal" }),
+  "events-patch": entry({ permission: "event.update", roles: organizerOrPlatform, scope: "tenant", description: "Update event details (draft/published only)", sensitivity: "internal" }),
+  "events-publish": entry({ permission: "event.publish", roles: organizerOrPlatform, scope: "tenant", description: "Publish event after checklist passes", sensitivity: "internal" }),
+  "events-go-live": entry({ permission: "event.go_live", roles: organizerOrPlatform, scope: "tenant", description: "Move event to live status", sensitivity: "internal" }),
+  "events-close": entry({ permission: "event.close", roles: organizerOrPlatform, scope: "tenant", description: "Close a live event with name confirmation", sensitivity: "internal" }),
+  "events-archive": entry({ permission: "event.archive", roles: platform, scope: "tenant", description: "Archive a closed event", sensitivity: "internal" }),
+  "events-checklist": entry({ permission: "event.checklist.view", roles: organizerOrPlatform, scope: "tenant", description: "View event onboarding checklist", sensitivity: "internal" }),
+  "events-data-policy": entry({ permission: "event.data_policy.write", roles: organizerOrPlatform, scope: "tenant", description: "Create or update event data policy", sensitivity: "internal" }),
+  "halls-create": entry({ permission: "hall.create", roles: organizerOrPlatform, scope: "tenant", description: "Create a hall for an event", sensitivity: "internal" }),
+  "halls-patch": entry({ permission: "hall.update", roles: organizerOrPlatform, scope: "tenant", description: "Update a hall", sensitivity: "internal" }),
+  "halls-delete": entry({ permission: "hall.delete", roles: organizerOrPlatform, scope: "tenant", description: "Delete a hall (draft events only)", sensitivity: "internal" }),
+  "stalls-create": entry({ permission: "stall.create", roles: organizerOrPlatform, scope: "tenant", description: "Create a stall for an event", sensitivity: "internal" }),
+  "stalls-patch": entry({ permission: "stall.update", roles: organizerOrPlatform, scope: "tenant", description: "Update a stall", sensitivity: "internal" }),
+  "stalls-delete": entry({ permission: "stall.delete", roles: organizerOrPlatform, scope: "tenant", description: "Delete a stall (draft events only)", sensitivity: "internal" }),
+  "sponsor-packages-create": entry({ permission: "sponsor_package.create", roles: organizerOrPlatform, scope: "tenant", description: "Create a sponsor package", sensitivity: "internal" }),
+  "sponsor-packages-patch": entry({ permission: "sponsor_package.update", roles: organizerOrPlatform, scope: "tenant", description: "Update a sponsor package", sensitivity: "internal" }),
+  "sponsor-packages-delete": entry({ permission: "sponsor_package.delete", roles: organizerOrPlatform, scope: "tenant", description: "Delete a sponsor package", sensitivity: "internal" })
 });
 
 export function getAccessControlEntry(routeId) {

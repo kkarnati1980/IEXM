@@ -225,6 +225,8 @@ export function createSeedState() {
         created_at: now
       }
     ],
+    sponsorPackages: [],
+    brandingAssets: [],
     attendees: [],
     attendeeProfiles: [],
     tapEvents: [],
