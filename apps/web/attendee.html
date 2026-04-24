@@ -275,9 +275,10 @@
         // Load interaction context for landing page
         if (INTERACTION_ID) {
           try {
-            INTERACTION = await api(`/attendee/interactions/${enc(INTERACTION_ID)}`);
+            INTERACTION = await api(`/attendee/session/${enc(INTERACTION_ID)}?token=${enc(ATTENDEE_TOKEN)}`);
             renderLanding(INTERACTION);
           } catch(e) {
+            console.error('Landing load failed:', e.message);
             renderLandingFallback();
           }
         } else {
@@ -291,17 +292,21 @@
 
       /* ── LANDING ─────────────────────────────────── */
       function renderLanding(ia) {
-        $("lc-event").textContent    = ia.event_name  || ia.event_id  || EVENT_ID;
-        $("lc-stall").textContent    = ia.stall_name  || ia.stall_id  || STALL_ID || "—";
-        $("lc-time").textContent     = fmtDate(ia.occurred_at || ia.created_at);
-        $("lc-tap-type").textContent = humanize(ia.tap_type || "phone");
+        // ia is the full session response from /attendee/session/:id
+        const eventName  = (ia.event && ia.event.name) || ia.event_id || EVENT_ID;
+        const stallName  = (ia.current_connection && ia.current_connection.stall_name)
+                           || ia.stall_name || ia.stall_id || "—";
+        const tapTime    = (ia.current_connection && ia.current_connection.occurred_at)
+                           || ia.occurred_at || ia.created_at || new Date().toISOString();
+        const tapType    = (ia.current_connection && ia.current_connection.tap_type)
+                           || ia.tap_type || "phone_ndef";
 
-        const branding = ia.branding || {};
-        if (branding.welcome_headline) $("landing-headline").textContent = branding.welcome_headline;
-        if (branding.welcome_body)     $("landing-body").textContent     = branding.welcome_body;
+        $("lc-event").textContent    = eventName;
+        $("lc-stall").textContent    = stallName;
+        $("lc-time").textContent     = fmtDate(tapTime);
+        $("lc-tap-type").textContent = humanize(tapType);
 
-        // Pre-populate consent checkboxes from existing consent state — but NEVER pre-tick
-        // per spec §2.2: "Must not auto-select checkboxes"
+        // SPEC §2.2: Must never pre-tick consent checkboxes
         $("chk-vendor").checked  = false;
         $("chk-sponsor").checked = false;
       }
@@ -342,12 +347,45 @@
 
       /* ── VAULT ───────────────────────────────────── */
       async function loadVault() {
-        const el = $("vault-list"); el.innerHTML = "";
+        const el = $("vault-list");
+        el.innerHTML = "";
+        if (!INTERACTION_ID || !ATTENDEE_TOKEN) {
+          el.innerHTML = '<div class="vault-item muted" style="text-align:center;cursor:default;">Open your attendee link from the kiosk to view connections.</div>';
+          return;
+        }
         try {
-          const res = await api(`/attendee/vault?event_id=${enc(EVENT_ID)}`);
-          VAULT_ITEMS = res.items || [];
+          const session = await api(`/attendee/session/${enc(INTERACTION_ID)}?token=${enc(ATTENDEE_TOKEN)}`);
+          // Build vault items from session response
+          const items = [];
+          // Add current connection
+          if (session.current_connection) {
+            items.push({
+              id: INTERACTION_ID,
+              stall_name: session.current_connection.stall_name || session.current_connection.stall_id || "Unknown stall",
+              event_name: (session.event && session.event.name) || EVENT_ID,
+              occurred_at: session.current_connection.occurred_at || new Date().toISOString(),
+              tap_type: session.current_connection.tap_type || "phone_ndef",
+              vendor_release_allowed: session.consent ? session.consent.vendor_release_allowed : false,
+              sponsor_release_allowed: session.consent ? session.consent.sponsor_release_allowed : false,
+            });
+          }
+          // Add any prior connections
+          for (const c of (session.connections || [])) {
+            if (c.interaction_id !== INTERACTION_ID) {
+              items.push({
+                id: c.interaction_id || c.id,
+                stall_name: c.stall_name || c.stall_id || "Unknown stall",
+                event_name: (session.event && session.event.name) || EVENT_ID,
+                occurred_at: c.occurred_at || c.created_at,
+                tap_type: c.tap_type || "phone_ndef",
+                vendor_release_allowed: c.vendor_release_allowed || false,
+                sponsor_release_allowed: c.sponsor_release_allowed || false,
+              });
+            }
+          }
+          VAULT_ITEMS = items;
           if (!VAULT_ITEMS.length) {
-            el.innerHTML = `<div class="vault-item muted" style="text-align:center;cursor:default;">No connections yet.</div>`;
+            el.innerHTML = '<div class="vault-item muted" style="text-align:center;cursor:default;">No connections yet.</div>';
             return;
           }
           for (const item of VAULT_ITEMS) {
@@ -355,20 +393,21 @@
             card.className = `vault-item${SELECTED_ITEM?.id === item.id ? " selected" : ""}`;
             card.innerHTML = `
               <div class="vi-head">
-                <div class="vi-title">${esc(item.stall_name || item.stall_id || "Unknown stall")}</div>
+                <div class="vi-title">${esc(item.stall_name)}</div>
                 <span class="tag ${item.vendor_release_allowed ? "good" : "muted-tag"}">${item.vendor_release_allowed ? "Consented" : "Anonymous"}</span>
               </div>
-              <div class="vi-meta">${esc(item.event_name || item.event_id || "")} · ${fmtDate(item.occurred_at)}</div>
+              <div class="vi-meta">${esc(item.event_name || "")} · ${fmtDate(item.occurred_at)}</div>
               <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
-                ${item.vendor_release_allowed ? `<span class="tag good">Vendor shared</span>` : ""}
-                ${item.sponsor_release_allowed ? `<span class="tag good">Sponsor OK</span>` : ""}
-                ${item.tap_type ? `<span class="tag muted-tag">${esc(humanize(item.tap_type))}</span>` : ""}
+                ${item.vendor_release_allowed ? '<span class="tag good">Vendor shared</span>' : ""}
+                ${item.sponsor_release_allowed ? '<span class="tag good">Sponsor OK</span>' : ""}
+                <span class="tag muted-tag">${esc(humanize(item.tap_type || ""))}</span>
               </div>`;
             card.addEventListener("click", () => openDetail(item));
             el.appendChild(card);
           }
-        } catch {
-          el.innerHTML = `<div class="vault-item muted" style="cursor:default;">Could not load connections — sign in required.</div>`;
+        } catch(e) {
+          console.error("Vault load error:", e.message);
+          el.innerHTML = '<div class="vault-item muted" style="cursor:default;">Could not load connections — ' + e.message + '</div>';
         }
       }
 
@@ -422,10 +461,21 @@
       /* ── PRIVACY ─────────────────────────────────── */
       async function loadPrivacy() {
         try {
-          const [consentsRes, dsrRes] = await Promise.all([
-            api(`/attendee/consents?event_id=${enc(EVENT_ID)}`).catch(() => ({ items: [] })),
-            api(`/attendee/data-subject-requests`).catch(() => ({ items: [] }))
-          ]);
+          // Load privacy data from session endpoint
+          const sessionData = INTERACTION_ID && ATTENDEE_TOKEN
+            ? await api(`/attendee/session/${enc(INTERACTION_ID)}?token=${enc(ATTENDEE_TOKEN)}`).catch(() => ({}))
+            : {};
+          const consentObj = sessionData.consent || {};
+          const currentConn = sessionData.current_connection || {};
+          const consentItem = currentConn.stall_name ? [{
+            interaction_id: INTERACTION_ID,
+            stall_name: currentConn.stall_name,
+            vendor_release_allowed: consentObj.vendor_release_allowed || false,
+            sponsor_release_allowed: consentObj.sponsor_release_allowed || false,
+            captured_at: consentObj.captured_at || null,
+          }] : [];
+          const consentsRes = { items: consentItem };
+          const dsrRes = { items: [] };
           renderActiveConsents(consentsRes.items || []);
           renderDSRList(dsrRes.items || []);
         } catch { /* non-critical — privacy page degrades gracefully */ }

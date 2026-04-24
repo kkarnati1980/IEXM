@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connecting you…</title>
+  <style>
+    body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;
+         min-height:100vh;margin:0;background:#0d1b2a;color:white;text-align:center;}
+    .box{padding:40px;}
+    .spinner{font-size:48px;animation:spin 1s linear infinite;display:inline-block;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .err{color:#f87171;margin-top:20px;}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="spinner">⟳</div>
+    <p id="msg">Connecting you to the vendor…</p>
+    <p class="err" id="err" hidden></p>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const token  = params.get('t');
+    const api    = params.get('apiBase') || 'http://127.0.0.1:3000';
+    if (!token) {
+      document.getElementById('err').textContent = 'No token in URL.';
+      document.getElementById('err').hidden = false;
+    } else {
+      fetch(api + '/s/' + token, { headers: { 'x-tenant-id': 'tenant-demo' } })
+        .then(r => r.json())
+        .then(d => {
+          if (d.target_url) {
+            location.href = 'http://127.0.0.1:8080' + d.target_url + '&apiBase=' + encodeURIComponent(api);
+          } else {
+            throw new Error(d.error || 'No target URL');
+          }
+        })
+        .catch(e => {
+          document.getElementById('spinner').textContent = '✗';
+          document.getElementById('msg').textContent = 'Could not resolve link.';
+          document.getElementById('err').textContent = e.message;
+          document.getElementById('err').hidden = false;
+        });
+    }
+  </script>
+</body>
+</html>
