@@ -55,6 +55,7 @@ import {
   resolveNotificationWorkerSchedule
 } from "./notification-providers.mjs";
 import { dispatchTransactionalEmail } from "./notification-dispatch.mjs";
+import { writeAuditEvent, AUDIT_EVENT_TYPES } from "./audit.mjs";
 
 export function registerRoutes(router) {
   router.addRoute({
@@ -4665,6 +4666,7 @@ export function registerRoutes(router) {
     method: "POST",
     path: "/auth/accept-invite",
     authRequired: false,
+    auditEventType: "user.activated",
     validate: (body) => body ?? {},
     handler: async ({ body, repos, state }) => {
       const { token, password } = body;
@@ -4751,6 +4753,14 @@ export function registerRoutes(router) {
           templateVars: { display_name: user.display_name, reset_url: resetUrl },
           actorUserId: null
         });
+        await writeAuditEvent(repos, {
+          tenantId: user.tenant_id,
+          actorType: "system",
+          actorId: "system",
+          eventType: AUDIT_EVENT_TYPES.USER_PASSWORD_RESET_REQUESTED,
+          targetType: "user",
+          targetId: user.id
+        });
       }
       return { message: "If an account exists for this email, a reset link has been sent." };
     }
@@ -4761,6 +4771,7 @@ export function registerRoutes(router) {
     method: "POST",
     path: "/auth/reset-password",
     authRequired: false,
+    auditEventType: "user.password_reset_completed",
     validate: (body) => body ?? {},
     handler: async ({ body, repos, state }) => {
       const { token, password } = body;
@@ -4792,6 +4803,7 @@ export function registerRoutes(router) {
     method: "POST",
     path: "/auth/change-password",
     authRequired: true,
+    auditEventType: "user.password_changed",
     validate: (body) => body ?? {},
     handler: async ({ body, principal, repos }) => {
       const { current_password, new_password } = body;
@@ -5042,6 +5054,15 @@ export function registerRoutes(router) {
         templateVars: { display_name: createdUser.display_name, invite_url: inviteUrl },
         actorUserId: principal.actor_id
       });
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.USER_INVITED,
+        targetType: "user",
+        targetId: userId,
+        metadata: { role, event_id: event_id ?? null, invited_by: principal.actor_id }
+      });
 
       return {
         user_id: userId,
@@ -5107,6 +5128,7 @@ export function registerRoutes(router) {
     path: "/users/:userId/disable",
     authRequired: true,
     allowedRoles: ["platform_admin", "organizer_admin"],
+    auditEventType: "user.disabled",
     validate: (body) => body ?? {},
     handler: async ({ body, params, principal, repos }) => {
       const user = await repos.users.findById(principal.tenant_id, params.userId);
@@ -5211,6 +5233,15 @@ export function registerRoutes(router) {
         assigned_by_user_id: principal.actor_id,
         created_at: now
       });
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.USER_ROLE_ASSIGNED,
+        targetType: "user",
+        targetId: params.userId,
+        metadata: { role, event_id: event_id ?? null, stall_ids: stall_ids ?? [], sponsor_package_id: sponsor_package_id ?? null }
+      });
       return assignment;
     }
   });
@@ -5228,6 +5259,15 @@ export function registerRoutes(router) {
       if (deleted.user_id !== params.userId) {
         throw new HttpError(404, "Role assignment not found for this user");
       }
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.USER_ROLE_REMOVED,
+        targetType: "user",
+        targetId: params.userId,
+        metadata: { assignment_id: params.assignmentId }
+      });
       return { deleted: true, id: deleted.id };
     }
   });
@@ -5252,6 +5292,7 @@ export function registerRoutes(router) {
     path: "/orgs",
     authRequired: true,
     allowedRoles: ["platform_admin"],
+    auditEventType: "org.created",
     validate: (body) => body ?? {},
     handler: async ({ body, principal, repos }) => {
       const { name, type } = body;
@@ -5294,6 +5335,7 @@ export function registerRoutes(router) {
     path: "/orgs/:orgId",
     authRequired: true,
     allowedRoles: ["platform_admin"],
+    auditEventType: "org.updated",
     validate: (body) => body ?? {},
     handler: async ({ body, params, principal, repos }) => {
       const org = await repos.organizations.findById(principal.tenant_id, params.orgId);
@@ -5458,6 +5500,15 @@ export function registerRoutes(router) {
         created_at: now
       });
 
+      await writeAuditEvent(repos, {
+        tenantId,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.EVENT_CREATED,
+        targetType: "event",
+        targetId: event.id
+      });
+
       return { event_id: event.id, name: event.name, status: event.status };
     }
   });
@@ -5591,6 +5642,14 @@ export function registerRoutes(router) {
       }
 
       const updated = await repos.events.update({ ...event, status: "published" });
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.EVENT_PUBLISHED,
+        targetType: "event",
+        targetId: updated.id
+      });
       return {
         event_id: updated.id,
         status: "published",
@@ -5624,6 +5683,14 @@ export function registerRoutes(router) {
       }
 
       const updated = await repos.events.update({ ...event, status: "live" });
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.EVENT_WENT_LIVE,
+        targetType: "event",
+        targetId: updated.id
+      });
       console.log(`TODO: broadcast config update to assigned devices for event ${event.id} to enable tap ingestion`);
       return { event_id: updated.id, status: "live" };
     }
@@ -5648,6 +5715,14 @@ export function registerRoutes(router) {
       }
 
       const updated = await repos.events.update({ ...event, status: "closed" });
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.EVENT_CLOSED,
+        targetType: "event",
+        targetId: updated.id
+      });
       console.log(`TODO: broadcast config update to assigned devices for event ${event.id} to stop tap ingestion`);
       return { event_id: updated.id, status: "closed" };
     }
@@ -5667,6 +5742,14 @@ export function registerRoutes(router) {
         throw new HttpError(400, "INVALID_STATUS_TRANSITION: Event must be in closed status to archive");
       }
       const updated = await repos.events.update({ ...event, status: "archived" });
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.EVENT_ARCHIVED,
+        targetType: "event",
+        targetId: updated.id
+      });
       console.log(`TODO: mark all event-scoped user_role_assignments as inactive for event ${event.id}`);
       return { event_id: updated.id, status: "archived" };
     }
@@ -5725,18 +5808,40 @@ export function registerRoutes(router) {
       const existing = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
       const base = existing.missing_policy_row ? {} : existing;
 
-      const policy = await repos.eventPolicies.upsert({
-        ...base,
-        event_id: event.id,
-        tenant_id: principal.tenant_id,
+      const policyFields = {
         vendor_exports_enabled: vendor_exports_enabled ?? base.vendor_exports_enabled ?? false,
         sponsor_pii_enabled: sponsor_pii_enabled ?? base.sponsor_pii_enabled ?? false,
         require_export_approval: require_export_approval ?? base.require_export_approval ?? true,
         allow_crm_push: allow_crm_push ?? base.allow_crm_push ?? false,
         retention_days: Number(retention_days ?? base.retention_days ?? 30),
-        allow_cross_event_identity_graph: allow_cross_event_identity_graph ?? base.allow_cross_event_identity_graph ?? false,
+        allow_cross_event_identity_graph: allow_cross_event_identity_graph ?? base.allow_cross_event_identity_graph ?? false
+      };
+
+      const changedFields = Object.keys(policyFields).filter((k) => {
+        const incoming = body[k];
+        return incoming !== undefined && incoming !== base[k];
+      });
+
+      const policy = await repos.eventPolicies.upsert({
+        ...base,
+        event_id: event.id,
+        tenant_id: principal.tenant_id,
+        ...policyFields,
         created_at: base.created_at ?? now,
         updated_at: now
+      });
+
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.EVENT_DATA_POLICY_CHANGED,
+        targetType: "event",
+        targetId: event.id,
+        metadata: {
+          changed_fields: changedFields,
+          new_values: Object.fromEntries(changedFields.map((k) => [k, policyFields[k]]))
+        }
       });
 
       console.log(`TODO: fire data_policy.changed webhook and notification for event ${event.id} (Phase 15/17)`);

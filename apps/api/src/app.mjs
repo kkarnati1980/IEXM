@@ -13,6 +13,7 @@ import { buildDevicePrincipal, buildUserPrincipal } from "./auth/principals.mjs"
 import { verifyPlatformToken } from "./auth/platform-jwt.mjs";
 import { hashDeviceCredentialToken } from "./device-credentials.mjs";
 import { createIotOperationsRuntime } from "./iot/runtime.mjs";
+import { startBreakGlassExpiryJob } from "./jobs/break-glass-expiry.mjs";
 
 export async function createApp(options = {}) {
   const router = createRouter();
@@ -68,6 +69,11 @@ export async function createApp(options = {}) {
       repos,
       ...(options.iot ?? {})
     });
+
+  if (options.enableJobs === true) {
+    const tenantIds = state.tenants.map((t) => t.id);
+    startBreakGlassExpiryJob(repos, tenantIds);
+  }
 
   return {
     state,

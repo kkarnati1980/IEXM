@@ -829,6 +829,15 @@ export function createMemoryRepositories(state) {
         }
         state.breakGlassAccess[index] = record;
         return record;
+      },
+      async listApprovedExpired(tenantId, nowIso) {
+        return state.breakGlassAccess.filter(
+          (entry) =>
+            entry.tenant_id === tenantId &&
+            entry.status === "approved" &&
+            entry.expires_at &&
+            Date.parse(entry.expires_at) <= Date.parse(nowIso)
+        );
       }
     },
     auditLogs: {
