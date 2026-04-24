@@ -369,6 +369,7 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
 
   // Phase 2 — Auth Service Extensions
   "auth-login": publicEntry("auth.login", "Authenticate with email and password", "sensitive"),
+  "auth-invite-info": publicEntry("auth.invite.info", "Retrieve display name and email for a pending invite token"),
   "auth-accept-invite": publicEntry("auth.invite.accept", "Accept an invitation and set password", "sensitive"),
   "auth-forgot-password": publicEntry("auth.password.forgot", "Request a password reset email", "sensitive"),
   "auth-reset-password": publicEntry("auth.password.reset", "Reset password using a reset token", "sensitive"),

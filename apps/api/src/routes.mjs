@@ -4662,6 +4662,25 @@ export function registerRoutes(router) {
   });
 
   router.addRoute({
+    id: "auth-invite-info",
+    method: "GET",
+    path: "/auth/invite-info",
+    authRequired: false,
+    handler: async ({ query, repos, state }) => {
+      const { token } = query;
+      if (!token || typeof token !== "string") {
+        throw new HttpError(400, "token is required");
+      }
+      const hash = hashToken(token, state.sessionSecret);
+      const user = await repos.users.findByInviteTokenHash(hash);
+      if (!user || user.status !== "pending_invite") {
+        throw new HttpError(404, "Invite not found or already used");
+      }
+      return { full_name: user.display_name, email: user.email };
+    }
+  });
+
+  router.addRoute({
     id: "auth-accept-invite",
     method: "POST",
     path: "/auth/accept-invite",
