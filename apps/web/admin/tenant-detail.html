@@ -1,0 +1,1063 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tenant Detail — Platform Admin</title>
+    <style>
+      :root {
+        --bg: #101117;
+        --panel: #1a1c25;
+        --panel-2: #14161d;
+        --border: rgba(255,255,255,0.08);
+        --text: #f4f1ea;
+        --muted: #b2ac9f;
+        --accent: #f3c97d;
+        --accent-2: #9fd3c7;
+        --good: #9fd3c7;
+        --warn: #f3c97d;
+        --bad: #ff9f9f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; font-family: "IBM Plex Sans", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(243,201,125,0.16), transparent 28%),
+          linear-gradient(160deg, var(--bg), #090a0e 66%);
+        min-height: 100vh;
+      }
+      .shell { max-width: 1440px; margin: 0 auto; padding: 18px 24px 0; }
+      .shell-bar { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+      .shell-title { display: grid; gap: 4px; }
+      .shell-title strong { font-size: 1.1rem; }
+      .shell-nav { display: flex; gap: 10px; flex-wrap: wrap; }
+      .shell-nav a {
+        display: inline-flex; align-items: center; padding: 10px 13px;
+        border-radius: 999px; border: 1px solid var(--border);
+        background: rgba(255,255,255,0.04); color: var(--text);
+        text-decoration: none; font-size: 14px;
+      }
+      .shell-nav a.active { background: rgba(243,201,125,0.18); color: var(--accent); }
+      .eyebrow {
+        display: inline-block; margin-bottom: 8px; padding: 5px 10px;
+        border-radius: 999px; font-size: 12px; letter-spacing: 0.08em;
+        text-transform: uppercase; background: rgba(159,211,199,0.12); color: var(--accent-2);
+      }
+      main { max-width: 1440px; margin: 0 auto; padding: 24px; }
+      .muted { color: var(--muted); }
+      .card { border-radius: 22px; padding: 22px; background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1px solid var(--border); margin-bottom: 18px; }
+      .status { padding: 12px 14px; border-radius: 14px; font-size: 14px; margin-bottom: 14px; }
+      .status.ok { background: rgba(159,211,199,0.16); color: var(--good); }
+      .status.error { background: rgba(255,159,159,0.12); color: var(--bad); }
+      button { border: 0; border-radius: 12px; padding: 10px 16px; cursor: pointer; font: inherit; font-size: 14px; }
+      button.primary { background: var(--accent); color: #211503; font-weight: 600; }
+      button.secondary { background: rgba(255,255,255,0.1); color: var(--text); }
+      button.warn { background: rgba(243,201,125,0.16); color: var(--warn); }
+      button.bad { background: rgba(255,159,159,0.14); color: var(--bad); }
+      button.sm { padding: 7px 12px; font-size: 12px; }
+      button:disabled { opacity: 0.4; cursor: default; }
+      input, select, textarea {
+        width: 100%; border-radius: 12px; border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(255,255,255,0.04); color: var(--text); padding: 10px 12px; font: inherit;
+      }
+      textarea { min-height: 80px; resize: vertical; }
+      input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { padding: 11px; border-bottom: 1px solid var(--border); text-align: left; font-size: 14px; }
+      th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+      tbody tr:hover { background: rgba(255,255,255,0.03); }
+      .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); font-size: 12px; }
+      .badge.active, .badge.live { color: var(--good); }
+      .badge.suspended, .badge.disabled, .badge.closed, .badge.archived { color: var(--bad); }
+      .badge.pending_invite, .badge.draft, .badge.published { color: var(--warn); }
+      .empty { color: var(--muted); padding: 24px; text-align: center; }
+      .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+      .metric { border-radius: 18px; border: 1px solid var(--border); padding: 16px; background: rgba(255,255,255,0.03); }
+      .metric span { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+      .metric strong { display: block; margin-top: 6px; font-size: 1.6rem; }
+      .detail-row { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); align-items: baseline; }
+      .detail-row:last-child { border-bottom: none; }
+      .detail-row label { min-width: 130px; font-size: 13px; color: var(--muted); }
+      /* Tabs */
+      .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 18px; }
+      .tab-btn {
+        border: 0; background: none; color: var(--muted); padding: 10px 16px;
+        border-radius: 12px; cursor: pointer; font: inherit; font-size: 14px;
+        border: 1px solid transparent;
+      }
+      .tab-btn.active {
+        background: rgba(243,201,125,0.14); color: var(--accent);
+        border-color: rgba(243,201,125,0.3);
+      }
+      .tab-content { display: none; }
+      .tab-content.active { display: block; }
+      .section-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+      .section-head h3 { margin: 0; }
+      .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 14px; }
+      .toolbar > div { flex: 1 1 180px; min-width: 140px; }
+      /* Modal */
+      .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; z-index: 9000; }
+      .modal-panel { background: var(--panel); border-radius: 22px; border: 1px solid var(--border); padding: 28px; max-width: 560px; width: 90%; max-height: 90vh; overflow-y: auto; }
+      .field { margin-bottom: 14px; }
+      .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; }
+      .field-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+      .field-error { font-size: 12px; color: var(--bad); margin-top: 4px; }
+      .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+      .modal-actions button { flex: 1; }
+      /* Step wizard */
+      .step-indicator { display: flex; gap: 8px; margin-bottom: 20px; align-items: center; }
+      .step { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; background: rgba(255,255,255,0.08); color: var(--muted); }
+      .step.active { background: var(--accent); color: #211503; }
+      .step.done { background: var(--good); color: #0a1f1b; }
+      .step-sep { flex: 1; height: 2px; background: var(--border); max-width: 40px; }
+      /* Toggle */
+      .toggle-row { display: flex; align-items: flex-start; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+      .toggle-row:last-child { border-bottom: none; }
+      .toggle-row-info { flex: 1; }
+      .toggle-row-info strong { display: block; margin-bottom: 3px; }
+      .toggle-row-info span { font-size: 13px; color: var(--muted); }
+      input[type=checkbox].toggle { width: 36px; height: 20px; appearance: none; border-radius: 999px; background: rgba(255,255,255,0.15); cursor: pointer; position: relative; flex-shrink: 0; margin-top: 2px; }
+      input[type=checkbox].toggle:checked { background: var(--accent); }
+      input[type=checkbox].toggle::after { content: ""; position: absolute; width: 14px; height: 14px; border-radius: 50%; background: white; top: 3px; left: 3px; transition: left 0.15s; }
+      input[type=checkbox].toggle:checked::after { left: 19px; }
+      #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--good); color: #0a1f1b; padding: 12px 20px; border-radius: 14px; font-weight: 600; font-size: 14px; opacity: 0; transition: opacity 0.2s; z-index: 9999; pointer-events: none; }
+      #toast.show { opacity: 1; }
+      @media (max-width: 900px) { .metric-grid { grid-template-columns: repeat(2, 1fr); } }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <div class="eyebrow">Platform Admin</div>
+          <strong id="page-title">Tenant Detail</strong>
+          <span class="muted" id="page-sub">Loading…</span>
+        </div>
+        <nav class="shell-nav">
+          <a href="tenants.html" id="back-link">← Tenants</a>
+          <a href="tenants.html" class="active">Tenant Detail</a>
+        </nav>
+      </div>
+    </div>
+
+    <main>
+      <div id="global-status" hidden class="status"></div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="overview">Overview</button>
+        <button class="tab-btn" data-tab="organizations">Organizations</button>
+        <button class="tab-btn" data-tab="users">Users</button>
+        <button class="tab-btn" data-tab="events">Events</button>
+        <button class="tab-btn" data-tab="api-clients">API Clients</button>
+        <button class="tab-btn" data-tab="audit-log">Audit Log</button>
+      </div>
+
+      <!-- Overview Tab -->
+      <div id="tab-overview" class="tab-content active">
+        <div class="metric-grid">
+          <div class="metric"><span>Organizations</span><strong id="stat-orgs">—</strong></div>
+          <div class="metric"><span>Users</span><strong id="stat-users">—</strong></div>
+          <div class="metric"><span>Events</span><strong id="stat-events">—</strong></div>
+          <div class="metric"><span>Live Events</span><strong id="stat-live">—</strong></div>
+        </div>
+        <div class="card">
+          <div class="eyebrow">Tenant Info</div>
+          <div id="overview-status" hidden class="status"></div>
+          <div class="detail-row"><label>Name</label><span id="ov-name">—</span></div>
+          <div class="detail-row"><label>Slug</label><span id="ov-slug" style="font-family:monospace;color:var(--muted);">—</span></div>
+          <div class="detail-row"><label>Status</label><span id="ov-status">—</span></div>
+          <div class="detail-row"><label>Created</label><span id="ov-created" class="muted">—</span></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
+            <button class="secondary" id="edit-name-btn">Edit name</button>
+            <button class="warn" id="suspend-btn">Suspend tenant</button>
+          </div>
+          <div id="edit-name-wrap" hidden style="margin-top:14px;max-width:340px;">
+            <div class="field">
+              <label>New name</label>
+              <input type="text" id="edit-name-input" maxlength="100">
+            </div>
+            <div style="display:flex;gap:10px;">
+              <button class="primary" id="save-name-btn">Save</button>
+              <button class="secondary" id="cancel-name-btn">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Organizations Tab -->
+      <div id="tab-organizations" class="tab-content">
+        <div class="card">
+          <div class="section-head">
+            <h3>Organizations</h3>
+            <button class="primary" id="new-org-btn">+ New Organization</button>
+          </div>
+          <div id="orgs-status" hidden class="status"></div>
+          <table>
+            <thead><tr><th>Name</th><th>Type</th><th>Created</th><th>Actions</th></tr></thead>
+            <tbody id="orgs-tbody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Users Tab -->
+      <div id="tab-users" class="tab-content">
+        <div class="card">
+          <div class="section-head">
+            <h3>Users</h3>
+            <button class="primary" id="invite-user-btn">+ Invite User</button>
+          </div>
+          <div class="toolbar">
+            <div>
+              <label class="muted" style="font-size:12px;display:block;margin-bottom:4px;">Filter by role</label>
+              <select id="user-role-filter"><option value="">All roles</option></select>
+            </div>
+            <div>
+              <label class="muted" style="font-size:12px;display:block;margin-bottom:4px;">Filter by status</label>
+              <select id="user-status-filter">
+                <option value="">All statuses</option>
+                <option value="active">Active</option>
+                <option value="pending_invite">Pending invite</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </div>
+          </div>
+          <div id="users-status" hidden class="status"></div>
+          <table>
+            <thead><tr><th>Name / Email</th><th>Org</th><th>Roles</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
+            <tbody id="users-tbody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Events Tab -->
+      <div id="tab-events" class="tab-content">
+        <div class="card">
+          <div class="section-head">
+            <h3>Events</h3>
+            <button class="primary" id="new-event-btn">+ Create Event</button>
+          </div>
+          <div id="events-status" hidden class="status"></div>
+          <table>
+            <thead><tr><th>Event Name</th><th>Venue</th><th>Dates</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="events-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- API Clients Tab -->
+      <div id="tab-api-clients" class="tab-content">
+        <div class="card">
+          <div class="section-head">
+            <h3>API Clients</h3>
+          </div>
+          <p class="muted" style="font-size:14px;">API client management will be available in Phase 10 (H.2).</p>
+        </div>
+      </div>
+
+      <!-- Audit Log Tab -->
+      <div id="tab-audit-log" class="tab-content">
+        <div class="card">
+          <div class="section-head">
+            <h3>Audit Log</h3>
+            <div style="display:flex;gap:10px;">
+              <select id="audit-action-filter" style="width:auto;min-width:160px;">
+                <option value="">All actions</option>
+                <option value="user.">User events</option>
+                <option value="event.">Event events</option>
+                <option value="org.">Org events</option>
+                <option value="break_glass.">Break-glass events</option>
+              </select>
+            </div>
+          </div>
+          <div id="audit-status" hidden class="status"></div>
+          <table>
+            <thead><tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Target</th></tr></thead>
+            <tbody id="audit-tbody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <div id="toast"></div>
+
+    <script type="module">
+      import { showRoleAssignmentModal } from "../components.js";
+
+      const params = new URLSearchParams(location.search);
+      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "platform-token";
+      const tenantId = params.get("tenantId") ?? "";
+
+      // Update back link
+      document.getElementById("back-link").href = `tenants.html?token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
+
+      let tenantData = null;
+      let allOrgs = [];
+      let allUsers = [];
+      let allEvents = [];
+      let allAuditLogs = [];
+
+      function esc(str) {
+        return String(str ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+      }
+      function fmt(iso) {
+        return iso ? new Date(iso).toLocaleString() : "—";
+      }
+      function fmtDate(iso) {
+        return iso ? new Date(iso).toLocaleDateString() : "—";
+      }
+
+      function showGlobal(msg, type) {
+        const el = document.getElementById("global-status");
+        el.textContent = msg; el.className = `status ${type}`; el.hidden = false;
+      }
+      function toast(msg) {
+        const el = document.getElementById("toast");
+        el.textContent = msg; el.classList.add("show");
+        setTimeout(() => el.classList.remove("show"), 2800);
+      }
+
+      async function api(path, options = {}) {
+        const res = await fetch(`${apiBase}${path}`, {
+          method: options.method ?? "GET",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error ?? `Request failed: ${res.status}`);
+        return payload;
+      }
+
+      // ── Tab switching ──────────────────────────────────────────────────────
+
+      const tabBtns = document.querySelectorAll(".tab-btn");
+      const tabContents = document.querySelectorAll(".tab-content");
+
+      function activateTab(name) {
+        tabBtns.forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+        tabContents.forEach((c) => c.classList.toggle("active", c.id === `tab-${name}`));
+        history.replaceState(null, "", `#${name}`);
+        if (name === "organizations") loadOrgs();
+        else if (name === "users") loadUsers();
+        else if (name === "events") loadEvents();
+        else if (name === "audit-log") loadAuditLog();
+      }
+
+      tabBtns.forEach((btn) => btn.addEventListener("click", () => activateTab(btn.dataset.tab)));
+      const hash = location.hash.replace("#", "") || "overview";
+      if (hash !== "overview") activateTab(hash);
+
+      // ── Load tenant overview ───────────────────────────────────────────────
+
+      async function loadOverview() {
+        try {
+          const data = await api(`/admin/tenants/${encodeURIComponent(tenantId)}`);
+          tenantData = data.tenant;
+          const s = data.stats;
+          document.getElementById("page-title").textContent = tenantData.name;
+          document.getElementById("page-sub").textContent = `Slug: ${tenantData.slug}`;
+          document.getElementById("stat-orgs").textContent = s.org_count;
+          document.getElementById("stat-users").textContent = s.user_count;
+          document.getElementById("stat-events").textContent = s.event_count;
+          document.getElementById("stat-live").textContent = s.active_event_count;
+          document.getElementById("ov-name").textContent = tenantData.name;
+          document.getElementById("ov-slug").textContent = tenantData.slug;
+          document.getElementById("ov-status").innerHTML = `<span class="badge ${esc(tenantData.status)}">${esc(tenantData.status)}</span>`;
+          document.getElementById("ov-created").textContent = fmtDate(tenantData.created_at);
+          document.getElementById("edit-name-input").value = tenantData.name;
+          const suspendBtn = document.getElementById("suspend-btn");
+          if (tenantData.status === "suspended") {
+            suspendBtn.textContent = "Restore tenant";
+            suspendBtn.className = "secondary";
+          }
+        } catch (err) {
+          showGlobal(err.message, "error");
+        }
+      }
+
+      document.getElementById("edit-name-btn").addEventListener("click", () => {
+        document.getElementById("edit-name-wrap").hidden = false;
+      });
+      document.getElementById("cancel-name-btn").addEventListener("click", () => {
+        document.getElementById("edit-name-wrap").hidden = true;
+      });
+      document.getElementById("save-name-btn").addEventListener("click", async () => {
+        const name = document.getElementById("edit-name-input").value.trim();
+        if (!name) return;
+        try {
+          await api(`/admin/tenants/${encodeURIComponent(tenantId)}`, { method: "PATCH", body: { name } });
+          toast("Tenant name updated");
+          loadOverview();
+        } catch (err) {
+          showGlobal(err.message, "error");
+        }
+      });
+      document.getElementById("suspend-btn").addEventListener("click", async () => {
+        const isSuspended = tenantData?.status === "suspended";
+        const action = isSuspended ? "active" : "suspended";
+        const msg = isSuspended ? "Restore this tenant?" : `Suspend tenant "${tenantData?.name}"? Users will lose access.`;
+        if (!confirm(msg)) return;
+        try {
+          await api(`/admin/tenants/${encodeURIComponent(tenantId)}`, { method: "PATCH", body: { status: action } });
+          toast(isSuspended ? "Tenant restored" : "Tenant suspended");
+          loadOverview();
+        } catch (err) {
+          showGlobal(err.message, "error");
+        }
+      });
+
+      // ── Organizations tab ──────────────────────────────────────────────────
+
+      async function loadOrgs() {
+        const tbody = document.getElementById("orgs-tbody");
+        tbody.innerHTML = `<tr><td colspan="4" class="empty">Loading…</td></tr>`;
+        try {
+          const data = await api("/orgs");
+          allOrgs = data.items ?? [];
+          renderOrgs(allOrgs);
+        } catch (err) {
+          tbody.innerHTML = `<tr><td colspan="4" class="empty" style="color:var(--bad);">${esc(err.message)}</td></tr>`;
+        }
+      }
+
+      function renderOrgs(orgs) {
+        const tbody = document.getElementById("orgs-tbody");
+        if (!orgs.length) {
+          tbody.innerHTML = `<tr><td colspan="4" class="empty">No organizations yet.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = orgs.map((o) => `
+          <tr>
+            <td><strong>${esc(o.name)}</strong></td>
+            <td><span class="badge">${esc(o.type)}</span></td>
+            <td class="muted">${fmtDate(o.created_at)}</td>
+            <td><button class="secondary sm">Edit</button></td>
+          </tr>
+        `).join("");
+      }
+
+      document.getElementById("new-org-btn").addEventListener("click", openCreateOrgModal);
+
+      function openCreateOrgModal() {
+        const overlay = document.createElement("div");
+        overlay.className = "modal-overlay";
+        overlay.innerHTML = `
+          <div class="modal-panel">
+            <div class="eyebrow">New Organization</div>
+            <h2 style="margin:8px 0 18px;">Create organization</h2>
+            <div id="org-modal-status" hidden class="status error"></div>
+            <div class="field"><label>Name <span style="color:var(--bad)">*</span></label><input type="text" id="org-name" placeholder="Acme Organizers" autofocus></div>
+            <div class="field">
+              <label>Type <span style="color:var(--bad)">*</span></label>
+              <select id="org-type">
+                <option value="organizer">Organizer</option>
+                <option value="vendor">Vendor</option>
+                <option value="sponsor">Sponsor</option>
+                <option value="platform">Internal / Platform</option>
+              </select>
+            </div>
+            <div class="modal-actions">
+              <button class="primary" id="org-submit">Create organization</button>
+              <button class="secondary" id="org-cancel">Cancel</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+        overlay.querySelector("#org-cancel").addEventListener("click", () => overlay.remove());
+        overlay.querySelector("#org-submit").addEventListener("click", async () => {
+          const name = overlay.querySelector("#org-name").value.trim();
+          const type = overlay.querySelector("#org-type").value;
+          const statusEl = overlay.querySelector("#org-modal-status");
+          if (!name) { overlay.querySelector("#org-name").focus(); return; }
+          overlay.querySelector("#org-submit").disabled = true;
+          try {
+            await api("/orgs", { method: "POST", body: { name, type } });
+            overlay.remove();
+            toast("Organization created");
+            loadOrgs();
+          } catch (err) {
+            statusEl.textContent = err.message; statusEl.hidden = false;
+            overlay.querySelector("#org-submit").disabled = false;
+          }
+        });
+      }
+
+      // ── Users tab ──────────────────────────────────────────────────────────
+
+      async function loadUsers() {
+        const tbody = document.getElementById("users-tbody");
+        tbody.innerHTML = `<tr><td colspan="6" class="empty">Loading…</td></tr>`;
+        try {
+          const [usersData, orgsData] = await Promise.all([api("/users"), api("/orgs")]);
+          allUsers = usersData.items ?? [];
+          allOrgs = orgsData.items ?? [];
+          populateUserRoleFilter();
+          renderUsers(allUsers);
+        } catch (err) {
+          tbody.innerHTML = `<tr><td colspan="6" class="empty" style="color:var(--bad);">${esc(err.message)}</td></tr>`;
+        }
+      }
+
+      function populateUserRoleFilter() {
+        const sel = document.getElementById("user-role-filter");
+        const roles = [...new Set(allUsers.map((u) => u.role))];
+        sel.innerHTML = `<option value="">All roles</option>` + roles.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join("");
+      }
+
+      function filteredUsers() {
+        const role = document.getElementById("user-role-filter").value;
+        const status = document.getElementById("user-status-filter").value;
+        return allUsers.filter((u) =>
+          (!role || u.role === role) &&
+          (!status || u.status === status)
+        );
+      }
+
+      document.getElementById("user-role-filter").addEventListener("change", () => renderUsers(filteredUsers()));
+      document.getElementById("user-status-filter").addEventListener("change", () => renderUsers(filteredUsers()));
+
+      function renderUsers(users) {
+        const tbody = document.getElementById("users-tbody");
+        const orgMap = Object.fromEntries(allOrgs.map((o) => [o.id, o.name]));
+        if (!users.length) {
+          tbody.innerHTML = `<tr><td colspan="6" class="empty">No users match the current filter.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = users.map((u) => `
+          <tr>
+            <td><strong>${esc(u.display_name)}</strong><div class="muted" style="font-size:12px;">${esc(u.email)}</div></td>
+            <td class="muted">${esc(orgMap[u.org_id] ?? u.org_id ?? "—")}</td>
+            <td><span class="badge">${esc(u.role)}</span></td>
+            <td><span class="badge ${esc(u.status)}">${esc(u.status)}</span></td>
+            <td class="muted" style="font-size:12px;">${u.last_login_at ? fmtDate(u.last_login_at) : "Never"}</td>
+            <td>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <a href="user-detail.html?userId=${esc(u.id)}&token=${esc(token)}&apiBase=${esc(apiBase)}" style="text-decoration:none;"><button class="secondary sm">View</button></a>
+                ${u.status === "active"
+                  ? `<button class="bad sm" data-disable="${esc(u.id)}">Disable</button>`
+                  : u.status === "pending_invite"
+                    ? `<button class="secondary sm" data-resend="${esc(u.id)}">Resend invite</button>`
+                    : ``
+                }
+              </div>
+            </td>
+          </tr>
+        `).join("");
+
+        tbody.querySelectorAll("[data-disable]").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            try {
+              await api(`/users/${btn.dataset.disable}/disable`, { method: "POST", body: { reason: "Disabled by admin" } });
+              toast("User disabled"); loadUsers();
+            } catch (err) { showGlobal(err.message, "error"); }
+          });
+        });
+        tbody.querySelectorAll("[data-resend]").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            try {
+              await api(`/users/${btn.dataset.resend}/resend-invite`, { method: "POST" });
+              toast("Invite resent");
+            } catch (err) { showGlobal(err.message, "error"); }
+          });
+        });
+      }
+
+      document.getElementById("invite-user-btn").addEventListener("click", openInviteUserModal);
+
+      function openInviteUserModal() {
+        const overlay = document.createElement("div");
+        overlay.className = "modal-overlay";
+
+        const ROLES = ["platform_admin", "organizer_admin", "vendor_manager", "sponsor_user", "ops_user"];
+        const SCOPED = ["organizer_admin", "vendor_manager", "sponsor_user", "ops_user"];
+        const STALL_ROLES = ["vendor_manager"];
+        const PKG_ROLES = ["sponsor_user"];
+
+        let step = 1;
+        let s1Data = {};
+
+        function orgOptions() {
+          return `<option value="">— No organization —</option>` + allOrgs.map((o) => `<option value="${esc(o.id)}">${esc(o.name)} (${esc(o.type)})</option>`).join("");
+        }
+        function eventOptions() {
+          return `<option value="">— select event —</option>` + allEvents.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join("");
+        }
+
+        function renderStep1() {
+          return `
+            <div class="modal-panel">
+              <div class="step-indicator">
+                <div class="step active">1</div>
+                <div class="step-sep"></div>
+                <div class="step">2</div>
+              </div>
+              <div class="eyebrow">Invite User</div>
+              <h2 style="margin:8px 0 18px;">Step 1 — User details</h2>
+              <div id="inv-status" hidden class="status error"></div>
+              <div class="field"><label>Full name <span style="color:var(--bad)">*</span></label><input type="text" id="inv-name" value="${esc(s1Data.display_name ?? "")}" autofocus></div>
+              <div class="field"><label>Email <span style="color:var(--bad)">*</span></label><input type="email" id="inv-email" value="${esc(s1Data.email ?? "")}"></div>
+              <div class="field"><label>Organization</label><select id="inv-org">${orgOptions()}</select></div>
+              <div class="modal-actions">
+                <button class="primary" id="inv-next">Next →</button>
+                <button class="secondary" id="inv-cancel">Cancel</button>
+              </div>
+            </div>
+          `;
+        }
+
+        function renderStep2() {
+          return `
+            <div class="modal-panel">
+              <div class="step-indicator">
+                <div class="step done">✓</div>
+                <div class="step-sep"></div>
+                <div class="step active">2</div>
+              </div>
+              <div class="eyebrow">Invite User</div>
+              <h2 style="margin:8px 0 18px;">Step 2 — Role assignment</h2>
+              <div id="inv2-status" hidden class="status error"></div>
+              <div class="field">
+                <label>Role <span style="color:var(--bad)">*</span></label>
+                <select id="inv-role">
+                  <option value="">— select role —</option>
+                  ${ROLES.map((r) => `<option value="${r}">${r}</option>`).join("")}
+                </select>
+              </div>
+              <div id="inv-scope-fields" hidden>
+                <div class="field"><label>Event <span style="color:var(--bad)">*</span></label><select id="inv-event">${eventOptions()}</select></div>
+                <div id="inv-stall-wrap" hidden class="field">
+                  <label>Stall IDs (comma-separated)</label>
+                  <input type="text" id="inv-stalls" placeholder="stall-1, stall-2">
+                  <p class="field-hint">Required for Vendor Manager.</p>
+                  <p class="field-error" id="stall-error" hidden>At least one stall required for Vendor Manager.</p>
+                </div>
+                <div id="inv-pkg-wrap" hidden class="field">
+                  <label>Sponsor package ID</label>
+                  <input type="text" id="inv-pkg" placeholder="pkg-123">
+                </div>
+              </div>
+              <div class="modal-actions">
+                <button class="primary" id="inv-submit">Send invitation</button>
+                <button class="secondary" id="inv-back">← Back</button>
+              </div>
+            </div>
+          `;
+        }
+
+        function mount() {
+          overlay.innerHTML = step === 1 ? renderStep1() : renderStep2();
+          overlay.querySelector("#inv-cancel")?.addEventListener("click", () => overlay.remove());
+
+          if (step === 1) {
+            overlay.querySelector("#inv-next").addEventListener("click", () => {
+              const name = overlay.querySelector("#inv-name").value.trim();
+              const email = overlay.querySelector("#inv-email").value.trim();
+              const statusEl = overlay.querySelector("#inv-status");
+              if (!name) { overlay.querySelector("#inv-name").focus(); return; }
+              if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                statusEl.textContent = "Please enter a valid email address.";
+                statusEl.hidden = false; return;
+              }
+              s1Data = {
+                display_name: name, email,
+                organization_id: overlay.querySelector("#inv-org").value || undefined
+              };
+              step = 2; mount();
+            });
+          } else {
+            const roleEl = overlay.querySelector("#inv-role");
+            const scopeFields = overlay.querySelector("#inv-scope-fields");
+            const stallWrap = overlay.querySelector("#inv-stall-wrap");
+            const pkgWrap = overlay.querySelector("#inv-pkg-wrap");
+
+            roleEl.addEventListener("change", () => {
+              const role = roleEl.value;
+              scopeFields.hidden = !SCOPED.includes(role);
+              stallWrap.hidden = !STALL_ROLES.includes(role);
+              pkgWrap.hidden = !PKG_ROLES.includes(role);
+            });
+
+            overlay.querySelector("#inv-back").addEventListener("click", () => { step = 1; mount(); });
+            overlay.querySelector("#inv-submit").addEventListener("click", async () => {
+              const role = roleEl.value;
+              const statusEl = overlay.querySelector("#inv2-status");
+              statusEl.hidden = true;
+              if (!role) { roleEl.focus(); return; }
+
+              const body = { ...s1Data, role };
+              if (SCOPED.includes(role)) {
+                const eventId = overlay.querySelector("#inv-event").value;
+                if (!eventId) { statusEl.textContent = "Please select an event."; statusEl.hidden = false; return; }
+                body.event_id = eventId;
+              }
+              if (STALL_ROLES.includes(role)) {
+                const stallStr = overlay.querySelector("#inv-stalls").value.trim();
+                if (!stallStr) {
+                  const err = overlay.querySelector("#stall-error"); err.hidden = false;
+                  return;
+                }
+                body.stall_ids = stallStr.split(",").map((s) => s.trim()).filter(Boolean);
+              }
+              if (PKG_ROLES.includes(role)) {
+                body.sponsor_package_id = overlay.querySelector("#inv-pkg").value.trim() || undefined;
+              }
+
+              overlay.querySelector("#inv-submit").disabled = true;
+              try {
+                await api("/users/invite", { method: "POST", body });
+                overlay.remove();
+                toast(`Invitation sent to ${s1Data.email}`);
+                loadUsers();
+              } catch (err) {
+                statusEl.textContent = err.message; statusEl.hidden = false;
+                overlay.querySelector("#inv-submit").disabled = false;
+              }
+            });
+          }
+        }
+
+        document.body.appendChild(overlay);
+        // Load events for scope selectors
+        api("/events").then((d) => { allEvents = d.items ?? []; }).catch(() => {});
+        mount();
+      }
+
+      // ── Events tab ────────────────────────────────────────────────────────
+
+      async function loadEvents() {
+        const tbody = document.getElementById("events-tbody");
+        tbody.innerHTML = `<tr><td colspan="5" class="empty">Loading…</td></tr>`;
+        try {
+          const data = await api("/events");
+          allEvents = data.items ?? [];
+          renderEvents(allEvents);
+        } catch (err) {
+          tbody.innerHTML = `<tr><td colspan="5" class="empty" style="color:var(--bad);">${esc(err.message)}</td></tr>`;
+        }
+      }
+
+      function renderEvents(events) {
+        const tbody = document.getElementById("events-tbody");
+        if (!events.length) {
+          tbody.innerHTML = `<tr><td colspan="5" class="empty">No events yet.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = events.map((e) => `
+          <tr>
+            <td><strong>${esc(e.name)}</strong></td>
+            <td class="muted">${esc(e.venue_name ?? "—")}</td>
+            <td class="muted" style="font-size:12px;">${fmtDate(e.starts_at)} – ${fmtDate(e.ends_at)}</td>
+            <td><span class="badge ${esc(e.status)}">${esc(e.status)}</span></td>
+            <td><button class="secondary sm">Manage</button></td>
+          </tr>
+        `).join("");
+      }
+
+      document.getElementById("new-event-btn").addEventListener("click", openCreateEventWizard);
+
+      function openCreateEventWizard() {
+        const overlay = document.createElement("div");
+        overlay.className = "modal-overlay";
+
+        let step = 1;
+        const data = {
+          basics: {},
+          halls: [],
+          packages: [],
+          policy: {
+            vendor_exports_enabled: false,
+            sponsor_pii_enabled: false,
+            require_export_approval: true,
+            allow_crm_push: false,
+            retention_days: 90,
+            allow_cross_event_identity_graph: false
+          }
+        };
+
+        const RETENTION_OPTIONS = [30, 60, 90, 180, 365];
+        const POLICY_FIELDS = [
+          { key: "vendor_exports_enabled", label: "Vendor data exports", desc: "Allow vendor managers to export booth interaction data" },
+          { key: "sponsor_pii_enabled", label: "Sponsor PII access", desc: "Allow sponsors to view attendee PII fields within their package" },
+          { key: "require_export_approval", label: "Require export approval", desc: "All data export requests must be approved by organizer admin" },
+          { key: "allow_crm_push", label: "CRM push", desc: "Allow syncing interactions to the configured CRM integration" },
+          { key: "allow_cross_event_identity_graph", label: "Cross-event identity graph", desc: "Allow linking attendee identity across events in this tenant" }
+        ];
+
+        function stepIndicator(current) {
+          return [1,2,3,4].map((n) => `
+            <div class="step ${n < current ? "done" : n === current ? "active" : ""}">${n < current ? "✓" : n}</div>
+            ${n < 4 ? `<div class="step-sep"></div>` : ""}
+          `).join("");
+        }
+
+        function hallRow(idx, hall) {
+          return `
+            <div class="item" style="border-radius:12px;border:1px solid var(--border);padding:12px;margin-bottom:8px;">
+              <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+                <input type="text" placeholder="Hall name" value="${esc(hall.name ?? "")}" data-hall-name="${idx}" style="flex:1;">
+                <button class="bad sm" data-remove-hall="${idx}" style="flex-shrink:0;">Remove</button>
+              </div>
+              <div id="stalls-${idx}">
+                ${(hall.stalls ?? []).map((s, si) => `
+                  <div style="display:flex;gap:8px;margin-bottom:6px;">
+                    <input type="text" placeholder="Code (e.g. A1)" value="${esc(s.code ?? "")}" data-stall-code="${idx}-${si}" style="width:100px;flex-shrink:0;">
+                    <input type="text" placeholder="Stall name" value="${esc(s.name ?? "")}" data-stall-name="${idx}-${si}">
+                    <button class="secondary sm" data-remove-stall="${idx}-${si}">×</button>
+                  </div>
+                `).join("")}
+              </div>
+              <button class="secondary sm" data-add-stall="${idx}" style="margin-top:4px;">+ Add stall</button>
+            </div>
+          `;
+        }
+
+        function pkgRow(idx, pkg) {
+          const orgOpts = allOrgs.filter((o) => o.type === "sponsor").map((o) => `<option value="${esc(o.id)}" ${pkg.org_id === o.id ? "selected" : ""}>${esc(o.name)}</option>`).join("");
+          return `
+            <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
+              <input type="text" placeholder="Package name" value="${esc(pkg.name ?? "")}" data-pkg-name="${idx}" style="flex:2;">
+              <select data-pkg-tier="${idx}" style="flex:1;">
+                ${["gold","silver","bronze","custom"].map((t) => `<option value="${t}" ${pkg.tier===t?"selected":""}>${t}</option>`).join("")}
+              </select>
+              <select data-pkg-org="${idx}" style="flex:1;">
+                <option value="">No org</option>${orgOpts}
+              </select>
+              <button class="bad sm" data-remove-pkg="${idx}">×</button>
+            </div>
+          `;
+        }
+
+        function renderWizardStep() {
+          let content = "";
+          if (step === 1) {
+            content = `
+              <div class="field"><label>Event name *</label><input type="text" id="ev-name" value="${esc(data.basics.name ?? "")}" autofocus></div>
+              <div class="field"><label>Venue name *</label><input type="text" id="ev-venue" value="${esc(data.basics.venue_name ?? "")}"></div>
+              <div style="display:flex;gap:12px;">
+                <div class="field" style="flex:1;"><label>City</label><input type="text" id="ev-city" value="${esc(data.basics.city ?? "")}"></div>
+                <div class="field" style="flex:1;"><label>Country</label><input type="text" id="ev-country" value="${esc(data.basics.country ?? "")}" placeholder="IN"></div>
+              </div>
+              <div style="display:flex;gap:12px;">
+                <div class="field" style="flex:1;"><label>Start date *</label><input type="date" id="ev-start" value="${esc(data.basics.starts_at?.slice(0,10) ?? "")}"></div>
+                <div class="field" style="flex:1;"><label>End date *</label><input type="date" id="ev-end" value="${esc(data.basics.ends_at?.slice(0,10) ?? "")}"></div>
+              </div>
+            `;
+          } else if (step === 2) {
+            content = `
+              <div id="halls-container">${data.halls.map((h, i) => hallRow(i, h)).join("")}</div>
+              <button class="secondary" id="add-hall-btn" style="margin-top:8px;">+ Add Hall</button>
+            `;
+          } else if (step === 3) {
+            content = `
+              <div id="pkgs-container">${data.packages.map((p, i) => pkgRow(i, p)).join("")}</div>
+              <button class="secondary" id="add-pkg-btn" style="margin-top:8px;">+ Add Package</button>
+              ${!allOrgs.some((o) => o.type === "sponsor") ? `<p class="muted" style="font-size:13px;margin-top:8px;">No sponsor orgs in this tenant yet — create one in the Organizations tab first.</p>` : ""}
+            `;
+          } else if (step === 4) {
+            content = `
+              <div class="toggle-row">
+                <div class="toggle-row-info"><strong>Retention period</strong><span>How long attendee data is retained after the event.</span></div>
+                <select id="pol-retention" style="width:auto;min-width:100px;">
+                  ${RETENTION_OPTIONS.map((d) => `<option value="${d}" ${data.policy.retention_days===d?"selected":""}>${d} days</option>`).join("")}
+                </select>
+              </div>
+              ${POLICY_FIELDS.map((f) => `
+                <div class="toggle-row">
+                  <div class="toggle-row-info"><strong>${esc(f.label)}</strong><span>${esc(f.desc)}</span></div>
+                  <input type="checkbox" class="toggle" data-pol="${f.key}" ${data.policy[f.key] ? "checked" : ""}>
+                </div>
+              `).join("")}
+            `;
+          }
+
+          overlay.innerHTML = `
+            <div class="modal-panel" style="max-width:640px;">
+              <div class="step-indicator">${stepIndicator(step)}</div>
+              <div class="eyebrow">Create Event</div>
+              <h2 style="margin:8px 0 4px;">Step ${step} of 4 — ${["","Event Basics","Halls & Stalls","Sponsor Packages","Data Policy"][step]}</h2>
+              <div id="wiz-status" hidden class="status error" style="margin-top:12px;"></div>
+              <div style="margin-top:16px;">${content}</div>
+              <div class="modal-actions" style="margin-top:20px;">
+                ${step < 4
+                  ? `<button class="primary" id="wiz-next">Next →</button>`
+                  : `<button class="primary" id="wiz-submit">Create Event</button>`
+                }
+                ${step > 1 ? `<button class="secondary" id="wiz-back">← Back</button>` : ""}
+                <button class="secondary" id="wiz-cancel">Cancel</button>
+              </div>
+            </div>
+          `;
+
+          // Wire step 2 dynamic hall/stall interactions
+          if (step === 2) {
+            function syncHalls() {
+              data.halls = [];
+              overlay.querySelectorAll("[data-hall-name]").forEach((el) => {
+                const i = parseInt(el.dataset.hallName);
+                if (!data.halls[i]) data.halls[i] = { name: "", stalls: [] };
+                data.halls[i].name = el.value;
+              });
+              overlay.querySelectorAll("[data-stall-code]").forEach((el) => {
+                const [hi, si] = el.dataset.stallCode.split("-").map(Number);
+                if (!data.halls[hi].stalls[si]) data.halls[hi].stalls[si] = {};
+                data.halls[hi].stalls[si].code = el.value;
+              });
+              overlay.querySelectorAll("[data-stall-name]").forEach((el) => {
+                const [hi, si] = el.dataset.stallName.split("-").map(Number);
+                if (!data.halls[hi].stalls[si]) data.halls[hi].stalls[si] = {};
+                data.halls[hi].stalls[si].name = el.value;
+              });
+            }
+            overlay.querySelector("#add-hall-btn").addEventListener("click", () => {
+              syncHalls(); data.halls.push({ name: "", stalls: [] }); renderWizardStep();
+            });
+            overlay.querySelectorAll("[data-remove-hall]").forEach((btn) => {
+              btn.addEventListener("click", () => { syncHalls(); data.halls.splice(parseInt(btn.dataset.removeHall), 1); renderWizardStep(); });
+            });
+            overlay.querySelectorAll("[data-add-stall]").forEach((btn) => {
+              btn.addEventListener("click", () => { syncHalls(); const i = parseInt(btn.dataset.addStall); data.halls[i].stalls.push({ code: "", name: "" }); renderWizardStep(); });
+            });
+            overlay.querySelectorAll("[data-remove-stall]").forEach((btn) => {
+              btn.addEventListener("click", () => { syncHalls(); const [hi, si] = btn.dataset.removeStall.split("-").map(Number); data.halls[hi].stalls.splice(si, 1); renderWizardStep(); });
+            });
+          }
+
+          // Wire step 3 package interactions
+          if (step === 3) {
+            function syncPkgs() {
+              data.packages = [];
+              overlay.querySelectorAll("[data-pkg-name]").forEach((el) => {
+                const i = parseInt(el.dataset.pkgName);
+                if (!data.packages[i]) data.packages[i] = {};
+                data.packages[i].name = el.value;
+              });
+              overlay.querySelectorAll("[data-pkg-tier]").forEach((el) => { data.packages[parseInt(el.dataset.pkgTier)].tier = el.value; });
+              overlay.querySelectorAll("[data-pkg-org]").forEach((el) => { data.packages[parseInt(el.dataset.pkgOrg)].org_id = el.value || undefined; });
+            }
+            overlay.querySelector("#add-pkg-btn").addEventListener("click", () => {
+              syncPkgs(); data.packages.push({ name: "", tier: "gold", org_id: "" }); renderWizardStep();
+            });
+            overlay.querySelectorAll("[data-remove-pkg]").forEach((btn) => {
+              btn.addEventListener("click", () => { syncPkgs(); data.packages.splice(parseInt(btn.dataset.removePkg), 1); renderWizardStep(); });
+            });
+          }
+
+          // Wire step 4 policy toggles
+          if (step === 4) {
+            overlay.querySelectorAll("[data-pol]").forEach((el) => {
+              el.addEventListener("change", () => { data.policy[el.dataset.pol] = el.checked; });
+            });
+            overlay.querySelector("#pol-retention").addEventListener("change", (e) => {
+              data.policy.retention_days = parseInt(e.target.value);
+            });
+          }
+
+          overlay.querySelector("#wiz-cancel")?.addEventListener("click", () => overlay.remove());
+          overlay.querySelector("#wiz-back")?.addEventListener("click", () => {
+            if (step === 2) syncHalls?.();
+            step--; renderWizardStep();
+          });
+
+          if (step < 4) {
+            overlay.querySelector("#wiz-next").addEventListener("click", () => {
+              const statusEl = overlay.querySelector("#wiz-status");
+              statusEl.hidden = true;
+              if (step === 1) {
+                const name = overlay.querySelector("#ev-name").value.trim();
+                const venue = overlay.querySelector("#ev-venue").value.trim();
+                const start = overlay.querySelector("#ev-start").value;
+                const end = overlay.querySelector("#ev-end").value;
+                if (!name || !venue || !start || !end) {
+                  statusEl.textContent = "Event name, venue, start and end date are required.";
+                  statusEl.hidden = false; return;
+                }
+                data.basics = { name, venue_name: venue, city: overlay.querySelector("#ev-city").value.trim(), country: overlay.querySelector("#ev-country").value.trim(), starts_at: start, ends_at: end };
+              }
+              step++; renderWizardStep();
+            });
+          } else {
+            overlay.querySelector("#wiz-submit").addEventListener("click", async () => {
+              const statusEl = overlay.querySelector("#wiz-status");
+              const submitBtn = overlay.querySelector("#wiz-submit");
+              statusEl.hidden = true; submitBtn.disabled = true;
+              try {
+                const evRes = await api("/events", { method: "POST", body: data.basics });
+                const eventId = evRes.event?.id ?? evRes.id;
+                if (!eventId) throw new Error("No event ID returned from server");
+
+                for (const hall of data.halls.filter((h) => h.name)) {
+                  const hallRes = await api(`/events/${eventId}/halls`, { method: "POST", body: { name: hall.name } });
+                  const hallId = hallRes.hall_id ?? hallRes.id;
+                  for (const stall of (hall.stalls ?? []).filter((s) => s.code)) {
+                    await api(`/events/${eventId}/stalls`, { method: "POST", body: { stall_code: stall.code, name: stall.name ?? stall.code, hall_id: hallId } });
+                  }
+                }
+
+                for (const pkg of data.packages.filter((p) => p.name)) {
+                  await api(`/events/${eventId}/sponsor-packages`, { method: "POST", body: { name: pkg.name, tier: pkg.tier, org_id: pkg.org_id } });
+                }
+
+                await api(`/events/${eventId}/data-policy`, { method: "POST", body: data.policy });
+
+                overlay.remove();
+                toast("Event created");
+                loadEvents();
+              } catch (err) {
+                statusEl.textContent = err.message; statusEl.hidden = false;
+                submitBtn.disabled = false;
+              }
+            });
+          }
+        }
+
+        document.body.appendChild(overlay);
+        renderWizardStep();
+      }
+
+      // ── Audit Log tab ─────────────────────────────────────────────────────
+
+      async function loadAuditLog() {
+        const tbody = document.getElementById("audit-tbody");
+        tbody.innerHTML = `<tr><td colspan="4" class="empty">Loading…</td></tr>`;
+        try {
+          const data = await api("/audit/logs");
+          allAuditLogs = data.items ?? [];
+          renderAuditLog(allAuditLogs);
+        } catch (err) {
+          tbody.innerHTML = `<tr><td colspan="4" class="empty" style="color:var(--bad);">${esc(err.message)}</td></tr>`;
+        }
+      }
+
+      function filteredAuditLogs() {
+        const prefix = document.getElementById("audit-action-filter").value;
+        return allAuditLogs.filter((l) => !prefix || l.event_type.startsWith(prefix));
+      }
+
+      document.getElementById("audit-action-filter").addEventListener("change", () => renderAuditLog(filteredAuditLogs()));
+
+      function renderAuditLog(logs) {
+        const tbody = document.getElementById("audit-tbody");
+        if (!logs.length) {
+          tbody.innerHTML = `<tr><td colspan="4" class="empty">No audit log entries found.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = logs.slice(0, 100).map((l) => `
+          <tr>
+            <td style="font-size:12px;white-space:nowrap;">${fmt(l.created_at)}</td>
+            <td class="muted" style="font-size:12px;">${esc(l.actor_type)} / ${esc(l.actor_id?.slice(0, 16))}</td>
+            <td><code style="font-size:12px;color:var(--accent-2);">${esc(l.event_type)}</code></td>
+            <td class="muted" style="font-size:12px;">${l.target_type ? `${esc(l.target_type)}: ${esc(l.target_id?.slice(0, 20))}` : "—"}</td>
+          </tr>
+        `).join("");
+      }
+
+      // ── Init ──────────────────────────────────────────────────────────────
+
+      loadOverview();
+      // Pre-load orgs for user invite flow
+      api("/orgs").then((d) => { allOrgs = d.items ?? []; }).catch(() => {});
+    </script>
+  </body>
+</html>

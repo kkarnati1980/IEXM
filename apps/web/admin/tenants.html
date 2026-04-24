@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tenants — Platform Admin</title>
+    <style>
+      :root {
+        --bg: #101117;
+        --panel: #1a1c25;
+        --panel-2: #14161d;
+        --border: rgba(255,255,255,0.08);
+        --text: #f4f1ea;
+        --muted: #b2ac9f;
+        --accent: #f3c97d;
+        --accent-2: #9fd3c7;
+        --good: #9fd3c7;
+        --warn: #f3c97d;
+        --bad: #ff9f9f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(243,201,125,0.16), transparent 28%),
+          linear-gradient(160deg, var(--bg), #090a0e 66%);
+        min-height: 100vh;
+      }
+      .shell { max-width: 1440px; margin: 0 auto; padding: 18px 24px 0; }
+      .shell-bar {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 16px; flex-wrap: wrap; margin-bottom: 18px;
+      }
+      .shell-title { display: grid; gap: 4px; }
+      .shell-title strong { font-size: 1.1rem; }
+      .shell-nav { display: flex; gap: 10px; flex-wrap: wrap; }
+      .shell-nav a {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 10px 13px; border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.04);
+        color: var(--text); text-decoration: none; font-size: 14px;
+      }
+      .shell-nav a.active { background: rgba(243,201,125,0.18); color: var(--accent); }
+      .eyebrow {
+        display: inline-block; margin-bottom: 8px; padding: 5px 10px;
+        border-radius: 999px; font-size: 12px; letter-spacing: 0.08em;
+        text-transform: uppercase;
+        background: rgba(159,211,199,0.12); color: var(--accent-2);
+      }
+      main { max-width: 1440px; margin: 0 auto; padding: 24px; }
+      .muted { color: var(--muted); }
+      .card {
+        border-radius: 22px; padding: 22px;
+        background: linear-gradient(180deg, var(--panel), var(--panel-2));
+        border: 1px solid var(--border); margin-bottom: 18px;
+      }
+      .section-head {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 14px; flex-wrap: wrap; margin-bottom: 18px;
+      }
+      .section-head h2 { margin: 0; font-size: 1.1rem; }
+      .status { padding: 12px 14px; border-radius: 14px; font-size: 14px; margin-bottom: 16px; }
+      .status.ok { background: rgba(159,211,199,0.16); color: var(--good); }
+      .status.error { background: rgba(255,159,159,0.12); color: var(--bad); }
+      button {
+        border: 0; border-radius: 12px; padding: 10px 16px;
+        cursor: pointer; font: inherit; font-size: 14px;
+      }
+      button.primary { background: var(--accent); color: #211503; font-weight: 600; }
+      button.secondary { background: rgba(255,255,255,0.1); color: var(--text); }
+      button.warn { background: rgba(243,201,125,0.16); color: var(--warn); }
+      button.bad { background: rgba(255,159,159,0.14); color: var(--bad); }
+      button:disabled { opacity: 0.4; cursor: default; }
+      input, select {
+        width: 100%; border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(255,255,255,0.04);
+        color: var(--text); padding: 10px 12px; font: inherit;
+      }
+      input:focus, select:focus { outline: 2px solid var(--accent); border-color: transparent; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { padding: 11px; border-bottom: 1px solid var(--border); text-align: left; font-size: 14px; }
+      th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+      tbody tr:hover { background: rgba(255,255,255,0.03); }
+      .badge {
+        display: inline-flex; align-items: center; padding: 4px 10px;
+        border-radius: 999px; border: 1px solid var(--border); font-size: 12px;
+      }
+      .badge.active { color: var(--good); }
+      .badge.suspended { color: var(--bad); }
+      .skeleton { background: rgba(255,255,255,0.06); border-radius: 8px; height: 18px; display: inline-block; }
+      .empty { color: var(--muted); padding: 32px; text-align: center; }
+      /* Modal */
+      .modal-overlay {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+        display: flex; align-items: center; justify-content: center; z-index: 9000;
+      }
+      .modal-panel {
+        background: var(--panel); border-radius: 22px;
+        border: 1px solid var(--border); padding: 28px;
+        max-width: 460px; width: 90%;
+      }
+      .field { margin-bottom: 14px; }
+      .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; }
+      .field-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+      .field-error { font-size: 12px; color: var(--bad); margin-top: 4px; }
+      .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+      .modal-actions button { flex: 1; }
+      /* Toast */
+      #toast {
+        position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+        background: var(--good); color: #0a1f1b; padding: 12px 20px;
+        border-radius: 14px; font-weight: 600; font-size: 14px;
+        opacity: 0; transition: opacity 0.2s; z-index: 9999; pointer-events: none;
+      }
+      #toast.show { opacity: 1; }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <div class="eyebrow">Platform Admin</div>
+          <strong>Tenant Management</strong>
+          <span class="muted">Provision and manage multi-tenant workspaces.</span>
+        </div>
+        <nav class="shell-nav">
+          <a href="../admin.html">IAM Admin</a>
+          <a href="tenants.html" class="active">Tenants</a>
+          <a href="../account.html">My Account</a>
+        </nav>
+      </div>
+    </div>
+
+    <main>
+      <div id="global-status" hidden class="status"></div>
+
+      <div class="card">
+        <div class="section-head">
+          <div>
+            <h2>All tenants</h2>
+            <p class="muted" style="margin:4px 0 0; font-size:14px;">Each tenant is an isolated workspace with its own orgs, users, and events.</p>
+          </div>
+          <button class="primary" id="new-tenant-btn">+ New Tenant</button>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Tenant Name</th>
+              <th>Slug</th>
+              <th>Orgs</th>
+              <th>Users</th>
+              <th>Active Events</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tenants-tbody">
+            <tr><td colspan="7" class="empty">Loading tenants…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+
+    <div id="toast"></div>
+
+    <script type="module">
+      const params = new URLSearchParams(location.search);
+      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "platform-token";
+
+      const globalStatus = document.getElementById("global-status");
+      const tbody = document.getElementById("tenants-tbody");
+
+      function esc(str) {
+        return String(str ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+      }
+
+      function showStatus(msg, type) {
+        globalStatus.textContent = msg;
+        globalStatus.className = `status ${type}`;
+        globalStatus.hidden = false;
+      }
+
+      function toast(msg) {
+        const el = document.getElementById("toast");
+        el.textContent = msg;
+        el.classList.add("show");
+        setTimeout(() => el.classList.remove("show"), 2800);
+      }
+
+      async function api(path, options = {}) {
+        const res = await fetch(`${apiBase}${path}`, {
+          method: options.method ?? "GET",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error ?? `Request failed: ${res.status}`);
+        return payload;
+      }
+
+      function tenantDetailUrl(id) {
+        return `tenant-detail.html?tenantId=${encodeURIComponent(id)}&token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
+      }
+
+      async function loadTenants() {
+        tbody.innerHTML = `<tr><td colspan="7" class="empty">Loading tenants…</td></tr>`;
+        try {
+          const data = await api("/admin/tenants");
+          renderTenants(data.items ?? []);
+        } catch (err) {
+          tbody.innerHTML = `<tr><td colspan="7" class="empty" style="color:var(--bad);">
+            ${esc(err.message)}
+            <button class="secondary" style="margin-left:12px;" onclick="loadTenants()">Retry</button>
+          </td></tr>`;
+        }
+      }
+
+      function renderTenants(items) {
+        if (!items.length) {
+          tbody.innerHTML = `<tr><td colspan="7" class="empty">No tenants yet. Create the first one.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = items.map((t) => `
+          <tr>
+            <td><strong>${esc(t.name)}</strong></td>
+            <td><code style="font-size:13px;color:var(--muted);">${esc(t.slug)}</code></td>
+            <td>${t.org_count}</td>
+            <td>${t.user_count}</td>
+            <td>${t.active_event_count}</td>
+            <td><span class="badge ${esc(t.status)}">${esc(t.status)}</span></td>
+            <td>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <a href="${tenantDetailUrl(t.id)}" style="text-decoration:none;">
+                  <button class="secondary" style="padding:7px 12px;font-size:12px;">View</button>
+                </a>
+                ${t.status === "active"
+                  ? `<button class="warn" style="padding:7px 12px;font-size:12px;" data-suspend="${esc(t.id)}" data-name="${esc(t.name)}">Suspend</button>`
+                  : `<button class="secondary" style="padding:7px 12px;font-size:12px;" data-restore="${esc(t.id)}" data-name="${esc(t.name)}">Restore</button>`
+                }
+              </div>
+            </td>
+          </tr>
+        `).join("");
+
+        tbody.querySelectorAll("[data-suspend]").forEach((btn) => {
+          btn.addEventListener("click", () => suspendTenant(btn.dataset.suspend, btn.dataset.name));
+        });
+        tbody.querySelectorAll("[data-restore]").forEach((btn) => {
+          btn.addEventListener("click", () => restoreTenant(btn.dataset.restore, btn.dataset.name));
+        });
+      }
+
+      async function suspendTenant(id, name) {
+        if (!confirm(`Suspend tenant "${name}"? Users will lose access.`)) return;
+        try {
+          await api(`/admin/tenants/${encodeURIComponent(id)}`, { method: "PATCH", body: { status: "suspended" } });
+          toast(`Tenant "${name}" suspended.`);
+          loadTenants();
+        } catch (err) {
+          showStatus(err.message, "error");
+        }
+      }
+
+      async function restoreTenant(id, name) {
+        try {
+          await api(`/admin/tenants/${encodeURIComponent(id)}`, { method: "PATCH", body: { status: "active" } });
+          toast(`Tenant "${name}" restored.`);
+          loadTenants();
+        } catch (err) {
+          showStatus(err.message, "error");
+        }
+      }
+
+      // ── Create Tenant Modal (A.2) ──────────────────────────────────────────
+
+      document.getElementById("new-tenant-btn").addEventListener("click", openCreateModal);
+
+      function slugify(str) {
+        return str.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
+      }
+
+      function openCreateModal() {
+        const overlay = document.createElement("div");
+        overlay.className = "modal-overlay";
+        overlay.innerHTML = `
+          <div class="modal-panel">
+            <div class="eyebrow">New Tenant</div>
+            <h2 style="margin:8px 0 18px;">Create tenant</h2>
+            <div id="modal-status" hidden class="status error"></div>
+            <div class="field">
+              <label>Tenant name <span style="color:var(--bad)">*</span></label>
+              <input type="text" id="tenant-name" placeholder="Acme Corporation" maxlength="100" autofocus>
+            </div>
+            <div class="field">
+              <label>Slug <span style="color:var(--bad)">*</span></label>
+              <input type="text" id="tenant-slug" placeholder="acme-corporation" maxlength="60">
+              <p class="field-hint">Lowercase letters, numbers, hyphens only.</p>
+              <p class="field-error" id="slug-error" hidden>Slug already in use.</p>
+            </div>
+            <div class="modal-actions">
+              <button class="primary" id="modal-submit">Create tenant</button>
+              <button class="secondary" id="modal-cancel">Cancel</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const nameEl = overlay.querySelector("#tenant-name");
+        const slugEl = overlay.querySelector("#tenant-slug");
+        const slugError = overlay.querySelector("#slug-error");
+        const modalStatus = overlay.querySelector("#modal-status");
+        const submitBtn = overlay.querySelector("#modal-submit");
+
+        nameEl.addEventListener("input", () => {
+          slugEl.value = slugify(nameEl.value);
+          slugError.hidden = true;
+        });
+
+        slugEl.addEventListener("input", () => {
+          slugEl.value = slugify(slugEl.value);
+          slugError.hidden = true;
+        });
+
+        overlay.querySelector("#modal-cancel").addEventListener("click", () => overlay.remove());
+
+        submitBtn.addEventListener("click", async () => {
+          const name = nameEl.value.trim();
+          const slug = slugEl.value.trim();
+          slugError.hidden = true;
+          modalStatus.hidden = true;
+
+          if (!name) { nameEl.focus(); return; }
+          if (!slug) { slugEl.focus(); return; }
+
+          submitBtn.disabled = true;
+          try {
+            await api("/admin/tenants", { method: "POST", body: { name, slug } });
+            overlay.remove();
+            toast("Tenant created");
+            loadTenants();
+          } catch (err) {
+            if (err.message.includes("Slug already in use") || err.message.includes("409")) {
+              slugError.hidden = false;
+            } else {
+              modalStatus.textContent = err.message;
+              modalStatus.hidden = false;
+            }
+            submitBtn.disabled = false;
+          }
+        });
+      }
+
+      loadTenants();
+    </script>
+  </body>
+</html>

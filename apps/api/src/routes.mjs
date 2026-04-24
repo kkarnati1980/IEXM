@@ -3443,6 +3443,132 @@ export function registerRoutes(router) {
     auditEventType: "admin.iot_cleanup.triggered"
   });
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Phase 9 — Tenant Management API (Platform Admin only)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  router.addRoute({
+    id: "admin-tenants-list",
+    method: "GET",
+    path: "/admin/tenants",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos }) => {
+      const tenants = await repos.tenants.listAll();
+      const enriched = await Promise.all(
+        tenants.map(async (tenant) => {
+          const [orgs, users, events] = await Promise.all([
+            repos.organizations.listByTenant(tenant.id),
+            repos.users.listByTenant(tenant.id),
+            repos.events.listByTenant(tenant.id)
+          ]);
+          return {
+            id: tenant.id,
+            name: tenant.name,
+            slug: tenant.slug,
+            status: tenant.status ?? "active",
+            created_at: tenant.created_at,
+            org_count: orgs.length,
+            user_count: users.length,
+            active_event_count: events.filter((e) => e.status === "live").length
+          };
+        })
+      );
+      return { items: enriched };
+    },
+    auditEventType: "admin.tenants.list"
+  });
+
+  router.addRoute({
+    id: "admin-tenants-create",
+    method: "POST",
+    path: "/admin/tenants",
+    allowedRoles: ["platform_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, repos }) => {
+      const { name, slug } = body;
+      if (!name || typeof name !== "string" || name.trim().length < 2) {
+        throw new HttpError(400, "name is required (min 2 characters)");
+      }
+      if (!slug || typeof slug !== "string" || !/^[a-z0-9-]+$/.test(slug)) {
+        throw new HttpError(400, "slug is required and must be lowercase alphanumeric with hyphens");
+      }
+      const existing = await repos.tenants.findBySlug(slug);
+      if (existing) {
+        throw new HttpError(409, "Slug already in use");
+      }
+      const now = new Date().toISOString();
+      const tenant = await repos.tenants.create({
+        id: nextId("tenant"),
+        name: name.trim(),
+        slug,
+        status: "active",
+        created_at: now,
+        updated_at: now
+      });
+      return { tenant };
+    },
+    auditEventType: "admin.tenant.created"
+  });
+
+  router.addRoute({
+    id: "admin-tenants-get",
+    method: "GET",
+    path: "/admin/tenants/:tenantId",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ params, repos }) => {
+      const tenant = await repos.tenants.findById(params.tenantId);
+      const [orgs, users, events] = await Promise.all([
+        repos.organizations.listByTenant(tenant.id),
+        repos.users.listByTenant(tenant.id),
+        repos.events.listByTenant(tenant.id)
+      ]);
+      const activeEvents = events.filter((e) => e.status === "live");
+      return {
+        tenant: {
+          id: tenant.id,
+          name: tenant.name,
+          slug: tenant.slug,
+          status: tenant.status ?? "active",
+          created_at: tenant.created_at
+        },
+        stats: {
+          org_count: orgs.length,
+          user_count: users.length,
+          event_count: events.length,
+          active_event_count: activeEvents.length
+        }
+      };
+    },
+    auditEventType: "admin.tenant.view"
+  });
+
+  router.addRoute({
+    id: "admin-tenants-patch",
+    method: "PATCH",
+    path: "/admin/tenants/:tenantId",
+    allowedRoles: ["platform_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ params, body, repos }) => {
+      const tenant = await repos.tenants.findById(params.tenantId);
+      const updates = {};
+      if (body.name !== undefined) {
+        if (typeof body.name !== "string" || body.name.trim().length < 2) {
+          throw new HttpError(400, "name must be at least 2 characters");
+        }
+        updates.name = body.name.trim();
+      }
+      if (body.status !== undefined) {
+        if (!["active", "suspended"].includes(body.status)) {
+          throw new HttpError(400, "status must be active or suspended");
+        }
+        updates.status = body.status;
+      }
+      const updated = await repos.tenants.update({ ...tenant, ...updates, updated_at: new Date().toISOString() });
+      return { tenant: updated };
+    },
+    auditEventType: "admin.tenant.updated"
+  });
+
   router.addRoute({
     id: "admin-reference-data",
     method: "GET",

@@ -42,6 +42,22 @@ export function createMemoryRepositories(state) {
     tenants: {
       async findById(tenantId) {
         return findById(state.tenants, null, tenantId, "Tenant");
+      },
+      async listAll() {
+        return [...state.tenants];
+      },
+      async create(record) {
+        state.tenants.push(record);
+        return record;
+      },
+      async update(record) {
+        const index = state.tenants.findIndex((t) => t.id === record.id);
+        if (index === -1) throw new HttpError(404, "Tenant not found");
+        state.tenants[index] = record;
+        return record;
+      },
+      async findBySlug(slug) {
+        return state.tenants.find((t) => t.slug === slug) ?? null;
       }
     },
     organizations: {

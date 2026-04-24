@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>User Detail — Platform Admin</title>
+    <style>
+      :root {
+        --bg: #101117;
+        --panel: #1a1c25;
+        --panel-2: #14161d;
+        --border: rgba(255,255,255,0.08);
+        --text: #f4f1ea;
+        --muted: #b2ac9f;
+        --accent: #f3c97d;
+        --accent-2: #9fd3c7;
+        --good: #9fd3c7;
+        --warn: #f3c97d;
+        --bad: #ff9f9f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; font-family: "IBM Plex Sans", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(243,201,125,0.16), transparent 28%),
+          linear-gradient(160deg, var(--bg), #090a0e 66%);
+        min-height: 100vh;
+      }
+      .shell { max-width: 1440px; margin: 0 auto; padding: 18px 24px 0; }
+      .shell-bar { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+      .shell-title { display: grid; gap: 4px; }
+      .shell-title strong { font-size: 1.1rem; }
+      .shell-nav { display: flex; gap: 10px; flex-wrap: wrap; }
+      .shell-nav a {
+        display: inline-flex; align-items: center; padding: 10px 13px;
+        border-radius: 999px; border: 1px solid var(--border);
+        background: rgba(255,255,255,0.04); color: var(--text);
+        text-decoration: none; font-size: 14px;
+      }
+      .shell-nav a.active { background: rgba(243,201,125,0.18); color: var(--accent); }
+      .eyebrow {
+        display: inline-block; margin-bottom: 8px; padding: 5px 10px;
+        border-radius: 999px; font-size: 12px; letter-spacing: 0.08em;
+        text-transform: uppercase; background: rgba(159,211,199,0.12); color: var(--accent-2);
+      }
+      main { max-width: 900px; margin: 0 auto; padding: 24px; display: grid; gap: 18px; }
+      .muted { color: var(--muted); }
+      .card { border-radius: 22px; padding: 22px; background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1px solid var(--border); }
+      .status { padding: 12px 14px; border-radius: 14px; font-size: 14px; margin-bottom: 14px; }
+      .status.ok { background: rgba(159,211,199,0.16); color: var(--good); }
+      .status.error { background: rgba(255,159,159,0.12); color: var(--bad); }
+      button { border: 0; border-radius: 12px; padding: 10px 16px; cursor: pointer; font: inherit; font-size: 14px; }
+      button.primary { background: var(--accent); color: #211503; font-weight: 600; }
+      button.secondary { background: rgba(255,255,255,0.1); color: var(--text); }
+      button.bad { background: rgba(255,159,159,0.14); color: var(--bad); }
+      button.sm { padding: 7px 12px; font-size: 12px; }
+      button:disabled { opacity: 0.4; cursor: default; }
+      input { width: 100%; border-radius: 12px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: var(--text); padding: 10px 12px; font: inherit; }
+      input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { padding: 11px; border-bottom: 1px solid var(--border); text-align: left; font-size: 14px; }
+      th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+      .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); font-size: 12px; }
+      .badge.active { color: var(--good); }
+      .badge.pending_invite { color: var(--warn); }
+      .badge.disabled, .badge.suspended { color: var(--bad); }
+      .detail-row { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); align-items: baseline; }
+      .detail-row:last-child { border-bottom: none; }
+      .detail-row label { min-width: 130px; font-size: 13px; color: var(--muted); flex-shrink: 0; }
+      .detail-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+      .section-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+      .section-head h2 { margin: 0; font-size: 1rem; }
+      .empty { color: var(--muted); padding: 20px; text-align: center; }
+      #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--good); color: #0a1f1b; padding: 12px 20px; border-radius: 14px; font-weight: 600; font-size: 14px; opacity: 0; transition: opacity 0.2s; z-index: 9999; pointer-events: none; }
+      #toast.show { opacity: 1; }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <div class="eyebrow">Platform Admin</div>
+          <strong id="page-title">User Detail</strong>
+          <span class="muted" id="page-sub">Loading…</span>
+        </div>
+        <nav class="shell-nav">
+          <a href="#" id="back-link">← Tenant</a>
+          <a href="user-detail.html" class="active">User Detail</a>
+        </nav>
+      </div>
+    </div>
+
+    <main>
+      <div id="global-status" hidden class="status"></div>
+
+      <!-- Profile -->
+      <div class="card">
+        <div class="eyebrow">Profile</div>
+        <div id="profile-status" hidden class="status"></div>
+        <div class="detail-row"><label>Full name</label><span id="u-name">—</span></div>
+        <div class="detail-row"><label>Email</label><span id="u-email" class="muted">—</span></div>
+        <div class="detail-row"><label>Organisation</label><span id="u-org" class="muted">—</span></div>
+        <div class="detail-row"><label>Status</label><span id="u-status">—</span></div>
+        <div class="detail-row"><label>Created</label><span id="u-created" class="muted">—</span></div>
+        <div class="detail-row"><label>Last login</label><span id="u-login" class="muted">—</span></div>
+
+        <div id="edit-name-wrap" hidden style="max-width:340px;margin-top:12px;">
+          <div style="margin-bottom:10px;">
+            <label style="font-size:13px;color:var(--muted);display:block;margin-bottom:5px;">Full name</label>
+            <input type="text" id="edit-name-input" maxlength="100">
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button class="primary sm" id="save-name-btn">Save</button>
+            <button class="secondary sm" id="cancel-name-btn">Cancel</button>
+          </div>
+        </div>
+
+        <div class="detail-actions">
+          <button class="secondary" id="edit-name-btn">Edit name</button>
+          <button class="bad" id="disable-btn">Disable account</button>
+        </div>
+      </div>
+
+      <!-- Role Assignments -->
+      <div class="card">
+        <div class="section-head">
+          <h2>Role Assignments</h2>
+          <button class="primary" id="assign-role-btn">+ Assign Role</button>
+        </div>
+        <table>
+          <thead><tr><th>Role</th><th>Event</th><th>Scope</th><th>Assigned</th><th>Actions</th></tr></thead>
+          <tbody id="roles-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- Activity -->
+      <div class="card">
+        <div class="section-head">
+          <h2>Recent activity</h2>
+          <span class="muted" style="font-size:13px;">Last 10 audit events</span>
+        </div>
+        <table>
+          <thead><tr><th>Timestamp</th><th>Action</th><th>Target</th></tr></thead>
+          <tbody id="activity-tbody"><tr><td colspan="3" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+
+    <div id="toast"></div>
+
+    <script type="module">
+      import { showRoleAssignmentModal } from "../components.js";
+
+      const params = new URLSearchParams(location.search);
+      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "platform-token";
+      const userId = params.get("userId") ?? "";
+      const tenantId = params.get("tenantId") ?? "";
+
+      const backLink = document.getElementById("back-link");
+      if (tenantId) {
+        backLink.href = `tenant-detail.html?tenantId=${encodeURIComponent(tenantId)}&tab=users&token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}#users`;
+      } else {
+        backLink.href = `tenants.html?token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
+      }
+
+      let userData = null;
+      let allEvents = [];
+
+      function esc(str) {
+        return String(str ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+      }
+      function fmt(iso) { return iso ? new Date(iso).toLocaleString() : "—"; }
+      function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString() : "Never"; }
+
+      function showGlobal(msg, type) {
+        const el = document.getElementById("global-status");
+        el.textContent = msg; el.className = `status ${type}`; el.hidden = false;
+      }
+      function showProfile(msg, type) {
+        const el = document.getElementById("profile-status");
+        el.textContent = msg; el.className = `status ${type}`; el.hidden = false;
+      }
+      function toast(msg) {
+        const el = document.getElementById("toast");
+        el.textContent = msg; el.classList.add("show");
+        setTimeout(() => el.classList.remove("show"), 2800);
+      }
+
+      async function api(path, options = {}) {
+        const res = await fetch(`${apiBase}${path}`, {
+          method: options.method ?? "GET",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error ?? `Request failed: ${res.status}`);
+        return payload;
+      }
+
+      // ── Load user ─────────────────────────────────────────────────────────
+
+      async function loadUser() {
+        try {
+          const data = await api(`/admin/users/${encodeURIComponent(userId)}`);
+          userData = data.item;
+          document.getElementById("page-title").textContent = userData.display_name;
+          document.getElementById("page-sub").textContent = userData.email;
+          document.getElementById("u-name").textContent = userData.display_name;
+          document.getElementById("u-email").textContent = userData.email;
+          document.getElementById("u-org").textContent = userData.organization_name ?? "—";
+          document.getElementById("u-status").innerHTML = `<span class="badge ${esc(userData.status)}">${esc(userData.status)}</span>`;
+          document.getElementById("u-created").textContent = fmtDate(userData.created_at);
+          document.getElementById("u-login").textContent = fmtDate(userData.last_login_at);
+          document.getElementById("edit-name-input").value = userData.display_name;
+
+          const disableBtn = document.getElementById("disable-btn");
+          if (userData.status === "disabled" || userData.status === "suspended") {
+            disableBtn.textContent = "Re-enable account";
+            disableBtn.className = "secondary";
+          }
+        } catch (err) {
+          showGlobal(err.message, "error");
+        }
+      }
+
+      document.getElementById("edit-name-btn").addEventListener("click", () => {
+        document.getElementById("edit-name-wrap").hidden = false;
+      });
+      document.getElementById("cancel-name-btn").addEventListener("click", () => {
+        document.getElementById("edit-name-wrap").hidden = true;
+      });
+      document.getElementById("save-name-btn").addEventListener("click", async () => {
+        const display_name = document.getElementById("edit-name-input").value.trim();
+        if (!display_name) return;
+        try {
+          await api(`/admin/users/${encodeURIComponent(userId)}`, { method: "PATCH", body: { display_name } });
+          toast("Name updated"); loadUser();
+        } catch (err) { showProfile(err.message, "error"); }
+      });
+
+      document.getElementById("disable-btn").addEventListener("click", async () => {
+        const isDisabled = userData?.status === "disabled" || userData?.status === "suspended";
+        if (!isDisabled) {
+          if (!confirm(`Disable account for ${userData?.display_name}?`)) return;
+          try {
+            await api(`/users/${encodeURIComponent(userId)}/disable`, { method: "POST", body: { reason: "Disabled by admin" } });
+            toast("Account disabled"); loadUser();
+          } catch (err) { showProfile(err.message, "error"); }
+        } else {
+          try {
+            await api(`/users/${encodeURIComponent(userId)}/enable`, { method: "POST" });
+            toast("Account re-enabled"); loadUser();
+          } catch (err) { showProfile(err.message, "error"); }
+        }
+      });
+
+      // ── Role Assignments ──────────────────────────────────────────────────
+
+      async function loadRoles() {
+        const tbody = document.getElementById("roles-tbody");
+        tbody.innerHTML = `<tr><td colspan="5" class="empty">Loading…</td></tr>`;
+        try {
+          const data = await api(`/users/${encodeURIComponent(userId)}/roles`);
+          const roles = data.items ?? [];
+          if (!roles.length) {
+            tbody.innerHTML = `<tr><td colspan="5" class="empty">No role assignments yet.</td></tr>`;
+            return;
+          }
+          tbody.innerHTML = roles.map((r) => `
+            <tr>
+              <td><span class="badge">${esc(r.role)}</span></td>
+              <td class="muted" style="font-size:12px;">${esc(r.event_id ?? "—")}</td>
+              <td class="muted" style="font-size:12px;">${r.stall_ids?.length ? `Stalls: ${r.stall_ids.join(", ")}` : r.sponsor_package_id ? `Pkg: ${r.sponsor_package_id}` : "—"}</td>
+              <td class="muted" style="font-size:12px;">${fmtDate(r.created_at)}</td>
+              <td><button class="bad sm" data-remove="${esc(r.id)}">Remove</button></td>
+            </tr>
+          `).join("");
+
+          tbody.querySelectorAll("[data-remove]").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+              if (!confirm("Remove this role assignment?")) return;
+              try {
+                await api(`/users/${encodeURIComponent(userId)}/roles/${btn.dataset.remove}`, { method: "DELETE" });
+                toast("Role removed"); loadRoles();
+              } catch (err) { showGlobal(err.message, "error"); }
+            });
+          });
+        } catch (err) {
+          tbody.innerHTML = `<tr><td colspan="5" class="empty" style="color:var(--bad);">${esc(err.message)}</td></tr>`;
+        }
+      }
+
+      document.getElementById("assign-role-btn").addEventListener("click", async () => {
+        if (!allEvents.length) {
+          try { const d = await api("/events"); allEvents = d.items ?? []; } catch {}
+        }
+        showRoleAssignmentModal({
+          apiBase,
+          token,
+          userId,
+          events: allEvents.map((e) => ({ id: e.id, name: e.name })),
+          onAssigned: () => { toast("Role assigned"); loadRoles(); }
+        });
+      });
+
+      // ── Activity log ──────────────────────────────────────────────────────
+
+      async function loadActivity() {
+        const tbody = document.getElementById("activity-tbody");
+        try {
+          const data = await api("/audit/logs");
+          const logs = (data.items ?? []).filter((l) => l.actor_id === userId || l.target_id === userId).slice(0, 10);
+          if (!logs.length) {
+            tbody.innerHTML = `<tr><td colspan="3" class="empty">No activity found for this user.</td></tr>`;
+            return;
+          }
+          tbody.innerHTML = logs.map((l) => `
+            <tr>
+              <td style="font-size:12px;white-space:nowrap;">${fmt(l.created_at)}</td>
+              <td><code style="font-size:12px;color:var(--accent-2);">${esc(l.event_type)}</code></td>
+              <td class="muted" style="font-size:12px;">${l.target_type ? `${esc(l.target_type)}: ${esc(l.target_id?.slice(0, 24))}` : "—"}</td>
+            </tr>
+          `).join("");
+        } catch (err) {
+          tbody.innerHTML = `<tr><td colspan="3" class="empty" style="color:var(--bad);">${esc(err.message)}</td></tr>`;
+        }
+      }
+
+      // ── Init ─────────────────────────────────────────────────────────────
+
+      if (!userId) {
+        showGlobal("No user ID in URL — navigate here from the tenant detail Users tab.", "error");
+      } else {
+        loadUser();
+        loadRoles();
+        loadActivity();
+      }
+    </script>
+  </body>
+</html>

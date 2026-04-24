@@ -316,6 +316,10 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
 
   "admin-iot-runs-trigger": entry({ permission: "admin.iot_runs.trigger", roles: platform, scope: "event", description: "Trigger platform IoT sync", sensitivity: "sensitive" }),
   "admin-iot-cleanup-trigger": entry({ permission: "admin.iot_cleanup.trigger", roles: platform, scope: "event", description: "Run IoT operational cleanup", sensitivity: "sensitive" }),
+  "admin-tenants-list": entry({ permission: "admin.tenants.list", roles: platform, scope: "global", description: "List all tenants with org/user/event counts" }),
+  "admin-tenants-create": entry({ permission: "admin.tenants.create", roles: platform, scope: "global", description: "Create a new tenant", sensitivity: "sensitive" }),
+  "admin-tenants-get": entry({ permission: "admin.tenants.view", roles: platform, scope: "global", description: "View tenant detail and stats" }),
+  "admin-tenants-patch": entry({ permission: "admin.tenants.update", roles: platform, scope: "global", description: "Update tenant name or status", sensitivity: "sensitive" }),
   "admin-reference-data": entry({ permission: "admin.reference_data.view", roles: platform, scope: "tenant", description: "View IAM reference data" }),
   "admin-access-control-matrix": entry({ permission: "admin.access_control_matrix.view", roles: platform, scope: "tenant", description: "View the route-to-permission access-control matrix", sensitivity: "security" }),
   "admin-security-readiness": entry({ permission: "admin.security_readiness.view", roles: platform, scope: "tenant", description: "View production security hardening readiness controls", sensitivity: "security" }),
