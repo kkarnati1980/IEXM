@@ -54,6 +54,7 @@ import {
   buildNotificationChannelsReadiness,
   resolveNotificationWorkerSchedule
 } from "./notification-providers.mjs";
+import { dispatchTransactionalEmail } from "./notification-dispatch.mjs";
 
 export function registerRoutes(router) {
   router.addRoute({
@@ -4694,6 +4695,17 @@ export function registerRoutes(router) {
       const principal = buildUserPrincipal(updatedUser, scopes, roleAssignments);
       const jwtToken = issuePlatformToken(principal, state.sessionSecret);
       const redirect = await resolveRedirectTarget(updatedUser.id, updatedUser.tenant_id, repos);
+      await dispatchTransactionalEmail({
+        repos,
+        tenantId: updatedUser.tenant_id,
+        recipientEmail: updatedUser.email,
+        messageType: "account_activated",
+        templateVars: {
+          display_name: updatedUser.display_name,
+          login_url: process.env.PLATFORM_BASE_URL ?? ""
+        },
+        actorUserId: updatedUser.id
+      });
       return { token: jwtToken, ...redirect };
     }
   });
@@ -4730,8 +4742,15 @@ export function registerRoutes(router) {
       const user = await repos.users.findByEmail(email);
       if (user) {
         const plaintext = await generateResetToken(user.id, user.tenant_id, repos, state.sessionSecret);
-        // TODO Phase 6: dispatch via notification service with template 'password_reset'
-        console.log(`[TODO] password_reset token for ${email}: ${plaintext}`);
+        const resetUrl = `${process.env.PLATFORM_BASE_URL ?? ""}/reset-password?token=${plaintext}`;
+        await dispatchTransactionalEmail({
+          repos,
+          tenantId: user.tenant_id,
+          recipientEmail: user.email,
+          messageType: "password_reset",
+          templateVars: { display_name: user.display_name, reset_url: resetUrl },
+          actorUserId: null
+        });
       }
       return { message: "If an account exists for this email, a reset link has been sent." };
     }
@@ -5014,6 +5033,16 @@ export function registerRoutes(router) {
       const inviteToken = await generateInviteToken(userId, principal.tenant_id, repos, secret);
       const createdUser = await repos.users.findById(principal.tenant_id, userId);
 
+      const inviteUrl = `${process.env.PLATFORM_BASE_URL ?? ""}/accept-invite?token=${inviteToken}`;
+      await dispatchTransactionalEmail({
+        repos,
+        tenantId: principal.tenant_id,
+        recipientEmail: createdUser.email,
+        messageType: "user_invitation",
+        templateVars: { display_name: createdUser.display_name, invite_url: inviteUrl },
+        actorUserId: principal.actor_id
+      });
+
       return {
         user_id: userId,
         email: createdUser.email,
@@ -5121,6 +5150,17 @@ export function registerRoutes(router) {
       const secret = state?.sessionSecret ?? "default-secret";
       const inviteToken = await generateInviteToken(user.id, principal.tenant_id, repos, secret);
       const refreshed = await repos.users.findById(principal.tenant_id, user.id);
+
+      const inviteUrl = `${process.env.PLATFORM_BASE_URL ?? ""}/accept-invite?token=${inviteToken}`;
+      await dispatchTransactionalEmail({
+        repos,
+        tenantId: principal.tenant_id,
+        recipientEmail: refreshed.email,
+        messageType: "user_invitation",
+        templateVars: { display_name: refreshed.display_name, invite_url: inviteUrl },
+        actorUserId: principal.actor_id
+      });
+
       return {
         user_id: user.id,
         email: user.email,
