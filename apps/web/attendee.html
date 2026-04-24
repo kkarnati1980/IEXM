@@ -326,13 +326,11 @@
         try {
           // Spec: record timestamp, locale, user-agent
           const body = {
-            interaction_id:           INTERACTION_ID,
+            session_token:            ATTENDEE_TOKEN,
             vendor_release_allowed:   vendorConsent,
             sponsor_release_allowed:  sponsorConsent,
-            captured_at:              new Date().toISOString(),
             locale:                   navigator.language || "en",
             user_agent:               navigator.userAgent,
-            event_id:                 EVENT_ID,
           };
           await api("/consents/capture", { method: "POST", body });
           showScreenAlert("consent-alert", "Preferences saved.", "ok");
@@ -431,7 +429,7 @@
       async function revokeConsent() {
         if (!SELECTED_ITEM) return;
         try {
-          await api(`/consents/revoke`, { method: "POST", body: { interaction_id: SELECTED_ITEM.id, scope: "vendor" } });
+          await api(`/consents/revoke`, { method: "POST", body: { session_token: ATTENDEE_TOKEN, revoke_vendor_release: true, revoke_sponsor_release: true } });
           showScreenAlert("detail-alert", "Vendor consent revoked. Your details are now hidden.", "ok");
           await loadVault();
         } catch(e) { showScreenAlert("detail-alert", e.message, "error"); }
@@ -524,7 +522,7 @@
       async function revokeAll() {
         if (!confirm("Revoke ALL consents for this event? Your details will be hidden from all vendors and sponsors.")) return;
         try {
-          await api("/consents/revoke-all", { method: "POST", body: { event_id: EVENT_ID } });
+          await api("/consents/revoke", { method: "POST", body: { session_token: ATTENDEE_TOKEN, revoke_vendor_release: true, revoke_sponsor_release: true } });
           showScreenAlert("privacy-alert", "All consents revoked. Your data is now anonymous.", "ok");
           await loadPrivacy();
           await loadVault();
