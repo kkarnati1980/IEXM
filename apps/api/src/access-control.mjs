@@ -374,7 +374,22 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   "auth-reset-password": publicEntry("auth.password.reset", "Reset password using a reset token", "sensitive"),
   "auth-change-password": entry({ permission: "auth.password.change", roles: USER_ROLES, scope: "principal", description: "Change own password", sensitivity: "sensitive" }),
   "auth-me-extended": entry({ permission: "auth.profile.view", roles: USER_ROLES, scope: "principal", description: "View own profile with org and roles", sensitivity: "internal" }),
-  "auth-patch-me": entry({ permission: "auth.profile.update", roles: USER_ROLES, scope: "principal", description: "Update own display name", sensitivity: "internal" })
+  "auth-patch-me": entry({ permission: "auth.profile.update", roles: USER_ROLES, scope: "principal", description: "Update own display name", sensitivity: "internal" }),
+
+  // Phase 3 — Identity / User Management API
+  "users-list": entry({ permission: "user.list", roles: organizerOrPlatform, scope: "tenant", description: "List users in tenant (scoped for organizer_admin)", sensitivity: "internal" }),
+  "users-invite": entry({ permission: "user.invite", roles: organizerOrPlatform, scope: "tenant", description: "Invite a new user and send invitation email", sensitivity: "sensitive" }),
+  "users-get": entry({ permission: "user.view", roles: organizerOrPlatform, scope: "tenant", description: "View a user's details and role assignments", sensitivity: "internal" }),
+  "users-patch": entry({ permission: "user.update", roles: organizerOrPlatform, scope: "tenant", description: "Update a user's display name", sensitivity: "internal" }),
+  "users-disable": entry({ permission: "user.disable", roles: organizerOrPlatform, scope: "tenant", description: "Disable a user account", sensitivity: "sensitive" }),
+  "users-resend-invite": entry({ permission: "user.invite.resend", roles: organizerOrPlatform, scope: "tenant", description: "Resend an invitation to a pending user", sensitivity: "sensitive" }),
+  "users-roles-list": entry({ permission: "user.roles.list", roles: organizerOrPlatform, scope: "tenant", description: "List role assignments for a user", sensitivity: "internal" }),
+  "users-roles-assign": entry({ permission: "user.roles.assign", roles: organizerOrPlatform, scope: "tenant", description: "Add a role assignment to a user", sensitivity: "sensitive" }),
+  "users-roles-delete": entry({ permission: "user.roles.remove", roles: organizerOrPlatform, scope: "tenant", description: "Remove a role assignment from a user", sensitivity: "sensitive" }),
+  "orgs-list": entry({ permission: "org.list", roles: organizerOrPlatform, scope: "tenant", description: "List organizations in tenant", sensitivity: "internal" }),
+  "orgs-create": entry({ permission: "org.create", roles: platform, scope: "tenant", description: "Create a new organization", sensitivity: "internal" }),
+  "orgs-get": entry({ permission: "org.view", roles: organizerOrPlatform, scope: "tenant", description: "View organization details", sensitivity: "internal" }),
+  "orgs-patch": entry({ permission: "org.update", roles: platform, scope: "tenant", description: "Update organization details", sensitivity: "internal" })
 });
 
 export function getAccessControlEntry(routeId) {

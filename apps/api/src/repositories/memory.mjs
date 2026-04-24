@@ -45,11 +45,21 @@ export function createMemoryRepositories(state) {
       }
     },
     organizations: {
+      async create(record) {
+        state.organizations.push(record);
+        return record;
+      },
       async findById(tenantId, id) {
         return findById(state.organizations, tenantId, id, "Organization");
       },
       async listByTenant(tenantId) {
         return state.organizations.filter((entry) => entry.tenant_id === tenantId);
+      },
+      async update(record) {
+        const index = state.organizations.findIndex((entry) => entry.id === record.id);
+        if (index === -1) throw new HttpError(404, "Organization not found");
+        state.organizations[index] = record;
+        return record;
       }
     },
     users: {
@@ -194,6 +204,9 @@ export function createMemoryRepositories(state) {
       },
       async findById(tenantId, id) {
         return findById(state.userRoleAssignments, tenantId, id, "User role assignment");
+      },
+      async listByTenant(tenantId) {
+        return state.userRoleAssignments.filter((entry) => entry.tenant_id === tenantId);
       },
       async listByUser(tenantId, userId) {
         return state.userRoleAssignments.filter(

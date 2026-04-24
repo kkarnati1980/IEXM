@@ -4858,6 +4858,425 @@ export function registerRoutes(router) {
   // generateInviteToken is exported for use by Phase 3 user invite endpoint
   router.generateInviteToken = (userId, tenantId, repos, secret) =>
     generateInviteToken(userId, tenantId, repos, secret);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Phase 3 — Identity / User Management API
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const VALID_ROLES = ["platform_admin", "organizer_admin", "vendor_manager", "sponsor_user", "ops_user"];
+  const VALID_ORG_TYPES = ["organizer", "vendor", "sponsor", "platform"];
+
+  function formatUser(user, roleAssignments) {
+    return {
+      id: user.id,
+      email: user.email,
+      display_name: user.display_name,
+      role: user.role,
+      roles: [...new Set([user.role, ...roleAssignments.map((r) => r.role)])],
+      org_id: user.organization_id ?? null,
+      tenant_id: user.tenant_id,
+      status: user.status,
+      invited_at: user.invited_at ?? null,
+      last_login_at: user.last_login_at ?? null,
+      disabled_at: user.disabled_at ?? null
+    };
+  }
+
+  function validateRoleAssignment({ role, event_id, stall_ids, sponsor_package_id }) {
+    if (!VALID_ROLES.includes(role)) {
+      throw new HttpError(400, `Invalid role: ${role}`);
+    }
+    if (role === "vendor_manager") {
+      if (!event_id) throw new HttpError(400, "vendor_manager requires event_id");
+      if (!Array.isArray(stall_ids) || stall_ids.length === 0) {
+        throw new HttpError(400, "vendor_manager requires at least one stall_id");
+      }
+    } else if (role === "sponsor_user") {
+      if (!event_id) throw new HttpError(400, "sponsor_user requires event_id");
+      if (!sponsor_package_id) throw new HttpError(400, "sponsor_user requires sponsor_package_id");
+    } else if (role === "organizer_admin") {
+      if (!event_id) throw new HttpError(400, "organizer_admin requires event_id");
+    } else if (role === "ops_user") {
+      if (!event_id) throw new HttpError(400, "ops_user requires event_id");
+    } else if (role === "platform_admin") {
+      // no event/stall scope required
+    }
+  }
+
+  // GET /users — list users, tenant-scoped
+  router.addRoute({
+    id: "users-list",
+    method: "GET",
+    path: "/users",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ query, principal, repos }) => {
+      const { role, status, org_id, page = "1", page_size = "20" } = query ?? {};
+      const pageNum = Math.max(1, parseInt(page, 10) || 1);
+      const pageSize = Math.min(100, Math.max(1, parseInt(page_size, 10) || 20));
+
+      let users = await repos.users.listByTenant(principal.tenant_id);
+
+      // organizer_admin: scope to users who have a role assignment in one of their events
+      if (principal.role === "organizer_admin") {
+        const allAssignments = await repos.userRoleAssignments.listByTenant(principal.tenant_id);
+        const allowedEventIds = new Set(principal.event_ids ?? []);
+        const allowedUserIds = new Set(
+          allAssignments
+            .filter((a) => a.event_id && allowedEventIds.has(a.event_id))
+            .map((a) => a.user_id)
+        );
+        users = users.filter((u) => allowedUserIds.has(u.id) || u.id === principal.actor_id);
+      }
+
+      if (role) users = users.filter((u) => u.role === role);
+      if (status) users = users.filter((u) => u.status === status);
+      if (org_id) users = users.filter((u) => u.organization_id === org_id);
+
+      const total = users.length;
+      const paginated = users.slice((pageNum - 1) * pageSize, pageNum * pageSize);
+
+      const allAssignmentsForPage = await Promise.all(
+        paginated.map((u) => repos.userRoleAssignments.listByUser(principal.tenant_id, u.id))
+      );
+
+      return {
+        users: paginated.map((u, i) => formatUser(u, allAssignmentsForPage[i])),
+        total,
+        page: pageNum,
+        page_size: pageSize
+      };
+    }
+  });
+
+  // POST /users/invite — create user + role assignment + invite token
+  router.addRoute({
+    id: "users-invite",
+    method: "POST",
+    path: "/users/invite",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, principal, repos, state }) => {
+      const { email, display_name, role, org_id, event_id, stall_ids = [], sponsor_package_id } = body;
+
+      if (!email || typeof email !== "string") throw new HttpError(400, "email is required");
+      if (!display_name || typeof display_name !== "string") throw new HttpError(400, "display_name is required");
+      if (!role) throw new HttpError(400, "role is required");
+
+      validateRoleAssignment({ role, event_id, stall_ids, sponsor_package_id });
+
+      const existing = await repos.users.findByEmail(email.toLowerCase().trim());
+      if (existing) throw new HttpError(409, "A user with this email already exists");
+
+      const now = new Date().toISOString();
+      const userId = nextId("user");
+      const newUser = {
+        id: userId,
+        email: email.toLowerCase().trim(),
+        display_name: display_name.trim(),
+        role,
+        organization_id: org_id ?? null,
+        tenant_id: principal.tenant_id,
+        external_identity_provider: null,
+        external_subject: null,
+        status: "pending_invite",
+        password_hash: null,
+        invited_by_user_id: principal.actor_id,
+        invitation_token_hash: null,
+        invitation_expires_at: null,
+        password_reset_token_hash: null,
+        password_reset_expires_at: null,
+        last_login_at: null,
+        disabled_at: null,
+        disabled_reason: null,
+        mfa_required: false,
+        invited_at: now,
+        deleted_at: null,
+        created_at: now
+      };
+      await repos.users.create(newUser);
+
+      const assignmentId = nextId("ura");
+      await repos.userRoleAssignments.create({
+        id: assignmentId,
+        tenant_id: principal.tenant_id,
+        user_id: userId,
+        role,
+        event_id: event_id ?? null,
+        stall_ids: stall_ids ?? [],
+        sponsor_package_id: sponsor_package_id ?? null,
+        assigned_by_user_id: principal.actor_id,
+        created_at: now
+      });
+
+      const secret = state?.sessionSecret ?? "default-secret";
+      const inviteToken = await generateInviteToken(userId, principal.tenant_id, repos, secret);
+      const createdUser = await repos.users.findById(principal.tenant_id, userId);
+
+      return {
+        user_id: userId,
+        email: createdUser.email,
+        display_name: createdUser.display_name,
+        role,
+        status: "pending_invite",
+        invite_token: inviteToken,
+        expires_at: createdUser.invitation_expires_at
+      };
+    }
+  });
+
+  // GET /users/:userId — user detail
+  router.addRoute({
+    id: "users-get",
+    method: "GET",
+    path: "/users/:userId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ params, principal, repos }) => {
+      const user = await repos.users.findById(principal.tenant_id, params.userId);
+      const roleAssignments = await repos.userRoleAssignments.listByUser(principal.tenant_id, user.id);
+      const org = user.organization_id
+        ? await repos.organizations.findById(principal.tenant_id, user.organization_id).catch(() => null)
+        : null;
+      return {
+        ...formatUser(user, roleAssignments),
+        org_name: org?.name ?? null,
+        role_assignments: roleAssignments
+      };
+    }
+  });
+
+  // PATCH /users/:userId — update display name
+  router.addRoute({
+    id: "users-patch",
+    method: "PATCH",
+    path: "/users/:userId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, params, principal, repos }) => {
+      const user = await repos.users.findById(principal.tenant_id, params.userId);
+      const updates = {};
+      if (body.display_name !== undefined) {
+        const trimmed = String(body.display_name).trim();
+        if (trimmed.length < 2 || trimmed.length > 100) {
+          throw new HttpError(400, "display_name must be 2–100 characters");
+        }
+        updates.display_name = trimmed;
+      }
+      const updated = await repos.users.update({ ...user, ...updates });
+      const roleAssignments = await repos.userRoleAssignments.listByUser(principal.tenant_id, updated.id);
+      return formatUser(updated, roleAssignments);
+    }
+  });
+
+  // POST /users/:userId/disable
+  router.addRoute({
+    id: "users-disable",
+    method: "POST",
+    path: "/users/:userId/disable",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, params, principal, repos }) => {
+      const user = await repos.users.findById(principal.tenant_id, params.userId);
+      if (user.id === principal.actor_id) {
+        throw new HttpError(400, "Cannot disable your own account");
+      }
+      if (user.status === "disabled") {
+        throw new HttpError(409, "User is already disabled");
+      }
+      const now = new Date().toISOString();
+      const updated = await repos.users.update({
+        ...user,
+        status: "disabled",
+        disabled_at: now,
+        disabled_reason: body.reason ?? null
+      });
+      const roleAssignments = await repos.userRoleAssignments.listByUser(principal.tenant_id, updated.id);
+      return formatUser(updated, roleAssignments);
+    }
+  });
+
+  // POST /users/:userId/resend-invite
+  router.addRoute({
+    id: "users-resend-invite",
+    method: "POST",
+    path: "/users/:userId/resend-invite",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ params, principal, repos, state }) => {
+      const user = await repos.users.findById(principal.tenant_id, params.userId);
+      if (user.status !== "pending_invite") {
+        throw new HttpError(400, "User is not in pending_invite status");
+      }
+      // invalidate old token
+      await repos.users.update({
+        ...user,
+        invitation_token_hash: null,
+        invitation_expires_at: null
+      });
+      const secret = state?.sessionSecret ?? "default-secret";
+      const inviteToken = await generateInviteToken(user.id, principal.tenant_id, repos, secret);
+      const refreshed = await repos.users.findById(principal.tenant_id, user.id);
+      return {
+        user_id: user.id,
+        email: user.email,
+        invite_token: inviteToken,
+        expires_at: refreshed.invitation_expires_at
+      };
+    }
+  });
+
+  // GET /users/:userId/roles
+  router.addRoute({
+    id: "users-roles-list",
+    method: "GET",
+    path: "/users/:userId/roles",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ params, principal, repos }) => {
+      await repos.users.findById(principal.tenant_id, params.userId);
+      const assignments = await repos.userRoleAssignments.listByUser(principal.tenant_id, params.userId);
+      return { role_assignments: assignments };
+    }
+  });
+
+  // POST /users/:userId/roles — assign role
+  router.addRoute({
+    id: "users-roles-assign",
+    method: "POST",
+    path: "/users/:userId/roles",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, params, principal, repos }) => {
+      const { role, event_id, stall_ids = [], sponsor_package_id } = body;
+      if (!role) throw new HttpError(400, "role is required");
+      validateRoleAssignment({ role, event_id, stall_ids, sponsor_package_id });
+
+      await repos.users.findById(principal.tenant_id, params.userId);
+
+      const now = new Date().toISOString();
+      const assignment = await repos.userRoleAssignments.create({
+        id: nextId("ura"),
+        tenant_id: principal.tenant_id,
+        user_id: params.userId,
+        role,
+        event_id: event_id ?? null,
+        stall_ids: stall_ids ?? [],
+        sponsor_package_id: sponsor_package_id ?? null,
+        assigned_by_user_id: principal.actor_id,
+        created_at: now
+      });
+      return assignment;
+    }
+  });
+
+  // DELETE /users/:userId/roles/:assignmentId
+  router.addRoute({
+    id: "users-roles-delete",
+    method: "DELETE",
+    path: "/users/:userId/roles/:assignmentId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ params, principal, repos }) => {
+      await repos.users.findById(principal.tenant_id, params.userId);
+      const deleted = await repos.userRoleAssignments.deleteById(principal.tenant_id, params.assignmentId);
+      if (deleted.user_id !== params.userId) {
+        throw new HttpError(404, "Role assignment not found for this user");
+      }
+      return { deleted: true, id: deleted.id };
+    }
+  });
+
+  // GET /orgs — list organizations
+  router.addRoute({
+    id: "orgs-list",
+    method: "GET",
+    path: "/orgs",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ principal, repos }) => {
+      const orgs = await repos.organizations.listByTenant(principal.tenant_id);
+      return { organizations: orgs };
+    }
+  });
+
+  // POST /orgs — create organization (platform_admin only)
+  router.addRoute({
+    id: "orgs-create",
+    method: "POST",
+    path: "/orgs",
+    authRequired: true,
+    allowedRoles: ["platform_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, principal, repos }) => {
+      const { name, type } = body;
+      if (!name || typeof name !== "string" || name.trim().length < 2) {
+        throw new HttpError(400, "name must be at least 2 characters");
+      }
+      if (!type || !VALID_ORG_TYPES.includes(type)) {
+        throw new HttpError(400, `type must be one of: ${VALID_ORG_TYPES.join(", ")}`);
+      }
+      const now = new Date().toISOString();
+      const org = await repos.organizations.create({
+        id: nextId("org"),
+        tenant_id: principal.tenant_id,
+        name: name.trim(),
+        type,
+        created_at: now,
+        updated_at: now
+      });
+      return org;
+    }
+  });
+
+  // GET /orgs/:orgId — org detail
+  router.addRoute({
+    id: "orgs-get",
+    method: "GET",
+    path: "/orgs/:orgId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ params, principal, repos }) => {
+      const org = await repos.organizations.findById(principal.tenant_id, params.orgId);
+      return org;
+    }
+  });
+
+  // PATCH /orgs/:orgId — update organization (platform_admin only)
+  router.addRoute({
+    id: "orgs-patch",
+    method: "PATCH",
+    path: "/orgs/:orgId",
+    authRequired: true,
+    allowedRoles: ["platform_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ body, params, principal, repos }) => {
+      const org = await repos.organizations.findById(principal.tenant_id, params.orgId);
+      const updates = {};
+      if (body.name !== undefined) {
+        const trimmed = String(body.name).trim();
+        if (trimmed.length < 2) throw new HttpError(400, "name must be at least 2 characters");
+        updates.name = trimmed;
+      }
+      if (body.type !== undefined) {
+        if (!VALID_ORG_TYPES.includes(body.type)) {
+          throw new HttpError(400, `type must be one of: ${VALID_ORG_TYPES.join(", ")}`);
+        }
+        updates.type = body.type;
+      }
+      const updated = await repos.organizations.update({
+        ...org,
+        ...updates,
+        updated_at: new Date().toISOString()
+      });
+      return updated;
+    }
+  });
 }
 
 async function resolveDeviceCredentialResources({ repos, principal, params }) {
