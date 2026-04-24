@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import { nextId } from "./store.mjs";
+import { hashPassword, verifyPassword, validatePasswordComplexity } from "./auth/passwords.mjs";
+import { issuePlatformToken } from "./auth/platform-jwt.mjs";
+import { hashToken, generateInviteToken, generateResetToken } from "./auth/invite-tokens.mjs";
+import { resolveRedirectTarget } from "./auth/redirect-resolver.mjs";
 import { HttpError } from "./http-error.mjs";
 import { deriveCrmEligibility } from "./policy.mjs";
 import { createAttendeeSessionToken, verifyAttendeeSessionToken } from "./session-tokens.mjs";
@@ -183,7 +187,14 @@ export function registerRoutes(router) {
       }
       return resources;
     },
-    handler: async ({ repos, resources }) => resolveShortLink({ repos, resources }),
+    handler: async ({ repos, resources, req, res }) => {
+      const result = await resolveShortLink({ repos, resources });
+      if (req?.headers?.accept?.includes('text/html') && result?.target_url) {
+        res.redirect(302, result.target_url);
+        return null;
+      }
+      return result;
+    },
     auditEventType: "short_link.resolved"
   });
 
@@ -292,7 +303,9 @@ export function registerRoutes(router) {
         type: principal.type,
         actor_id: principal.actor_id,
         tenant_id: principal.tenant_id,
+        org_id: principal.org_id ?? null,
         role: principal.role,
+        roles: principal.roles ?? [principal.role].filter(Boolean),
         user_id: principal.user_id ?? null,
         device_id: principal.device_id ?? null,
         organization_id: principal.organization_id ?? null,
@@ -302,6 +315,7 @@ export function registerRoutes(router) {
         event_ids: principal.event_ids ?? [],
         stall_ids: principal.stall_ids ?? [],
         sponsor_organization_ids: principal.sponsor_organization_ids ?? [],
+        sponsor_package_ids: principal.sponsor_package_ids ?? [],
         auth_source: principal.auth_source ?? "seed"
       }
     }),
@@ -4605,6 +4619,245 @@ export function registerRoutes(router) {
     }),
     auditEventType: "audit.logs.view"
   });
+
+  // ─────────────────────────────────────────────────────────────
+  // PHASE 2 — Auth Service Extensions
+  // ─────────────────────────────────────────────────────────────
+
+  router.addRoute({
+    id: "auth-login",
+    method: "POST",
+    path: "/auth/login",
+    authRequired: false,
+    validate: (body) => body ?? {},
+    handler: async ({ body, repos, state }) => {
+      const { email, password } = body;
+      if (!email || !password) {
+        throw new HttpError(400, "email and password are required");
+      }
+      const user = await repos.users.findByEmail(email);
+      if (!user || !user.password_hash) {
+        throw new HttpError(401, "Invalid credentials");
+      }
+      const valid = await verifyPassword(password, user.password_hash);
+      if (!valid) {
+        throw new HttpError(401, "Invalid credentials");
+      }
+      if (user.status !== "active") {
+        throw new HttpError(403, "User account is not active");
+      }
+      await repos.users.update({ ...user, last_login_at: new Date().toISOString() });
+
+      const roleAssignments = await repos.userRoleAssignments.listByUser(user.tenant_id, user.id);
+      const scopes = await repos.userAccessScopes.listByUser(user.tenant_id, user.id);
+      const { buildUserPrincipal } = await import("./auth/principals.mjs");
+      const principal = buildUserPrincipal(user, scopes, roleAssignments);
+      const secret = state.sessionSecret;
+      const token = issuePlatformToken(principal, secret);
+      const redirect = await resolveRedirectTarget(user.id, user.tenant_id, repos);
+      return { token, ...redirect };
+    }
+  });
+
+  router.addRoute({
+    id: "auth-accept-invite",
+    method: "POST",
+    path: "/auth/accept-invite",
+    authRequired: false,
+    validate: (body) => body ?? {},
+    handler: async ({ body, repos, state }) => {
+      const { token, password } = body;
+      if (!token || !password) {
+        throw new HttpError(400, "token and password are required");
+      }
+      const hash = hashToken(token, state.sessionSecret);
+      const user = await repos.users.findByInviteTokenHash(hash);
+      if (!user) {
+        throw new HttpError(400, "INVITE_TOKEN_INVALID_OR_EXPIRED");
+      }
+      const complexity = validatePasswordComplexity(password);
+      if (complexity) {
+        throw new HttpError(400, "PASSWORD_TOO_WEAK", { message: complexity });
+      }
+      const passwordHash = await hashPassword(password);
+      await repos.users.update({
+        ...user,
+        password_hash: passwordHash,
+        status: "active",
+        invitation_token_hash: null,
+        invitation_expires_at: null
+      });
+      const updatedUser = await repos.users.findById(user.tenant_id, user.id);
+      const roleAssignments = await repos.userRoleAssignments.listByUser(updatedUser.tenant_id, updatedUser.id);
+      const scopes = await repos.userAccessScopes.listByUser(updatedUser.tenant_id, updatedUser.id);
+      const { buildUserPrincipal } = await import("./auth/principals.mjs");
+      const principal = buildUserPrincipal(updatedUser, scopes, roleAssignments);
+      const jwtToken = issuePlatformToken(principal, state.sessionSecret);
+      const redirect = await resolveRedirectTarget(updatedUser.id, updatedUser.tenant_id, repos);
+      return { token: jwtToken, ...redirect };
+    }
+  });
+
+  // In-memory per-email rate limit store for forgot-password (3 req/hour)
+  const forgotPasswordHits = new Map();
+  function checkForgotPasswordRateLimit(email) {
+    const now = Date.now();
+    const windowStart = now - 60 * 60 * 1000;
+    const key = email.toLowerCase();
+    const hits = (forgotPasswordHits.get(key) ?? []).filter((t) => t > windowStart);
+    if (hits.length >= 3) return false;
+    hits.push(now);
+    forgotPasswordHits.set(key, hits);
+    return true;
+  }
+
+  router.addRoute({
+    id: "auth-forgot-password",
+    method: "POST",
+    path: "/auth/forgot-password",
+    authRequired: false,
+    validate: (body) => body ?? {},
+    handler: async ({ body, repos, state }) => {
+      const { email } = body;
+      if (!email || typeof email !== "string") {
+        // Still return 200 — never reveal details
+        return { message: "If an account exists for this email, a reset link has been sent." };
+      }
+      const allowed = checkForgotPasswordRateLimit(email);
+      if (!allowed) {
+        return { message: "If an account exists for this email, a reset link has been sent." };
+      }
+      const user = await repos.users.findByEmail(email);
+      if (user) {
+        const plaintext = await generateResetToken(user.id, user.tenant_id, repos, state.sessionSecret);
+        // TODO Phase 6: dispatch via notification service with template 'password_reset'
+        console.log(`[TODO] password_reset token for ${email}: ${plaintext}`);
+      }
+      return { message: "If an account exists for this email, a reset link has been sent." };
+    }
+  });
+
+  router.addRoute({
+    id: "auth-reset-password",
+    method: "POST",
+    path: "/auth/reset-password",
+    authRequired: false,
+    validate: (body) => body ?? {},
+    handler: async ({ body, repos, state }) => {
+      const { token, password } = body;
+      if (!token || !password) {
+        throw new HttpError(400, "token and password are required");
+      }
+      const hash = hashToken(token, state.sessionSecret);
+      const user = await repos.users.findByResetTokenHash(hash);
+      if (!user) {
+        throw new HttpError(400, "RESET_TOKEN_INVALID_OR_EXPIRED");
+      }
+      const complexity = validatePasswordComplexity(password);
+      if (complexity) {
+        throw new HttpError(400, "PASSWORD_TOO_WEAK", { message: complexity });
+      }
+      const passwordHash = await hashPassword(password);
+      await repos.users.update({
+        ...user,
+        password_hash: passwordHash,
+        password_reset_token_hash: null,
+        password_reset_expires_at: null
+      });
+      return { message: "Password reset successfully" };
+    }
+  });
+
+  router.addRoute({
+    id: "auth-change-password",
+    method: "POST",
+    path: "/auth/change-password",
+    authRequired: true,
+    validate: (body) => body ?? {},
+    handler: async ({ body, principal, repos }) => {
+      const { current_password, new_password } = body;
+      if (!current_password || !new_password) {
+        throw new HttpError(400, "current_password and new_password are required");
+      }
+      const user = await repos.users.findById(principal.tenant_id, principal.actor_id);
+      if (!user.password_hash) {
+        throw new HttpError(400, "Password authentication is not configured for this account");
+      }
+      const valid = await verifyPassword(current_password, user.password_hash);
+      if (!valid) {
+        throw new HttpError(401, "CURRENT_PASSWORD_INCORRECT");
+      }
+      const complexity = validatePasswordComplexity(new_password);
+      if (complexity) {
+        throw new HttpError(400, "PASSWORD_TOO_WEAK", { message: complexity });
+      }
+      const passwordHash = await hashPassword(new_password);
+      await repos.users.update({ ...user, password_hash: passwordHash });
+      return { message: "Password updated" };
+    }
+  });
+
+  router.addRoute({
+    id: "auth-me-extended",
+    method: "GET",
+    path: "/auth/me/profile",
+    authRequired: true,
+    handler: async ({ principal, repos }) => {
+      const user = await repos.users.findById(principal.tenant_id, principal.actor_id);
+      const org = user.organization_id
+        ? await repos.organizations.findById(principal.tenant_id, user.organization_id).catch(() => null)
+        : null;
+      const roleAssignments = await repos.userRoleAssignments.listByUser(principal.tenant_id, user.id);
+      return {
+        id: user.id,
+        full_name: user.display_name,
+        email: user.email,
+        org_id: user.organization_id ?? null,
+        org_name: org?.name ?? null,
+        status: user.status,
+        roles: [...new Set([user.role, ...roleAssignments.map((r) => r.role)])],
+        last_login_at: user.last_login_at ?? null
+      };
+    }
+  });
+
+  router.addRoute({
+    id: "auth-patch-me",
+    method: "PATCH",
+    path: "/auth/me",
+    authRequired: true,
+    validate: (body) => body ?? {},
+    handler: async ({ body, principal, repos }) => {
+      const { full_name } = body;
+      if (!full_name || typeof full_name !== "string") {
+        throw new HttpError(400, "full_name is required");
+      }
+      const trimmed = full_name.trim();
+      if (trimmed.length < 2 || trimmed.length > 100) {
+        throw new HttpError(400, "full_name must be 2–100 characters");
+      }
+      const user = await repos.users.findById(principal.tenant_id, principal.actor_id);
+      const updated = await repos.users.update({ ...user, display_name: trimmed });
+      const org = updated.organization_id
+        ? await repos.organizations.findById(principal.tenant_id, updated.organization_id).catch(() => null)
+        : null;
+      const roleAssignments = await repos.userRoleAssignments.listByUser(principal.tenant_id, updated.id);
+      return {
+        id: updated.id,
+        full_name: updated.display_name,
+        email: updated.email,
+        org_id: updated.organization_id ?? null,
+        org_name: org?.name ?? null,
+        status: updated.status,
+        roles: [...new Set([updated.role, ...roleAssignments.map((r) => r.role)])],
+        last_login_at: updated.last_login_at ?? null
+      };
+    }
+  });
+
+  // generateInviteToken is exported for use by Phase 3 user invite endpoint
+  router.generateInviteToken = (userId, tenantId, repos, secret) =>
+    generateInviteToken(userId, tenantId, repos, secret);
 }
 
 async function resolveDeviceCredentialResources({ repos, principal, params }) {

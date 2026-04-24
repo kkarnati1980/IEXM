@@ -145,6 +145,41 @@ export function createSeedState() {
     stalls: [stall, stallSameEvent, stallSecondary],
     devices: [device],
     deviceAssignments: [assignment],
+    userRoleAssignments: [
+      {
+        id: "ura-organizer-event-demo",
+        tenant_id: tenant.id,
+        user_id: organizer.id,
+        role: "organizer_admin",
+        event_id: event.id,
+        stall_ids: [],
+        sponsor_package_id: null,
+        assigned_by_user_id: platform1.id,
+        created_at: now
+      },
+      {
+        id: "ura-vendor-stall-a1",
+        tenant_id: tenant.id,
+        user_id: vendor.id,
+        role: "vendor_manager",
+        event_id: event.id,
+        stall_ids: [stall.id],
+        sponsor_package_id: null,
+        assigned_by_user_id: organizer.id,
+        created_at: now
+      },
+      {
+        id: "ura-platform-admin",
+        tenant_id: tenant.id,
+        user_id: platform1.id,
+        role: "platform_admin",
+        event_id: null,
+        stall_ids: [],
+        sponsor_package_id: null,
+        assigned_by_user_id: platform1.id,
+        created_at: now
+      }
+    ],
     userAccessScopes: [
       {
         id: "scope-organizer-event-demo",
@@ -278,6 +313,12 @@ function user(id, email, display_name, role, organization_id, tenant_id) {
     external_identity_provider: null,
     external_subject: null,
     status: "active",
+    password_hash: null,
+    invited_by_user_id: null,
+    invitation_token_hash: null,
+    invitation_expires_at: null,
+    password_reset_token_hash: null,
+    password_reset_expires_at: null,
     last_login_at: null,
     disabled_at: null,
     disabled_reason: null,

@@ -63,6 +63,24 @@ export function createMemoryRepositories(state) {
       async findByEmail(email) {
         return state.users.find((entry) => entry.email === email) ?? null;
       },
+      async findByInviteTokenHash(hash) {
+        return (
+          state.users.find(
+            (entry) => entry.invitation_token_hash === hash &&
+              entry.invitation_expires_at &&
+              new Date(entry.invitation_expires_at) > new Date()
+          ) ?? null
+        );
+      },
+      async findByResetTokenHash(hash) {
+        return (
+          state.users.find(
+            (entry) => entry.password_reset_token_hash === hash &&
+              entry.password_reset_expires_at &&
+              new Date(entry.password_reset_expires_at) > new Date()
+          ) ?? null
+        );
+      },
       async findByExternalSubject(issuer, subject) {
         return (
           state.users.find(
@@ -166,6 +184,28 @@ export function createMemoryRepositories(state) {
           throw new HttpError(404, "User access scope not found");
         }
         const [deleted] = state.userAccessScopes.splice(index, 1);
+        return deleted;
+      }
+    },
+    userRoleAssignments: {
+      async create(record) {
+        state.userRoleAssignments.push(record);
+        return record;
+      },
+      async findById(tenantId, id) {
+        return findById(state.userRoleAssignments, tenantId, id, "User role assignment");
+      },
+      async listByUser(tenantId, userId) {
+        return state.userRoleAssignments.filter(
+          (entry) => entry.tenant_id === tenantId && entry.user_id === userId
+        );
+      },
+      async deleteById(tenantId, id) {
+        const index = state.userRoleAssignments.findIndex(
+          (entry) => entry.tenant_id === tenantId && entry.id === id
+        );
+        if (index === -1) throw new HttpError(404, "User role assignment not found");
+        const [deleted] = state.userRoleAssignments.splice(index, 1);
         return deleted;
       }
     },

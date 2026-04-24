@@ -10,6 +10,7 @@ import { createRepositories } from "./repositories.mjs";
 import { createPostgresDatabase } from "./db/postgres.mjs";
 import { createOidcVerifier } from "./auth/oidc.mjs";
 import { buildDevicePrincipal, buildUserPrincipal } from "./auth/principals.mjs";
+import { verifyPlatformToken } from "./auth/platform-jwt.mjs";
 import { hashDeviceCredentialToken } from "./device-credentials.mjs";
 import { createIotOperationsRuntime } from "./iot/runtime.mjs";
 
@@ -258,6 +259,12 @@ async function authMiddleware(ctx) {
     return;
   }
 
+  const platformJwtPrincipal = await authenticatePlatformJwt(ctx, token);
+  if (platformJwtPrincipal) {
+    ctx.principal = platformJwtPrincipal;
+    return;
+  }
+
   const devicePrincipal = await authenticateDevicePrincipal(ctx, token);
   if (devicePrincipal) {
     ctx.principal = devicePrincipal;
@@ -502,8 +509,11 @@ async function loadScopedUserPrincipal(ctx, user, authSource, claims = null) {
     actorId: user.id,
     actorRole: user.role
   }) ?? ctx.baseRepos;
-  const scopes = await scopedRepos.userAccessScopes.listByUser(user.tenant_id, user.id);
-  const principal = buildUserPrincipal(user, scopes);
+  const [scopes, roleAssignments] = await Promise.all([
+    scopedRepos.userAccessScopes.listByUser(user.tenant_id, user.id),
+    scopedRepos.userRoleAssignments?.listByUser(user.tenant_id, user.id) ?? Promise.resolve([])
+  ]);
+  const principal = buildUserPrincipal(user, scopes, roleAssignments);
   principal.auth_source = authSource;
   if (claims) {
     principal.oidc = {
@@ -513,6 +523,23 @@ async function loadScopedUserPrincipal(ctx, user, authSource, claims = null) {
     };
   }
   return principal;
+}
+
+async function authenticatePlatformJwt(ctx, token) {
+  const secret = ctx.state?.sessionSecret ?? ctx.env?.SESSION_SECRET;
+  if (!secret) return null;
+  const claims = verifyPlatformToken(token, secret);
+  if (!claims) return null;
+
+  let user;
+  try {
+    user = await ctx.baseRepos.users.findById(claims.tenant_id, claims.actor_id);
+  } catch {
+    return null;
+  }
+
+  const authenticatedUser = await refreshAuthenticatedUser(ctx, user, "platform_jwt");
+  return loadScopedUserPrincipal(ctx, authenticatedUser, "platform_jwt");
 }
 
 function resolveUserLifecycleStatus(user) {

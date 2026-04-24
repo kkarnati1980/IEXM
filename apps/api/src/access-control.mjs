@@ -365,7 +365,16 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   "break-glass-approve": entry({ permission: "break_glass.approve", roles: platform, scope: "tenant", description: "Approve emergency break-glass access", sensitivity: "security" }),
   "break-glass-revoke": entry({ permission: "break_glass.revoke", roles: platform, scope: "tenant", description: "Revoke emergency break-glass access", sensitivity: "security" }),
   "break-glass-list": entry({ permission: "break_glass.view", roles: platform, scope: "tenant", description: "List emergency access requests", sensitivity: "security" }),
-  "audit-logs": entry({ permission: "audit.logs.view", roles: organizerOrPlatform, scope: "event_or_tenant", description: "View audit logs", sensitivity: "security" })
+  "audit-logs": entry({ permission: "audit.logs.view", roles: organizerOrPlatform, scope: "event_or_tenant", description: "View audit logs", sensitivity: "security" }),
+
+  // Phase 2 — Auth Service Extensions
+  "auth-login": publicEntry("auth.login", "Authenticate with email and password", "sensitive"),
+  "auth-accept-invite": publicEntry("auth.invite.accept", "Accept an invitation and set password", "sensitive"),
+  "auth-forgot-password": publicEntry("auth.password.forgot", "Request a password reset email", "sensitive"),
+  "auth-reset-password": publicEntry("auth.password.reset", "Reset password using a reset token", "sensitive"),
+  "auth-change-password": entry({ permission: "auth.password.change", roles: USER_ROLES, scope: "principal", description: "Change own password", sensitivity: "sensitive" }),
+  "auth-me-extended": entry({ permission: "auth.profile.view", roles: USER_ROLES, scope: "principal", description: "View own profile with org and roles", sensitivity: "internal" }),
+  "auth-patch-me": entry({ permission: "auth.profile.update", roles: USER_ROLES, scope: "principal", description: "Update own display name", sensitivity: "internal" })
 });
 
 export function getAccessControlEntry(routeId) {

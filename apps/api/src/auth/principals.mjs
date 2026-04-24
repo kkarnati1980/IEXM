@@ -1,25 +1,37 @@
-export function buildUserPrincipal(user, scopes = []) {
+export function buildUserPrincipal(user, scopes = [], roleAssignments = []) {
   const eventIds = new Set();
   const stallIds = new Set();
   const sponsorOrganizationIds = new Set();
+  const sponsorPackageIds = new Set();
+  const roles = new Set();
 
+  // Populate from legacy user_access_scopes (backward compat)
   for (const scope of scopes) {
-    if (scope.event_id) {
-      eventIds.add(scope.event_id);
-    }
-    if (scope.stall_id) {
-      stallIds.add(scope.stall_id);
-    }
-    if (scope.sponsor_organization_id) {
-      sponsorOrganizationIds.add(scope.sponsor_organization_id);
-    }
+    if (scope.event_id) eventIds.add(scope.event_id);
+    if (scope.stall_id) stallIds.add(scope.stall_id);
+    if (scope.sponsor_organization_id) sponsorOrganizationIds.add(scope.sponsor_organization_id);
   }
+
+  // Populate from user_role_assignments (Phase 2+)
+  for (const assignment of roleAssignments) {
+    if (assignment.role) roles.add(assignment.role);
+    if (assignment.event_id) eventIds.add(assignment.event_id);
+    if (Array.isArray(assignment.stall_ids)) {
+      for (const id of assignment.stall_ids) stallIds.add(id);
+    }
+    if (assignment.sponsor_package_id) sponsorPackageIds.add(assignment.sponsor_package_id);
+  }
+
+  // Always include the user's base role
+  if (user.role) roles.add(user.role);
 
   return {
     type: "user",
     actor_id: user.id,
     tenant_id: user.tenant_id,
+    org_id: user.organization_id ?? null,
     role: user.role,
+    roles: [...roles],
     user_id: user.id,
     organization_id: user.organization_id,
     user_status: user.status ?? "active",
@@ -27,7 +39,8 @@ export function buildUserPrincipal(user, scopes = []) {
     mfa_required: user.mfa_required ?? false,
     event_ids: [...eventIds],
     stall_ids: [...stallIds],
-    sponsor_organization_ids: [...sponsorOrganizationIds]
+    sponsor_organization_ids: [...sponsorOrganizationIds],
+    sponsor_package_ids: [...sponsorPackageIds]
   };
 }
 
