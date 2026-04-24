@@ -1,7 +1,11 @@
 import { HttpError } from "./http-error.mjs";
+import { ERROR_CODES } from "./errors.mjs";
+
+// Roles that are never subject to event/stall/package scope restrictions.
+const SCOPE_EXEMPT_ROLES = new Set(["platform_admin"]);
 
 export function enforceRoleScope(ctx) {
-  const { route, principal, resources, state, breakGlass } = ctx;
+  const { route, principal, resources, params = {}, state, breakGlass } = ctx;
   if (!route.allowedRoles?.length) {
     return;
   }
@@ -14,6 +18,44 @@ export function enforceRoleScope(ctx) {
     throw new HttpError(403, "Role not permitted");
   }
 
+  // ── Step 5.1: event_id scope (param-based) ──────────────────────────────
+  // Enforces that non-exempt roles can only access events in their JWT event_ids[].
+  if (!SCOPE_EXEMPT_ROLES.has(principal.role)) {
+    const eventId = params.eventId;
+    if (eventId) {
+      const allowed = principal.event_ids ?? [];
+      if (!allowed.includes(eventId)) {
+        throw new HttpError(403, ERROR_CODES.EVENT_SCOPE_FORBIDDEN + ": You do not have access to this event");
+      }
+    }
+  }
+
+  // ── Step 5.2: stall_id scope (vendor_manager only) ──────────────────────
+  // vendor_manager may only access stalls listed in their JWT stall_ids[].
+  if (principal.role === "vendor_manager") {
+    const stallId = params.stallId;
+    if (stallId) {
+      const allowed = principal.stall_ids ?? [];
+      if (!allowed.includes(stallId)) {
+        throw new HttpError(403, ERROR_CODES.STALL_SCOPE_FORBIDDEN + ": You do not have access to this stall");
+      }
+    }
+  }
+
+  // ── Step 5.3: sponsor_package_id scope (sponsor_user only) ──────────────
+  // sponsor_user may only access packages listed in their JWT sponsor_package_ids[].
+  // TODO: apply to sponsor analytics routes when added in Phase 12/13.
+  if (principal.role === "sponsor_user") {
+    const packageId = params.packageId ?? params.sponsorPackageId;
+    if (packageId) {
+      const allowed = principal.sponsor_package_ids ?? [];
+      if (!allowed.includes(packageId)) {
+        throw new HttpError(403, ERROR_CODES.PACKAGE_SCOPE_FORBIDDEN + ": You do not have access to this sponsor package");
+      }
+    }
+  }
+
+  // ── Legacy resource-based scope checks (for routes using resolveResources) ─
   if (resources.event && principal.event_ids?.length && !principal.event_ids.includes(resources.event.id)) {
     throw new HttpError(403, "Event scope violation");
   }

@@ -3890,7 +3890,7 @@ test("vendor cannot access another stall outside assigned stall scope", async ()
   });
 
   assert.equal(response.statusCode, 403);
-  assert.match(response.body.error, /Stall scope violation/);
+  assert.match(response.body.error, /STALL_SCOPE_FORBIDDEN/);
 });
 
 test("organizer cannot access another event outside event scope", async () => {
@@ -3903,7 +3903,7 @@ test("organizer cannot access another event outside event scope", async () => {
   });
 
   assert.equal(response.statusCode, 403);
-  assert.match(response.body.error, /Event scope violation/);
+  assert.match(response.body.error, /EVENT_SCOPE_FORBIDDEN/);
 });
 
 test("organizer data control applies secure defaults, validates retention, and gates publish", async () => {
