@@ -203,29 +203,26 @@
           }
 
           // Load vendor managers
-          await loadVendorManagers(ev);
+          await loadVendorManagers();
 
         } catch (err) {
           showGlobal(err.message, "error");
         }
       }
 
-      async function loadVendorManagers(eventIdParam) {
+      async function loadVendorManagers() {
         try {
-          const data = await api("/users?role=vendor_manager");
-          const users = (data.users ?? []).filter(u => {
-            const eid = eventIdParam ?? eventId;
-            return true; // show all vendor managers; filtering by stall scope is complex in-band
-          });
+          const data = await api(`/stalls/${encodeURIComponent(stallId)}/users`);
+          const users = data.users ?? [];
           const tbody = document.getElementById("vm-tbody");
           tbody.innerHTML = users.length === 0
-            ? `<tr><td colspan="4" class="empty">No vendor managers assigned</td></tr>`
+            ? `<tr><td colspan="4" class="empty">No vendor managers assigned to this stall</td></tr>`
             : users.map(u => `
               <tr>
-                <td>${esc(u.display_name)}</td>
+                <td>${esc(u.full_name ?? u.display_name)}</td>
                 <td class="muted">${esc(u.email)}</td>
                 <td><span class="badge ${esc(u.status)}">${esc(u.status)}</span></td>
-                <td><button class="sm bad" onclick="removeVM('${esc(u.id)}')">Remove</button></td>
+                <td><button class="sm bad" onclick="removeVM('${esc(u.id)}','${esc(u.assignment_id)}')">Remove</button></td>
               </tr>`).join("");
         } catch {
           const tbody = document.getElementById("vm-tbody");
@@ -233,19 +230,12 @@
         }
       }
 
-      window.removeVM = async (userId) => {
+      window.removeVM = async (userId, assignmentId) => {
         if (!confirm("Remove vendor manager from this stall?")) return;
         try {
-          // Remove via role assignments endpoint
-          const roles = await api(`/users/${encodeURIComponent(userId)}/roles`);
-          const assignment = (roles.role_assignments ?? []).find(a => a.role === "vendor_manager" && (a.stall_ids ?? []).includes(stallId));
-          if (assignment) {
-            await api(`/users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(assignment.id)}`, { method: "DELETE" });
-            toast("Vendor manager removed");
-            load();
-          } else {
-            showStatus("vm-status", "Assignment not found", "error");
-          }
+          await api(`/users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(assignmentId)}`, { method: "DELETE" });
+          toast("Vendor manager removed");
+          loadVendorManagers();
         } catch (err) {
           showStatus("vm-status", err.message, "error");
         }

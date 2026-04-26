@@ -177,18 +177,18 @@
           orgSel.innerHTML = `<option value="">— Select sponsor org —</option>` +
             orgs.map(o => `<option value="${esc(o.id)}" ${pkgData.organization_id === o.id ? "selected" : ""}>${esc(o.name)}</option>`).join("");
 
-          // Load sponsor users
-          const usersData = await api("/users?role=sponsor_user");
+          // Load sponsor users scoped to this package
+          const usersData = await api(`/sponsor-packages/${encodeURIComponent(packageId)}/users`);
           const users = usersData.users ?? [];
           const tbody = document.getElementById("su-tbody");
           tbody.innerHTML = users.length === 0
-            ? `<tr><td colspan="4" class="empty">No sponsor users assigned</td></tr>`
+            ? `<tr><td colspan="4" class="empty">No sponsor users assigned to this package</td></tr>`
             : users.map(u => `
               <tr>
-                <td>${esc(u.display_name)}</td>
+                <td>${esc(u.full_name ?? u.display_name)}</td>
                 <td class="muted">${esc(u.email)}</td>
                 <td><span class="badge ${esc(u.status)}">${esc(u.status)}</span></td>
-                <td><button class="sm bad" onclick="removeSU('${esc(u.id)}')">Remove</button></td>
+                <td><button class="sm bad" onclick="removeSU('${esc(u.id)}','${esc(u.assignment_id)}')">Remove</button></td>
               </tr>`).join("");
 
           // Load entitlements from data policy
@@ -218,18 +218,12 @@
         }
       }
 
-      window.removeSU = async (userId) => {
+      window.removeSU = async (userId, assignmentId) => {
         if (!confirm("Remove sponsor user?")) return;
         try {
-          const roles = await api(`/users/${encodeURIComponent(userId)}/roles`);
-          const assignment = (roles.role_assignments ?? []).find(a => a.role === "sponsor_user" && a.sponsor_package_id === packageId);
-          if (assignment) {
-            await api(`/users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(assignment.id)}`, { method: "DELETE" });
-            toast("Sponsor user removed");
-            load();
-          } else {
-            showStatus("su-status", "Assignment not found", "error");
-          }
+          await api(`/users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(assignmentId)}`, { method: "DELETE" });
+          toast("Sponsor user removed");
+          load();
         } catch (err) {
           showStatus("su-status", err.message, "error");
         }

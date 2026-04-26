@@ -44,6 +44,22 @@
       .toolbar>div{flex:1 1 180px;min-width:140px;}
       #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--good);color:#0a1f1b;padding:12px 20px;border-radius:14px;font-weight:600;font-size:14px;opacity:0;transition:opacity 0.2s;z-index:9999;pointer-events:none;}
       #toast.show{opacity:1;}
+      .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9000;}
+      .modal-panel{background:var(--panel);border-radius:22px;border:1px solid var(--border);padding:28px;max-width:560px;width:90%;max-height:90vh;overflow-y:auto;}
+      .field{margin-bottom:14px;}
+      .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:5px;}
+      .modal-actions{display:flex;gap:10px;margin-top:18px;}
+      .modal-actions button{flex:1;}
+      .step-indicator{display:flex;gap:8px;margin-bottom:20px;align-items:center;}
+      .step{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:rgba(255,255,255,0.08);color:var(--muted);}
+      .step.active{background:var(--accent);color:#211503;}
+      .step.done{background:var(--good);color:#0a1f1b;}
+      .step-sep{flex:1;height:2px;background:var(--border);max-width:40px;}
+      .toggle-row{display:flex;align-items:flex-start;gap:14px;padding:12px 0;border-bottom:1px solid var(--border);}
+      .toggle-row:last-child{border-bottom:none;}
+      .toggle-row-info{flex:1;}
+      .toggle-row-info strong{display:block;margin-bottom:3px;}
+      .toggle-row-info span{font-size:13px;color:var(--muted);}
     </style>
   </head>
   <body>
@@ -165,10 +181,270 @@
 
       document.getElementById("apply-filter").addEventListener("click", () => renderEvents(allEvents));
 
-      document.getElementById("new-event-btn").addEventListener("click", () => {
-        alert("Create Event wizard — opens 4-step form (configure in Phase 11)");
-      });
+      let allOrgs = [];
 
+      async function loadOrgs() {
+        try {
+          const data = await api("/organizations");
+          allOrgs = data.organizations ?? data ?? [];
+        } catch { allOrgs = []; }
+      }
+
+      document.getElementById("new-event-btn").addEventListener("click", openCreateEventWizard);
+
+      function openCreateEventWizard() {
+        const overlay = document.createElement("div");
+        overlay.className = "modal-overlay";
+
+        let step = 1;
+        const data = {
+          basics: {},
+          halls: [],
+          packages: [],
+          policy: {
+            vendor_exports_enabled: false,
+            sponsor_pii_enabled: false,
+            require_export_approval: true,
+            allow_crm_push: false,
+            retention_days: 90,
+            allow_cross_event_identity_graph: false
+          }
+        };
+
+        const RETENTION_OPTIONS = [30, 60, 90, 180, 365];
+        const POLICY_FIELDS = [
+          { key: "vendor_exports_enabled", label: "Vendor data exports", desc: "Allow vendor managers to export booth interaction data" },
+          { key: "sponsor_pii_enabled", label: "Sponsor PII access", desc: "Allow sponsors to view attendee PII fields within their package" },
+          { key: "require_export_approval", label: "Require export approval", desc: "All data export requests must be approved by organizer admin" },
+          { key: "allow_crm_push", label: "CRM push", desc: "Allow syncing interactions to the configured CRM integration" },
+          { key: "allow_cross_event_identity_graph", label: "Cross-event identity graph", desc: "Allow linking attendee identity across events in this tenant" }
+        ];
+
+        function stepIndicator(current) {
+          return [1,2,3,4].map((n) => `
+            <div class="step ${n < current ? "done" : n === current ? "active" : ""}">${n < current ? "✓" : n}</div>
+            ${n < 4 ? `<div class="step-sep"></div>` : ""}
+          `).join("");
+        }
+
+        function hallRow(idx, hall) {
+          return `
+            <div class="item" style="border-radius:12px;border:1px solid var(--border);padding:12px;margin-bottom:8px;">
+              <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+                <input type="text" placeholder="Hall name" value="${esc(hall.name ?? "")}" data-hall-name="${idx}" style="flex:1;">
+                <button class="bad sm" data-remove-hall="${idx}" style="flex-shrink:0;">Remove</button>
+              </div>
+              <div id="stalls-${idx}">
+                ${(hall.stalls ?? []).map((s, si) => `
+                  <div style="display:flex;gap:8px;margin-bottom:6px;">
+                    <input type="text" placeholder="Code (e.g. A1)" value="${esc(s.code ?? "")}" data-stall-code="${idx}-${si}" style="width:100px;flex-shrink:0;">
+                    <input type="text" placeholder="Stall name" value="${esc(s.name ?? "")}" data-stall-name="${idx}-${si}">
+                    <button class="secondary sm" data-remove-stall="${idx}-${si}">×</button>
+                  </div>
+                `).join("")}
+              </div>
+              <button class="secondary sm" data-add-stall="${idx}" style="margin-top:4px;">+ Add stall</button>
+            </div>
+          `;
+        }
+
+        function pkgRow(idx, pkg) {
+          const orgOpts = allOrgs.filter((o) => o.type === "sponsor").map((o) => `<option value="${esc(o.id)}" ${pkg.org_id === o.id ? "selected" : ""}>${esc(o.name)}</option>`).join("");
+          return `
+            <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
+              <input type="text" placeholder="Package name" value="${esc(pkg.name ?? "")}" data-pkg-name="${idx}" style="flex:2;">
+              <select data-pkg-tier="${idx}" style="flex:1;">
+                ${["gold","silver","bronze","custom"].map((t) => `<option value="${t}" ${pkg.tier===t?"selected":""}>${t}</option>`).join("")}
+              </select>
+              <select data-pkg-org="${idx}" style="flex:1;">
+                <option value="">No org</option>${orgOpts}
+              </select>
+              <button class="bad sm" data-remove-pkg="${idx}">×</button>
+            </div>
+          `;
+        }
+
+        function renderWizardStep() {
+          let content = "";
+          if (step === 1) {
+            content = `
+              <div class="field"><label>Event name *</label><input type="text" id="ev-name" value="${esc(data.basics.name ?? "")}" autofocus></div>
+              <div class="field"><label>Venue name *</label><input type="text" id="ev-venue" value="${esc(data.basics.venue_name ?? "")}"></div>
+              <div style="display:flex;gap:12px;">
+                <div class="field" style="flex:1;"><label>City</label><input type="text" id="ev-city" value="${esc(data.basics.city ?? "")}"></div>
+                <div class="field" style="flex:1;"><label>Country</label><input type="text" id="ev-country" value="${esc(data.basics.country ?? "")}" placeholder="IN"></div>
+              </div>
+              <div style="display:flex;gap:12px;">
+                <div class="field" style="flex:1;"><label>Start date *</label><input type="date" id="ev-start" value="${esc(data.basics.starts_at?.slice(0,10) ?? "")}"></div>
+                <div class="field" style="flex:1;"><label>End date *</label><input type="date" id="ev-end" value="${esc(data.basics.ends_at?.slice(0,10) ?? "")}"></div>
+              </div>
+            `;
+          } else if (step === 2) {
+            content = `
+              <div id="halls-container">${data.halls.map((h, i) => hallRow(i, h)).join("")}</div>
+              <button class="secondary" id="add-hall-btn" style="margin-top:8px;">+ Add Hall</button>
+            `;
+          } else if (step === 3) {
+            content = `
+              <div id="pkgs-container">${data.packages.map((p, i) => pkgRow(i, p)).join("")}</div>
+              <button class="secondary" id="add-pkg-btn" style="margin-top:8px;">+ Add Package</button>
+              ${!allOrgs.some((o) => o.type === "sponsor") ? `<p style="font-size:13px;color:var(--muted);margin-top:8px;">No sponsor orgs available — create one in tenant settings first.</p>` : ""}
+            `;
+          } else if (step === 4) {
+            content = `
+              <div class="toggle-row">
+                <div class="toggle-row-info"><strong>Retention period</strong><span>How long attendee data is retained after the event.</span></div>
+                <select id="pol-retention" style="width:auto;min-width:100px;">
+                  ${RETENTION_OPTIONS.map((d) => `<option value="${d}" ${data.policy.retention_days===d?"selected":""}>${d} days</option>`).join("")}
+                </select>
+              </div>
+              ${POLICY_FIELDS.map((f) => `
+                <div class="toggle-row">
+                  <div class="toggle-row-info"><strong>${esc(f.label)}</strong><span>${esc(f.desc)}</span></div>
+                  <input type="checkbox" ${data.policy[f.key] ? "checked" : ""} data-pol="${f.key}" style="width:auto;">
+                </div>
+              `).join("")}
+            `;
+          }
+
+          overlay.innerHTML = `
+            <div class="modal-panel" style="max-width:640px;">
+              <div class="step-indicator">${stepIndicator(step)}</div>
+              <div class="eyebrow">Create Event</div>
+              <h2 style="margin:8px 0 4px;">Step ${step} of 4 — ${["","Event Basics","Halls & Stalls","Sponsor Packages","Data Policy"][step]}</h2>
+              <div id="wiz-status" hidden class="status error" style="margin-top:12px;"></div>
+              <div style="margin-top:16px;">${content}</div>
+              <div class="modal-actions" style="margin-top:20px;">
+                ${step < 4 ? `<button class="primary" id="wiz-next">Next →</button>` : `<button class="primary" id="wiz-submit">Create Event</button>`}
+                ${step > 1 ? `<button class="secondary" id="wiz-back">← Back</button>` : ""}
+                <button class="secondary" id="wiz-cancel">Cancel</button>
+              </div>
+            </div>
+          `;
+
+          if (step === 2) {
+            function syncHalls() {
+              data.halls = [];
+              overlay.querySelectorAll("[data-hall-name]").forEach((el) => {
+                const i = parseInt(el.dataset.hallName);
+                if (!data.halls[i]) data.halls[i] = { name: "", stalls: [] };
+                data.halls[i].name = el.value;
+              });
+              overlay.querySelectorAll("[data-stall-code]").forEach((el) => {
+                const [hi, si] = el.dataset.stallCode.split("-").map(Number);
+                if (!data.halls[hi].stalls[si]) data.halls[hi].stalls[si] = {};
+                data.halls[hi].stalls[si].code = el.value;
+              });
+              overlay.querySelectorAll("[data-stall-name]").forEach((el) => {
+                const [hi, si] = el.dataset.stallName.split("-").map(Number);
+                if (!data.halls[hi].stalls[si]) data.halls[hi].stalls[si] = {};
+                data.halls[hi].stalls[si].name = el.value;
+              });
+            }
+            overlay.querySelector("#add-hall-btn").addEventListener("click", () => {
+              syncHalls(); data.halls.push({ name: "", stalls: [] }); renderWizardStep();
+            });
+            overlay.querySelectorAll("[data-remove-hall]").forEach((btn) => {
+              btn.addEventListener("click", () => { syncHalls(); data.halls.splice(parseInt(btn.dataset.removeHall), 1); renderWizardStep(); });
+            });
+            overlay.querySelectorAll("[data-add-stall]").forEach((btn) => {
+              btn.addEventListener("click", () => { syncHalls(); const i = parseInt(btn.dataset.addStall); data.halls[i].stalls.push({ code: "", name: "" }); renderWizardStep(); });
+            });
+            overlay.querySelectorAll("[data-remove-stall]").forEach((btn) => {
+              btn.addEventListener("click", () => { syncHalls(); const [hi, si] = btn.dataset.removeStall.split("-").map(Number); data.halls[hi].stalls.splice(si, 1); renderWizardStep(); });
+            });
+          }
+
+          if (step === 3) {
+            function syncPkgs() {
+              data.packages = [];
+              overlay.querySelectorAll("[data-pkg-name]").forEach((el) => {
+                const i = parseInt(el.dataset.pkgName);
+                if (!data.packages[i]) data.packages[i] = {};
+                data.packages[i].name = el.value;
+              });
+              overlay.querySelectorAll("[data-pkg-tier]").forEach((el) => { data.packages[parseInt(el.dataset.pkgTier)].tier = el.value; });
+              overlay.querySelectorAll("[data-pkg-org]").forEach((el) => { data.packages[parseInt(el.dataset.pkgOrg)].org_id = el.value || undefined; });
+            }
+            overlay.querySelector("#add-pkg-btn").addEventListener("click", () => {
+              syncPkgs(); data.packages.push({ name: "", tier: "gold", org_id: "" }); renderWizardStep();
+            });
+            overlay.querySelectorAll("[data-remove-pkg]").forEach((btn) => {
+              btn.addEventListener("click", () => { syncPkgs(); data.packages.splice(parseInt(btn.dataset.removePkg), 1); renderWizardStep(); });
+            });
+          }
+
+          if (step === 4) {
+            overlay.querySelectorAll("[data-pol]").forEach((el) => {
+              el.addEventListener("change", () => { data.policy[el.dataset.pol] = el.checked; });
+            });
+            overlay.querySelector("#pol-retention").addEventListener("change", (e) => {
+              data.policy.retention_days = parseInt(e.target.value);
+            });
+          }
+
+          overlay.querySelector("#wiz-cancel")?.addEventListener("click", () => overlay.remove());
+          overlay.querySelector("#wiz-back")?.addEventListener("click", () => {
+            step--; renderWizardStep();
+          });
+
+          if (step < 4) {
+            overlay.querySelector("#wiz-next").addEventListener("click", () => {
+              const statusEl = overlay.querySelector("#wiz-status");
+              statusEl.hidden = true;
+              if (step === 1) {
+                const name = overlay.querySelector("#ev-name").value.trim();
+                const venue = overlay.querySelector("#ev-venue").value.trim();
+                const start = overlay.querySelector("#ev-start").value;
+                const end = overlay.querySelector("#ev-end").value;
+                if (!name || !venue || !start || !end) {
+                  statusEl.textContent = "Event name, venue, start and end date are required.";
+                  statusEl.hidden = false; return;
+                }
+                data.basics = { name, venue_name: venue, city: overlay.querySelector("#ev-city").value.trim(), country: overlay.querySelector("#ev-country").value.trim(), starts_at: start, ends_at: end };
+              }
+              step++; renderWizardStep();
+            });
+          } else {
+            overlay.querySelector("#wiz-submit").addEventListener("click", async () => {
+              const statusEl = overlay.querySelector("#wiz-status");
+              const submitBtn = overlay.querySelector("#wiz-submit");
+              statusEl.hidden = true; submitBtn.disabled = true;
+              try {
+                const evRes = await api("/events", { method: "POST", body: data.basics });
+                const newEventId = evRes.event?.id ?? evRes.id;
+                if (!newEventId) throw new Error("No event ID returned from server");
+
+                for (const hall of data.halls.filter((h) => h.name)) {
+                  const hallRes = await api(`/events/${newEventId}/halls`, { method: "POST", body: { name: hall.name } });
+                  const hallId = hallRes.hall_id ?? hallRes.id;
+                  for (const stall of (hall.stalls ?? []).filter((s) => s.code)) {
+                    await api(`/events/${newEventId}/stalls`, { method: "POST", body: { stall_code: stall.code, name: stall.name ?? stall.code, hall_id: hallId } });
+                  }
+                }
+
+                for (const pkg of data.packages.filter((p) => p.name)) {
+                  await api(`/events/${newEventId}/sponsor-packages`, { method: "POST", body: { name: pkg.name, tier: pkg.tier, org_id: pkg.org_id } });
+                }
+
+                await api(`/events/${newEventId}/data-policy`, { method: "POST", body: data.policy });
+
+                overlay.remove();
+                toast("Event created");
+                loadEvents();
+              } catch (err) {
+                statusEl.textContent = err.message; statusEl.hidden = false;
+                submitBtn.disabled = false;
+              }
+            });
+          }
+        }
+
+        document.body.appendChild(overlay);
+        renderWizardStep();
+      }
+
+      loadOrgs();
       loadEvents();
     </script>
   </body>

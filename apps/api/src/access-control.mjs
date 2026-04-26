@@ -421,7 +421,9 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   "stalls-delete": entry({ permission: "stall.delete", roles: organizerOrPlatform, scope: "tenant", description: "Delete a stall (draft events only)", sensitivity: "internal" }),
   "sponsor-packages-create": entry({ permission: "sponsor_package.create", roles: organizerOrPlatform, scope: "tenant", description: "Create a sponsor package", sensitivity: "internal" }),
   "sponsor-packages-patch": entry({ permission: "sponsor_package.update", roles: organizerOrPlatform, scope: "tenant", description: "Update a sponsor package", sensitivity: "internal" }),
-  "sponsor-packages-delete": entry({ permission: "sponsor_package.delete", roles: organizerOrPlatform, scope: "tenant", description: "Delete a sponsor package", sensitivity: "internal" })
+  "sponsor-packages-delete": entry({ permission: "sponsor_package.delete", roles: organizerOrPlatform, scope: "tenant", description: "Delete a sponsor package", sensitivity: "internal" }),
+  "stalls-users-list": entry({ permission: "stall.users.list", roles: organizerOrPlatform, scope: "event", description: "List vendor_manager users scoped to a specific stall", sensitivity: "internal" }),
+  "sponsor-packages-users-list": entry({ permission: "sponsor_package.users.list", roles: organizerOrPlatform, scope: "event", description: "List sponsor_user users scoped to a specific sponsor package", sensitivity: "internal" })
 });
 
 export function getAccessControlEntry(routeId) {

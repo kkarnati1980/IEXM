@@ -4783,7 +4783,11 @@ export function registerRoutes(router) {
       const secret = state.sessionSecret;
       const token = issuePlatformToken(principal, secret);
       const redirect = await resolveRedirectTarget(user.id, user.tenant_id, repos);
-      return { token, ...redirect };
+      return {
+        token,
+        user: { id: user.id, email: user.email, full_name: user.display_name, role: user.role },
+        ...redirect
+      };
     }
   });
 
@@ -6425,6 +6429,56 @@ export function registerRoutes(router) {
       }
       await repos.sponsorPackages.deleteById(principal.tenant_id, pkg.id);
       return { deleted: true };
+    }
+  });
+
+  // GET /stalls/:stallId/users — vendor_managers scoped to this stall
+  router.addRoute({
+    id: "stalls-users-list",
+    method: "GET",
+    path: "/stalls/:stallId/users",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ params, principal, repos }) => {
+      const stall = await repos.stalls.findById(principal.tenant_id, params.stallId);
+      assertEventScoped(principal, stall.event_id);
+      const allAssignments = await repos.userRoleAssignments.listByTenant(principal.tenant_id);
+      const stalledAssignments = allAssignments.filter(
+        (a) => a.role === "vendor_manager" && Array.isArray(a.stall_ids) && a.stall_ids.includes(stall.id)
+      );
+      const users = await Promise.all(
+        stalledAssignments.map(async (a) => {
+          const u = await repos.users.findById(principal.tenant_id, a.user_id).catch(() => null);
+          if (!u) return null;
+          return { id: u.id, full_name: u.display_name, email: u.email, status: u.status, assignment_id: a.id };
+        })
+      );
+      return { users: users.filter(Boolean) };
+    }
+  });
+
+  // GET /sponsor-packages/:packageId/users — sponsor_users scoped to this package
+  router.addRoute({
+    id: "sponsor-packages-users-list",
+    method: "GET",
+    path: "/sponsor-packages/:packageId/users",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ params, principal, repos }) => {
+      const pkg = await repos.sponsorPackages.findById(principal.tenant_id, params.packageId);
+      assertEventScoped(principal, pkg.event_id);
+      const allAssignments = await repos.userRoleAssignments.listByTenant(principal.tenant_id);
+      const pkgAssignments = allAssignments.filter(
+        (a) => a.role === "sponsor_user" && a.sponsor_package_id === pkg.id
+      );
+      const users = await Promise.all(
+        pkgAssignments.map(async (a) => {
+          const u = await repos.users.findById(principal.tenant_id, a.user_id).catch(() => null);
+          if (!u) return null;
+          return { id: u.id, full_name: u.display_name, email: u.email, status: u.status, assignment_id: a.id };
+        })
+      );
+      return { users: users.filter(Boolean) };
     }
   });
 }
