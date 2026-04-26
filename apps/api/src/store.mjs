@@ -271,6 +271,7 @@ export function createSeedState() {
     iotAlertEvents: [],
     iotEnvironmentParityStatuses: [],
     pentestFindings: [],
+    apiClients: [],
     sessionSecret: "pilot-attendee-session-secret",
     metrics: {
       routeHits: {}

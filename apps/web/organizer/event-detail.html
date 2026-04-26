@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Event Detail — Organizer</title>
+    <style>
+      :root{--bg:#101117;--panel:#1a1c25;--panel-2:#14161d;--border:rgba(255,255,255,0.08);--text:#f4f1ea;--muted:#b2ac9f;--accent:#f3c97d;--accent-2:#9fd3c7;--good:#9fd3c7;--warn:#f3c97d;--bad:#ff9f9f;}
+      *{box-sizing:border-box;}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--text);background:radial-gradient(circle at top left,rgba(243,201,125,0.16),transparent 28%),linear-gradient(160deg,var(--bg),#090a0e 66%);min-height:100vh;}
+      .shell{max-width:1440px;margin:0 auto;padding:18px 24px 0;}
+      .shell-bar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+      .shell-title{display:grid;gap:4px;}
+      .shell-title strong{font-size:1.1rem;}
+      .shell-nav{display:flex;gap:10px;flex-wrap:wrap;}
+      .shell-nav a{display:inline-flex;align-items:center;padding:10px 13px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);text-decoration:none;font-size:14px;}
+      .eyebrow{display:inline-block;margin-bottom:8px;padding:5px 10px;border-radius:999px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;background:rgba(159,211,199,0.12);color:var(--accent-2);}
+      main{max-width:1440px;margin:0 auto;padding:0 24px 24px;}
+      .card{border-radius:22px;padding:22px;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);margin-bottom:18px;}
+      .status{padding:12px 14px;border-radius:14px;font-size:14px;margin-bottom:14px;}
+      .status.ok{background:rgba(159,211,199,0.16);color:var(--good);}
+      .status.error{background:rgba(255,159,159,0.12);color:var(--bad);}
+      .status.warn{background:rgba(243,201,125,0.14);color:var(--warn);}
+      button{border:0;border-radius:12px;padding:10px 16px;cursor:pointer;font:inherit;font-size:14px;}
+      button.primary{background:var(--accent);color:#211503;font-weight:600;}
+      button.secondary{background:rgba(255,255,255,0.1);color:var(--text);}
+      button.warn{background:rgba(243,201,125,0.16);color:var(--warn);}
+      button.bad{background:rgba(255,159,159,0.14);color:var(--bad);}
+      button.sm{padding:7px 12px;font-size:12px;}
+      button:disabled{opacity:0.4;cursor:default;}
+      input,select,textarea{width:100%;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:var(--text);padding:10px 12px;font:inherit;}
+      textarea{min-height:80px;resize:vertical;}
+      input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);border-color:transparent;}
+      table{width:100%;border-collapse:collapse;}
+      th,td{padding:11px;border-bottom:1px solid var(--border);text-align:left;font-size:14px;}
+      th{color:var(--muted);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;}
+      tbody tr:hover{background:rgba(255,255,255,0.03);}
+      .badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid var(--border);font-size:12px;}
+      .badge.live{color:var(--good);}
+      .badge.draft,.badge.published{color:var(--warn);}
+      .badge.closed,.badge.archived{color:var(--bad);}
+      .badge.active{color:var(--good);}
+      .badge.disabled{color:var(--bad);}
+      .badge.pending_invite{color:var(--warn);}
+      .empty{color:var(--muted);padding:24px;text-align:center;}
+      .tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:18px;}
+      .tab-btn{border:0;background:none;color:var(--muted);padding:10px 16px;border-radius:12px;cursor:pointer;font:inherit;font-size:14px;border:1px solid transparent;}
+      .tab-btn.active{background:rgba(243,201,125,0.14);color:var(--accent);border-color:rgba(243,201,125,0.3);}
+      .tab-content{display:none;}
+      .tab-content.active{display:block;}
+      .section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+      .section-head h3{margin:0;}
+      .detail-row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);align-items:baseline;}
+      .detail-row:last-child{border-bottom:none;}
+      .detail-row label{min-width:140px;font-size:13px;color:var(--muted);}
+      .field{margin-bottom:14px;}
+      .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:5px;}
+      .toggle-row{display:flex;align-items:flex-start;gap:14px;padding:12px 0;border-bottom:1px solid var(--border);}
+      .toggle-row:last-child{border-bottom:none;}
+      .toggle-row-info{flex:1;}
+      .toggle-row-info strong{display:block;margin-bottom:3px;}
+      .toggle-row-info span{font-size:13px;color:var(--muted);}
+      input[type=checkbox].toggle{width:36px;height:20px;appearance:none;border-radius:999px;background:rgba(255,255,255,0.15);cursor:pointer;position:relative;flex-shrink:0;margin-top:2px;}
+      input[type=checkbox].toggle:checked{background:var(--accent);}
+      input[type=checkbox].toggle::after{content:"";position:absolute;width:14px;height:14px;border-radius:50%;background:white;top:3px;left:3px;transition:left 0.15s;}
+      input[type=checkbox].toggle:checked::after{left:19px;}
+      .accordion-header{display:flex;align-items:center;justify-content:space-between;padding:12px 0;cursor:pointer;border-bottom:1px solid var(--border);}
+      .accordion-header strong{font-size:15px;}
+      .accordion-body{padding:12px 0;}
+      .change-row.platform{background:rgba(243,201,125,0.06);}
+      #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--good);color:#0a1f1b;padding:12px 20px;border-radius:14px;font-weight:600;font-size:14px;opacity:0;transition:opacity 0.2s;z-index:9999;pointer-events:none;}
+      #toast.show{opacity:1;}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <div class="eyebrow">Organizer</div>
+          <strong id="page-title">Event Detail</strong>
+          <span class="muted" id="page-sub">Loading…</span>
+        </div>
+        <nav class="shell-nav">
+          <a href="events.html" id="back-link">← Events</a>
+        </nav>
+      </div>
+    </div>
+
+    <main>
+      <div id="global-status" hidden class="status"></div>
+
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="overview">Overview</button>
+        <button class="tab-btn" data-tab="halls">Halls &amp; Stalls</button>
+        <button class="tab-btn" data-tab="packages">Sponsor Packages</button>
+        <button class="tab-btn" data-tab="branding">Branding</button>
+        <button class="tab-btn" data-tab="policy">Data Policy</button>
+        <button class="tab-btn" data-tab="team">Team</button>
+        <button class="tab-btn" data-tab="devices">Devices</button>
+        <button class="tab-btn" data-tab="audit">Audit</button>
+      </div>
+
+      <!-- Overview Tab -->
+      <div id="tab-overview" class="tab-content active">
+        <div class="card">
+          <div class="eyebrow">Event Info</div>
+          <div class="detail-row"><label>Name</label><strong id="ov-name">—</strong></div>
+          <div class="detail-row"><label>Venue</label><span id="ov-venue" class="muted">—</span></div>
+          <div class="detail-row"><label>Starts</label><span id="ov-starts" class="muted">—</span></div>
+          <div class="detail-row"><label>Ends</label><span id="ov-ends" class="muted">—</span></div>
+          <div class="detail-row"><label>Status</label><span id="ov-status">—</span></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
+            <button class="secondary" id="action-btn">—</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3 style="margin:0 0 14px">Onboarding Checklist</h3>
+          <div id="checklist">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Halls & Stalls Tab -->
+      <div id="tab-halls" class="tab-content">
+        <div id="halls-status" hidden class="status"></div>
+        <div id="halls-list">
+          <div class="empty">Loading halls…</div>
+        </div>
+        <button class="secondary" id="add-hall-btn" style="margin-top:8px">+ Add Hall</button>
+      </div>
+
+      <!-- Sponsor Packages Tab -->
+      <div id="tab-packages" class="tab-content">
+        <div class="card">
+          <div class="section-head">
+            <h3>Sponsor Packages</h3>
+            <button class="primary" id="add-package-btn">+ Add Package</button>
+          </div>
+          <div id="packages-status" hidden class="status"></div>
+          <table>
+            <thead><tr><th>Package Name</th><th>Tier</th><th>Actions</th></tr></thead>
+            <tbody id="packages-tbody"><tr><td colspan="3" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Branding Tab -->
+      <div id="tab-branding" class="tab-content">
+        <div class="card">
+          <div class="section-head">
+            <h3>Event Branding</h3>
+            <div style="display:flex;gap:8px;">
+              <button class="secondary sm" id="branding-approve-btn">Mark Approved</button>
+              <button class="primary sm" id="branding-publish-btn">Publish to Fleet</button>
+            </div>
+          </div>
+          <div id="branding-status" hidden class="status"></div>
+          <div class="field"><label>Sponsor Logo URL</label><input type="url" id="br-logo" placeholder="https://…"></div>
+          <div class="field"><label>CTA Text</label><input type="text" id="br-cta" placeholder="Scan to connect"></div>
+          <div class="field"><label>Idle Screen Message</label><textarea id="br-idle" placeholder="Welcome to…"></textarea></div>
+          <div class="field"><label>QR Target URL</label><input type="url" id="br-qr" placeholder="https://…"></div>
+          <button class="primary" id="branding-save-btn">Save Draft</button>
+        </div>
+      </div>
+
+      <!-- Data Policy Tab -->
+      <div id="tab-policy" class="tab-content">
+        <div class="card">
+          <div class="section-head">
+            <h3>Data Policy</h3>
+            <button class="primary" id="save-policy-btn">Save Policy</button>
+          </div>
+          <div id="policy-status" hidden class="status"></div>
+          <div class="toggle-row">
+            <div class="toggle-row-info"><strong>Vendor Exports</strong><span>Allow vendor managers to export lead data</span></div>
+            <input type="checkbox" class="toggle" id="pol-vendor-exports">
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-row-info"><strong>Sponsor PII</strong><span>Allow sponsors to view attendee PII</span></div>
+            <input type="checkbox" class="toggle" id="pol-sponsor-pii">
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-row-info"><strong>Require Export Approval</strong><span>Exports require platform approval</span></div>
+            <input type="checkbox" class="toggle" id="pol-export-approval">
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-row-info"><strong>Allow CRM Push</strong><span>Sync leads to connected CRM</span></div>
+            <input type="checkbox" class="toggle" id="pol-crm-push">
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-row-info"><strong>Cross-event Identity Graph</strong><span>Link attendee identities across events</span></div>
+            <input type="checkbox" class="toggle" id="pol-identity-graph">
+          </div>
+          <div class="toggle-row" style="gap:14px;align-items:center;border-bottom:1px solid var(--border);">
+            <div class="toggle-row-info"><strong>Retention (days)</strong><span>Days to retain interaction data after event close</span></div>
+            <input type="number" id="pol-retention" min="1" max="365" style="width:90px;">
+          </div>
+        </div>
+        <div class="card">
+          <h3 style="margin:0 0 14px">Change History</h3>
+          <div id="policy-history" class="empty">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Team Tab -->
+      <div id="tab-team" class="tab-content">
+        <div class="card">
+          <div class="section-head">
+            <h3>Event Team</h3>
+            <button class="primary" id="team-invite-btn">+ Invite Member</button>
+          </div>
+          <div id="team-status" hidden class="status"></div>
+          <table>
+            <thead><tr><th>Name / Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="team-tbody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Devices Tab -->
+      <div id="tab-devices" class="tab-content">
+        <div class="card">
+          <div class="section-head">
+            <h3>Assigned Devices</h3>
+            <button class="secondary" id="assign-device-btn">Assign Device</button>
+          </div>
+          <div id="devices-status" hidden class="status"></div>
+          <table>
+            <thead><tr><th>Device Name</th><th>Serial</th><th>Status</th><th>Heartbeat</th><th>Battery</th><th>Queue</th></tr></thead>
+            <tbody id="devices-tbody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Audit Tab -->
+      <div id="tab-audit" class="tab-content">
+        <div class="card">
+          <h3 style="margin:0 0 14px">Audit Log</h3>
+          <div id="audit-status" hidden class="status"></div>
+          <table>
+            <thead><tr><th>Timestamp</th><th>Actor Role</th><th>Action</th><th>Target</th></tr></thead>
+            <tbody id="audit-tbody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <div id="toast"></div>
+
+    <script type="module">
+      import { onboardingChecklistHtml } from "../components.js";
+
+      const params = new URLSearchParams(location.search);
+      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "organizer-token";
+      const eventId = params.get("eventId") ?? "";
+
+      document.getElementById("back-link").href = `events.html?token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
+
+      function esc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+      function fmt(iso) { return iso ? new Date(iso).toLocaleString() : "—"; }
+      function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString() : "—"; }
+
+      function toast(msg) {
+        const el = document.getElementById("toast");
+        el.textContent = msg; el.classList.add("show");
+        setTimeout(() => el.classList.remove("show"), 2800);
+      }
+      function showGlobal(msg, type) {
+        const el = document.getElementById("global-status");
+        el.textContent = msg; el.className = `status ${type}`; el.hidden = false;
+      }
+      function showStatus(id, msg, type) {
+        const el = document.getElementById(id);
+        el.textContent = msg; el.className = `status ${type}`; el.hidden = false;
+      }
+
+      async function api(path, options = {}) {
+        const res = await fetch(`${apiBase}${path}`, {
+          method: options.method ?? "GET",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error ?? `Request failed: ${res.status}`);
+        return payload;
+      }
+
+      // ── Tabs ──────────────────────────────────────────────────────────────────
+
+      const tabBtns = document.querySelectorAll(".tab-btn");
+      const tabContents = document.querySelectorAll(".tab-content");
+      const tabLoaded = new Set(["overview"]);
+
+      function activateTab(name) {
+        tabBtns.forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+        tabContents.forEach(c => c.classList.toggle("active", c.id === `tab-${name}`));
+        history.replaceState(null, "", `#${name}`);
+        if (!tabLoaded.has(name)) {
+          tabLoaded.add(name);
+          const loaders = {
+            halls: loadHalls,
+            packages: loadPackages,
+            branding: loadBranding,
+            policy: loadPolicy,
+            team: loadTeam,
+            devices: loadDevices,
+            audit: loadAudit
+          };
+          loaders[name]?.();
+        }
+      }
+
+      tabBtns.forEach(btn => btn.addEventListener("click", () => activateTab(btn.dataset.tab)));
+      const hash = location.hash.replace("#", "") || "overview";
+      if (hash !== "overview") activateTab(hash);
+
+      // ── Overview ──────────────────────────────────────────────────────────────
+
+      async function loadOverview() {
+        try {
+          const data = await api(`/events/${encodeURIComponent(eventId)}`);
+          const ev = data.event ?? data;
+          document.getElementById("page-title").textContent = ev.name;
+          document.getElementById("page-sub").textContent = `Status: ${ev.status}`;
+          document.getElementById("ov-name").textContent = ev.name;
+          document.getElementById("ov-venue").textContent = ev.venue ?? "—";
+          document.getElementById("ov-starts").textContent = fmtDate(ev.starts_at);
+          document.getElementById("ov-ends").textContent = fmtDate(ev.ends_at);
+          document.getElementById("ov-status").innerHTML = `<span class="badge ${esc(ev.status)}">${esc(ev.status)}</span>`;
+
+          const actionBtn = document.getElementById("action-btn");
+          const statusActions = {
+            draft: { label: "Publish Event", action: "publish" },
+            published: { label: "Go Live", action: "go-live" },
+            live: { label: "Close Event", action: "close" }
+          };
+          const sa = statusActions[ev.status];
+          if (sa) {
+            actionBtn.textContent = sa.label;
+            actionBtn.onclick = () => changeEventStatus(ev.id, sa.action);
+          } else {
+            actionBtn.hidden = true;
+          }
+
+          // Checklist
+          try {
+            const checkData = await api(`/events/${encodeURIComponent(eventId)}/checklist`);
+            document.getElementById("checklist").innerHTML = onboardingChecklistHtml(checkData);
+          } catch {
+            document.getElementById("checklist").innerHTML = `<div class="empty muted">Checklist unavailable</div>`;
+          }
+        } catch (err) {
+          showGlobal(err.message, "error");
+        }
+      }
+
+      async function changeEventStatus(id, action) {
+        try {
+          await api(`/events/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, { method: "POST", body: {} });
+          toast("Event status updated");
+          tabLoaded.clear();
+          tabLoaded.add("overview");
+          loadOverview();
+        } catch (err) {
+          showGlobal(err.message, "error");
+        }
+      }
+
+      // ── Halls & Stalls ────────────────────────────────────────────────────────
+
+      async function loadHalls() {
+        try {
+          const data = await api(`/events/${encodeURIComponent(eventId)}/halls`);
+          const halls = data.halls ?? data ?? [];
+          const container = document.getElementById("halls-list");
+          if (halls.length === 0) {
+            container.innerHTML = `<div class="empty">No halls yet</div>`;
+            return;
+          }
+          container.innerHTML = halls.map(h => `
+            <div class="card">
+              <div class="accordion-header" onclick="this.nextElementSibling.hidden=!this.nextElementSibling.hidden">
+                <strong>${esc(h.name)}</strong>
+                <button class="sm secondary" onclick="event.stopPropagation();addStall('${esc(h.id)}')">+ Add Stall</button>
+              </div>
+              <div class="accordion-body">
+                <table>
+                  <thead><tr><th>Stall Code</th><th>Name</th><th>Actions</th></tr></thead>
+                  <tbody id="stalls-${esc(h.id)}"><tr><td colspan="3" class="empty">Loading stalls…</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          `).join("");
+          halls.forEach(h => loadStalls(h.id));
+        } catch (err) {
+          showStatus("halls-status", err.message, "error");
+        }
+      }
+
+      async function loadStalls(hallId) {
+        try {
+          const data = await api(`/events/${encodeURIComponent(eventId)}/halls/${encodeURIComponent(hallId)}/stalls`);
+          const stalls = data.stalls ?? data ?? [];
+          const tbody = document.getElementById(`stalls-${hallId}`);
+          if (!tbody) return;
+          tbody.innerHTML = stalls.length === 0
+            ? `<tr><td colspan="3" class="empty">No stalls</td></tr>`
+            : stalls.map(s => `
+              <tr>
+                <td><span style="font-family:monospace">${esc(s.stall_code ?? s.code ?? "—")}</span></td>
+                <td>${esc(s.name)}</td>
+                <td>
+                  <a href="stall-detail.html?stallId=${encodeURIComponent(s.id)}&token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}"
+                     style="color:var(--accent);font-size:13px;text-decoration:none;">Edit</a>
+                </td>
+              </tr>`).join("");
+        } catch {
+          const tbody = document.getElementById(`stalls-${hallId}`);
+          if (tbody) tbody.innerHTML = `<tr><td colspan="3" class="empty">Failed to load</td></tr>`;
+        }
+      }
+
+      window.addStall = (hallId) => {
+        const name = prompt("Stall name:");
+        if (!name) return;
+        api(`/events/${encodeURIComponent(eventId)}/halls/${encodeURIComponent(hallId)}/stalls`, {
+          method: "POST", body: { name }
+        }).then(() => { toast("Stall added"); loadStalls(hallId); }).catch(e => showStatus("halls-status", e.message, "error"));
+      };
+
+      document.getElementById("add-hall-btn").addEventListener("click", async () => {
+        const name = prompt("Hall name:");
+        if (!name) return;
+        try {
+          await api(`/events/${encodeURIComponent(eventId)}/halls`, { method: "POST", body: { name } });
+          toast("Hall added");
+          tabLoaded.delete("halls");
+          loadHalls();
+        } catch (err) {
+          showStatus("halls-status", err.message, "error");
+        }
+      });
+
+      // ── Sponsor Packages ──────────────────────────────────────────────────────
+
+      async function loadPackages() {
+        try {
+          const data = await api(`/events/${encodeURIComponent(eventId)}/sponsor-packages`);
+          const packages = data.packages ?? data ?? [];
+          const tbody = document.getElementById("packages-tbody");
+          tbody.innerHTML = packages.length === 0
+            ? `<tr><td colspan="3" class="empty">No packages yet</td></tr>`
+            : packages.map(p => `
+              <tr>
+                <td>${esc(p.name)}</td>
+                <td><span class="badge">${esc(p.tier ?? "standard")}</span></td>
+                <td>
+                  <a href="sponsor-package-detail.html?packageId=${encodeURIComponent(p.id)}&token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}"
+                     style="color:var(--accent);font-size:13px;text-decoration:none;">Edit</a>
+                </td>
+              </tr>`).join("");
+        } catch (err) {
+          showStatus("packages-status", err.message, "error");
+        }
+      }
+
+      document.getElementById("add-package-btn").addEventListener("click", async () => {
+        const name = prompt("Package name:");
+        if (!name) return;
+        try {
+          await api(`/events/${encodeURIComponent(eventId)}/sponsor-packages`, { method: "POST", body: { name, tier: "standard" } });
+          toast("Package added");
+          tabLoaded.delete("packages");
+          loadPackages();
+        } catch (err) {
+          showStatus("packages-status", err.message, "error");
+        }
+      });
+
+      // ── Branding ──────────────────────────────────────────────────────────────
+
+      async function loadBranding() {
+        try {
+          const data = await api(`/events/${encodeURIComponent(eventId)}/branding`);
+          const b = data.branding ?? data ?? {};
+          document.getElementById("br-logo").value = b.logo_url ?? "";
+          document.getElementById("br-cta").value = b.cta_text ?? "";
+          document.getElementById("br-idle").value = b.idle_message ?? "";
+          document.getElementById("br-qr").value = b.qr_url ?? "";
+          if (b.approved_at) {
+            showStatus("branding-status", `Approved ${fmt(b.approved_at)}`, "ok");
+          }
+        } catch {
+          // branding may not exist yet — silently ignore 404
+        }
+      }
+
+      document.getElementById("branding-save-btn").addEventListener("click", async () => {
+        try {
+          await api(`/events/${encodeURIComponent(eventId)}/branding`, {
+            method: "POST",
+            body: {
+              logo_url: document.getElementById("br-logo").value,
+              cta_text: document.getElementById("br-cta").value,
+              idle_message: document.getElementById("br-idle").value,
+              qr_url: document.getElementById("br-qr").value
+            }
+          });
+          toast("Branding saved");
+        } catch (err) {
+          showStatus("branding-status", err.message, "error");
+        }
+      });
+
+      document.getElementById("branding-approve-btn").addEventListener("click", async () => {
+        try {
+          await api(`/events/${encodeURIComponent(eventId)}/branding/approve`, { method: "POST", body: {} });
+          toast("Branding approved");
+          loadBranding();
+        } catch (err) {
+          showStatus("branding-status", err.message, "error");
+        }
+      });
+
+      document.getElementById("branding-publish-btn").addEventListener("click", async () => {
+        if (!confirm("Publish branding to all assigned fleet devices?")) return;
+        try {
+          await api(`/branding/publish`, { method: "POST", body: { event_id: eventId } });
+          toast("Branding published to fleet");
+        } catch (err) {
+          showStatus("branding-status", err.message, "error");
+        }
+      });
+
+      // ── Data Policy ───────────────────────────────────────────────────────────
+
+      async function loadPolicy() {
+        try {
+          const data = await api(`/events/${encodeURIComponent(eventId)}/data-policy`);
+          const p = data.policy ?? data ?? {};
+          document.getElementById("pol-vendor-exports").checked = p.vendor_exports_enabled ?? false;
+          document.getElementById("pol-sponsor-pii").checked = p.sponsor_pii_enabled ?? false;
+          document.getElementById("pol-export-approval").checked = p.require_export_approval ?? true;
+          document.getElementById("pol-crm-push").checked = p.allow_crm_push ?? false;
+          document.getElementById("pol-identity-graph").checked = p.allow_cross_event_identity_graph ?? false;
+          document.getElementById("pol-retention").value = p.retention_days ?? 30;
+
+          const histEl = document.getElementById("policy-history");
+          const history = p.change_history ?? [];
+          if (history.length === 0) {
+            histEl.innerHTML = `<div class="empty">No changes recorded</div>`;
+          } else {
+            histEl.innerHTML = `<table><thead><tr><th>Timestamp</th><th>Actor Role</th><th>Field</th><th>Change</th></tr></thead><tbody>
+              ${history.map(r => `
+                <tr class="change-row ${r.actor_role === "platform_admin" ? "platform" : ""}">
+                  <td>${fmt(r.changed_at)}</td>
+                  <td><span class="badge">${esc(r.actor_role)}</span></td>
+                  <td>${esc(r.field)}</td>
+                  <td><span class="muted">${esc(r.old_value)}</span> → ${esc(r.new_value)}</td>
+                </tr>`).join("")}
+            </tbody></table>`;
+          }
+        } catch (err) {
+          showStatus("policy-status", err.message, "error");
+        }
+      }
+
+      document.getElementById("save-policy-btn").addEventListener("click", async () => {
+        try {
+          await api(`/events/${encodeURIComponent(eventId)}/data-policy`, {
+            method: "POST",
+            body: {
+              vendor_exports_enabled: document.getElementById("pol-vendor-exports").checked,
+              sponsor_pii_enabled: document.getElementById("pol-sponsor-pii").checked,
+              require_export_approval: document.getElementById("pol-export-approval").checked,
+              allow_crm_push: document.getElementById("pol-crm-push").checked,
+              allow_cross_event_identity_graph: document.getElementById("pol-identity-graph").checked,
+              retention_days: parseInt(document.getElementById("pol-retention").value, 10)
+            }
+          });
+          toast("Policy saved");
+          tabLoaded.delete("policy");
+          loadPolicy();
+        } catch (err) {
+          showStatus("policy-status", err.message, "error");
+        }
+      });
+
+      // ── Team ──────────────────────────────────────────────────────────────────
+
+      async function loadTeam() {
+        try {
+          const data = await api("/users");
+          const users = data.users ?? [];
+          const tbody = document.getElementById("team-tbody");
+          tbody.innerHTML = users.length === 0
+            ? `<tr><td colspan="4" class="empty">No team members</td></tr>`
+            : users.map(u => `
+              <tr>
+                <td><div>${esc(u.display_name)}</div><div class="muted" style="font-size:12px">${esc(u.email)}</div></td>
+                <td><span class="badge">${esc(u.role)}</span></td>
+                <td><span class="badge ${esc(u.status)}">${esc(u.status)}</span></td>
+                <td>
+                  <a href="team-member.html?userId=${encodeURIComponent(u.id)}&token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}"
+                     style="color:var(--accent);font-size:13px;text-decoration:none;">View</a>
+                </td>
+              </tr>`).join("");
+        } catch (err) {
+          showStatus("team-status", err.message, "error");
+        }
+      }
+
+      document.getElementById("team-invite-btn").addEventListener("click", () => {
+        window.location.href = `team.html?token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
+      });
+
+      // ── Devices ───────────────────────────────────────────────────────────────
+
+      async function loadDevices() {
+        try {
+          const data = await api(`/events/${encodeURIComponent(eventId)}/devices`);
+          const devices = data.devices ?? data ?? [];
+          const tbody = document.getElementById("devices-tbody");
+          tbody.innerHTML = devices.length === 0
+            ? `<tr><td colspan="6" class="empty">No devices assigned</td></tr>`
+            : devices.map(d => `
+              <tr>
+                <td>${esc(d.name ?? d.label ?? "—")}</td>
+                <td><span style="font-family:monospace;font-size:12px">${esc(d.serial ?? d.id)}</span></td>
+                <td><span class="badge ${esc(d.status ?? "unknown")}">${esc(d.status ?? "—")}</span></td>
+                <td class="muted">${fmt(d.last_heartbeat_at)}</td>
+                <td class="muted">${d.battery_level != null ? d.battery_level + "%" : "—"}</td>
+                <td class="muted">${d.queue_depth ?? "—"}</td>
+              </tr>`).join("");
+        } catch (err) {
+          showStatus("devices-status", err.message, "error");
+        }
+      }
+
+      document.getElementById("assign-device-btn").addEventListener("click", () => {
+        alert("Device assignment flow — opens F.4 modal");
+      });
+
+      // ── Audit ─────────────────────────────────────────────────────────────────
+
+      async function loadAudit() {
+        try {
+          const data = await api(`/admin/audit-log?event_id=${encodeURIComponent(eventId)}`);
+          const logs = data.logs ?? data.entries ?? data ?? [];
+          const tbody = document.getElementById("audit-tbody");
+          tbody.innerHTML = logs.length === 0
+            ? `<tr><td colspan="4" class="empty">No audit entries</td></tr>`
+            : logs.slice(0, 100).map(l => `
+              <tr>
+                <td class="muted" style="white-space:nowrap;font-size:12px">${fmt(l.created_at)}</td>
+                <td><span class="badge">${esc(l.actor_role ?? "—")}</span></td>
+                <td>${esc(l.event_type ?? l.action)}</td>
+                <td class="muted">${esc(l.target_type ?? "")} ${esc(l.target_id ?? "")}</td>
+              </tr>`).join("");
+        } catch (err) {
+          showStatus("audit-status", err.message, "error");
+        }
+      }
+
+      loadOverview();
+    </script>
+  </body>
+</html>

@@ -268,6 +268,70 @@ test("POST /users/:id/disable: already disabled returns 409", async () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Step 3.3c — POST /users/:id/enable
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("POST /users/:id/enable: disabled user becomes active", async () => {
+  const { app, jwt, state } = await appAs("platform_admin");
+  const vendor = state.users.find((u) => u.role === "vendor_manager");
+
+  await app.inject({ method: "POST", path: `/users/${vendor.id}/disable`, headers: bearer(jwt), body: {} });
+
+  const res = await app.inject({
+    method: "POST",
+    path: `/users/${vendor.id}/enable`,
+    headers: bearer(jwt),
+    body: {}
+  });
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.status, "active");
+  assert.equal(res.body.id, vendor.id);
+});
+
+test("POST /users/:id/enable: already active user returns 200 idempotently", async () => {
+  const { app, jwt, state } = await appAs("platform_admin");
+  const vendor = state.users.find((u) => u.role === "vendor_manager");
+
+  const res = await app.inject({
+    method: "POST",
+    path: `/users/${vendor.id}/enable`,
+    headers: bearer(jwt),
+    body: {}
+  });
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.status, "active");
+});
+
+test("POST /users/:id/enable: organizer_admin cannot enable a platform_admin user", async () => {
+  const { app, jwt, state } = await appAs("organizer_admin");
+  const platformAdmin = state.users.find((u) => u.role === "platform_admin");
+
+  const res = await app.inject({
+    method: "POST",
+    path: `/users/${platformAdmin.id}/enable`,
+    headers: bearer(jwt),
+    body: {}
+  });
+  assert.equal(res.statusCode, 403, JSON.stringify(res.body));
+});
+
+test("POST /users/:id/enable: platform_admin can enable any user", async () => {
+  const { app, jwt, state } = await appAs("platform_admin");
+  const vendor = state.users.find((u) => u.role === "vendor_manager");
+
+  await app.inject({ method: "POST", path: `/users/${vendor.id}/disable`, headers: bearer(jwt), body: {} });
+
+  const res = await app.inject({
+    method: "POST",
+    path: `/users/${vendor.id}/enable`,
+    headers: bearer(jwt),
+    body: {}
+  });
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.status, "active");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Step 3.4 — POST /users/:id/resend-invite
 // ─────────────────────────────────────────────────────────────────────────────
 

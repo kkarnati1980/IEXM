@@ -246,13 +246,71 @@
         </div>
       </div>
 
-      <!-- API Clients Tab -->
+      <!-- API Clients Tab (H.1/H.3) -->
       <div id="tab-api-clients" class="tab-content">
         <div class="card">
           <div class="section-head">
             <h3>API Clients</h3>
+            <button class="primary" id="new-client-btn">+ New API Client</button>
           </div>
-          <p class="muted" style="font-size:14px;">API client management will be available in Phase 10 (H.2).</p>
+          <div id="clients-status" hidden class="status"></div>
+          <table>
+            <thead>
+              <tr>
+                <th>Client Name</th>
+                <th>Client ID</th>
+                <th>Scopes</th>
+                <th>Status</th>
+                <th>Last Used</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="clients-tbody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- H.2 Create API Client Modal -->
+      <div id="create-client-modal" class="modal-overlay" hidden>
+        <div class="modal-panel">
+          <h3 style="margin:0 0 18px">New API Client</h3>
+          <div class="field">
+            <label>Client Name</label>
+            <input type="text" id="new-client-name" placeholder="My Integration">
+          </div>
+          <div class="field">
+            <label>Scopes</label>
+            <div style="display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);">
+              <label style="display:flex;align-items:center;gap:8px;color:var(--text);font-size:14px;"><input type="checkbox" value="interactions:read"> interactions:read</label>
+              <label style="display:flex;align-items:center;gap:8px;color:var(--text);font-size:14px;"><input type="checkbox" value="leads:export"> leads:export</label>
+              <label style="display:flex;align-items:center;gap:8px;color:var(--text);font-size:14px;"><input type="checkbox" value="events:read"> events:read</label>
+              <label style="display:flex;align-items:center;gap:8px;color:var(--text);font-size:14px;"><input type="checkbox" value="webhooks:write"> webhooks:write</label>
+              <label style="display:flex;align-items:center;gap:8px;color:var(--text);font-size:14px;"><input type="checkbox" value="analytics:read"> analytics:read</label>
+            </div>
+          </div>
+          <div id="create-client-error" class="status error" hidden></div>
+          <div class="modal-actions">
+            <button class="secondary" id="create-client-cancel">Cancel</button>
+            <button class="primary" id="create-client-submit">Create</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Secret Reveal Overlay -->
+      <div id="secret-reveal-modal" class="modal-overlay" hidden>
+        <div class="modal-panel" style="text-align:center;">
+          <h3 style="margin:0 0 8px">🔑 Save your client secret</h3>
+          <p class="muted" style="font-size:14px;margin-bottom:18px;">This is the only time the secret will be shown. Copy it now.</p>
+          <div style="background:rgba(0,0,0,0.3);border-radius:14px;padding:16px;margin-bottom:16px;font-family:monospace;word-break:break-all;text-align:left;">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Client ID</div>
+            <div id="reveal-client-id" style="color:var(--accent-2);margin-bottom:12px;"></div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Client Secret</div>
+            <div id="reveal-client-secret" style="color:var(--accent);"></div>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:center;">
+            <button class="secondary" id="copy-secret-btn">Copy Secret</button>
+            <button class="primary" id="reveal-done-btn">Done — I saved it</button>
+          </div>
         </div>
       </div>
 
@@ -342,6 +400,7 @@
         if (name === "organizations") loadOrgs();
         else if (name === "users") loadUsers();
         else if (name === "events") loadEvents();
+        else if (name === "api-clients") loadApiClients();
         else if (name === "audit-log") loadAuditLog();
       }
 
@@ -1052,6 +1111,137 @@
           </tr>
         `).join("");
       }
+
+      // ── API Clients (H.1 / H.2 / H.3) ────────────────────────────────────────
+
+      let allClients = [];
+
+      async function loadApiClients() {
+        try {
+          const path = tenantId
+            ? `/admin/api-clients?tenant_id=${encodeURIComponent(tenantId)}`
+            : "/admin/api-clients";
+          allClients = await api(path);
+          renderApiClients(allClients);
+        } catch (err) {
+          const el = document.getElementById("clients-status");
+          el.textContent = err.message; el.className = "status error"; el.hidden = false;
+        }
+      }
+
+      function fmtClientId(id) {
+        return id ? id.slice(0, 8) + "…" : "—";
+      }
+
+      function renderApiClients(clients) {
+        const tbody = document.getElementById("clients-tbody");
+        if (!clients.length) {
+          tbody.innerHTML = `<tr><td colspan="6" class="empty">No API clients yet</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = clients.map(c => `
+          <tr>
+            <td>${esc(c.name)}</td>
+            <td>
+              <span style="font-family:monospace;font-size:12px" title="${esc(c.client_id)}">${esc(fmtClientId(c.client_id))}</span>
+              <button class="sm secondary" style="margin-left:6px;padding:3px 8px;font-size:11px;" onclick="copyText('${esc(c.client_id)}')">Copy</button>
+            </td>
+            <td><span style="font-size:12px;color:var(--muted)">${esc((c.scopes ?? []).join(", "))}</span></td>
+            <td><span class="badge ${esc(c.status)}">${esc(c.status)}</span></td>
+            <td class="muted" style="font-size:13px">${c.last_used_at ? fmtDate(c.last_used_at) : "Never"}</td>
+            <td style="display:flex;gap:6px;flex-wrap:wrap;">
+              ${c.status !== "revoked" ? `
+                <button class="sm warn" onclick="rotateClientSecret('${esc(c.id)}')">Rotate</button>
+                <button class="sm bad" onclick="revokeClient('${esc(c.id)}')">Revoke</button>
+              ` : ""}
+            </td>
+          </tr>`).join("");
+      }
+
+      window.copyText = (text) => {
+        navigator.clipboard.writeText(text).then(() => toast("Copied!")).catch(() => {});
+      };
+
+      window.rotateClientSecret = async (clientId) => {
+        if (!confirm("Rotate this client's secret? The old secret will stop working immediately.")) return;
+        try {
+          const data = await api(`/admin/api-clients/${encodeURIComponent(clientId)}/rotate-secret`, { method: "POST", body: {} });
+          showSecretReveal(data.client_id, data.client_secret);
+          loadApiClients();
+        } catch (err) {
+          const el = document.getElementById("clients-status");
+          el.textContent = err.message; el.className = "status error"; el.hidden = false;
+        }
+      };
+
+      window.revokeClient = async (clientId) => {
+        if (!confirm("Revoke this API client? It cannot be un-revoked.")) return;
+        try {
+          await api(`/admin/api-clients/${encodeURIComponent(clientId)}/revoke`, { method: "POST", body: {} });
+          toast("Client revoked");
+          loadApiClients();
+        } catch (err) {
+          const el = document.getElementById("clients-status");
+          el.textContent = err.message; el.className = "status error"; el.hidden = false;
+        }
+      };
+
+      function showSecretReveal(clientId, clientSecret) {
+        document.getElementById("reveal-client-id").textContent = clientId;
+        document.getElementById("reveal-client-secret").textContent = clientSecret;
+        document.getElementById("secret-reveal-modal").hidden = false;
+      }
+
+      document.getElementById("copy-secret-btn").addEventListener("click", () => {
+        const secret = document.getElementById("reveal-client-secret").textContent;
+        navigator.clipboard.writeText(secret).then(() => toast("Secret copied!")).catch(() => {});
+      });
+
+      document.getElementById("reveal-done-btn").addEventListener("click", () => {
+        document.getElementById("secret-reveal-modal").hidden = true;
+      });
+
+      // H.2 Create modal
+      document.getElementById("new-client-btn").addEventListener("click", () => {
+        document.getElementById("create-client-modal").hidden = false;
+        document.getElementById("new-client-name").value = "";
+        document.getElementById("create-client-error").hidden = true;
+        document.querySelectorAll("#create-client-modal input[type=checkbox]").forEach(cb => { cb.checked = false; });
+      });
+
+      document.getElementById("create-client-cancel").addEventListener("click", () => {
+        document.getElementById("create-client-modal").hidden = true;
+      });
+
+      document.getElementById("create-client-submit").addEventListener("click", async () => {
+        const name = document.getElementById("new-client-name").value.trim();
+        const scopes = [...document.querySelectorAll("#create-client-modal input[type=checkbox]:checked")].map(cb => cb.value);
+        if (!name) {
+          const el = document.getElementById("create-client-error");
+          el.textContent = "Client name is required"; el.hidden = false;
+          return;
+        }
+        if (scopes.length === 0) {
+          const el = document.getElementById("create-client-error");
+          el.textContent = "Select at least one scope"; el.hidden = false;
+          return;
+        }
+        const btn = document.getElementById("create-client-submit");
+        btn.disabled = true;
+        try {
+          const body = { name, scopes };
+          if (tenantId) body.tenant_id = tenantId;
+          const data = await api("/admin/api-clients", { method: "POST", body });
+          document.getElementById("create-client-modal").hidden = true;
+          showSecretReveal(data.client_id, data.client_secret);
+          loadApiClients();
+        } catch (err) {
+          const el = document.getElementById("create-client-error");
+          el.textContent = err.message; el.hidden = false;
+        } finally {
+          btn.disabled = false;
+        }
+      });
 
       // ── Init ──────────────────────────────────────────────────────────────
 

@@ -5295,6 +5295,34 @@ export function registerRoutes(router) {
     }
   });
 
+  // POST /users/:userId/enable
+  router.addRoute({
+    id: "users-enable",
+    method: "POST",
+    path: "/users/:userId/enable",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    auditEventType: "user.re_enabled",
+    validate: (body) => body ?? {},
+    handler: async ({ params, principal, repos }) => {
+      const user = await repos.users.findById(principal.tenant_id, params.userId);
+      // organizer_admin cannot re-enable a platform_admin user
+      if (principal.role === "organizer_admin" && user.role === "platform_admin") {
+        throw new HttpError(403, "organizer_admin cannot enable a platform_admin user");
+      }
+      if (user.status === "active") {
+        return { id: user.id, status: "active" };
+      }
+      const updated = await repos.users.update({
+        ...user,
+        status: "active",
+        disabled_at: null,
+        disabled_reason: null
+      });
+      return { id: updated.id, status: "active" };
+    }
+  });
+
   // POST /users/:userId/resend-invite
   router.addRoute({
     id: "users-resend-invite",
@@ -5336,6 +5364,138 @@ export function registerRoutes(router) {
       };
     }
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // API Client Management — platform_admin only
+  // ─────────────────────────────────────────────────────────────────────────
+
+  {
+    const VALID_API_CLIENT_SCOPES = new Set([
+      "interactions:read",
+      "leads:export",
+      "events:read",
+      "webhooks:write",
+      "analytics:read"
+    ]);
+
+    function formatApiClient(client) {
+      return {
+        id: client.id,
+        name: client.name,
+        client_id: client.client_id,
+        scopes: client.scopes,
+        status: client.status,
+        created_at: client.created_at,
+        last_used_at: client.last_used_at ?? null
+      };
+    }
+
+    router.addRoute({
+      id: "admin-api-clients-list",
+      method: "GET",
+      path: "/admin/api-clients",
+      authRequired: true,
+      allowedRoles: ["platform_admin"],
+      handler: async ({ query, principal, repos }) => {
+        const { tenant_id } = query ?? {};
+        const tid = tenant_id ?? principal.tenant_id;
+        const clients = await repos.apiClients.listByTenant(tid);
+        return clients.map(formatApiClient);
+      }
+    });
+
+    router.addRoute({
+      id: "admin-api-clients-create",
+      method: "POST",
+      path: "/admin/api-clients",
+      authRequired: true,
+      allowedRoles: ["platform_admin"],
+      statusCode: 201,
+      auditEventType: "api_client.created",
+      validate: (body) => {
+        if (!body?.name) throw new HttpError(400, "name is required");
+        if (!Array.isArray(body.scopes) || body.scopes.length === 0) {
+          throw new HttpError(400, "scopes must be a non-empty array");
+        }
+        const invalid = body.scopes.filter((s) => !VALID_API_CLIENT_SCOPES.has(s));
+        if (invalid.length > 0) {
+          throw new HttpError(400, `Invalid scopes: ${invalid.join(", ")}`);
+        }
+        return body;
+      },
+      handler: async ({ body, principal, repos, state }) => {
+        const { randomBytes, randomUUID } = await import("node:crypto");
+        const clientSecret = randomBytes(32).toString("hex");
+        const secretHash = hashToken(clientSecret, state.sessionSecret);
+        const now = new Date().toISOString();
+        const record = {
+          id: nextId("apiclient"),
+          tenant_id: principal.tenant_id,
+          name: body.name,
+          client_id: randomUUID(),
+          client_secret_hash: secretHash,
+          scopes: body.scopes,
+          status: "active",
+          last_used_at: null,
+          created_at: now
+        };
+        await repos.apiClients.create(record);
+        return { client_id: record.client_id, client_secret: clientSecret };
+      }
+    });
+
+    router.addRoute({
+      id: "admin-api-clients-get",
+      method: "GET",
+      path: "/admin/api-clients/:clientId",
+      authRequired: true,
+      allowedRoles: ["platform_admin"],
+      handler: async ({ params, principal, repos }) => {
+        const client = await repos.apiClients.findById(principal.tenant_id, params.clientId);
+        return formatApiClient(client);
+      }
+    });
+
+    router.addRoute({
+      id: "admin-api-clients-rotate-secret",
+      method: "POST",
+      path: "/admin/api-clients/:clientId/rotate-secret",
+      authRequired: true,
+      allowedRoles: ["platform_admin"],
+      auditEventType: "api_client.secret_rotated",
+      validate: (body) => body ?? {},
+      handler: async ({ params, principal, repos, state }) => {
+        const client = await repos.apiClients.findById(principal.tenant_id, params.clientId);
+        if (client.status === "revoked") {
+          throw new HttpError(400, "Cannot rotate secret on a revoked API client");
+        }
+        const { randomBytes } = await import("node:crypto");
+        const clientSecret = randomBytes(32).toString("hex");
+        const secretHash = hashToken(clientSecret, state.sessionSecret);
+        await repos.apiClients.update({
+          ...client,
+          client_secret_hash: secretHash,
+          last_used_at: null
+        });
+        return { client_id: client.client_id, client_secret: clientSecret };
+      }
+    });
+
+    router.addRoute({
+      id: "admin-api-clients-revoke",
+      method: "POST",
+      path: "/admin/api-clients/:clientId/revoke",
+      authRequired: true,
+      allowedRoles: ["platform_admin"],
+      auditEventType: "api_client.revoked",
+      validate: (body) => body ?? {},
+      handler: async ({ params, principal, repos }) => {
+        const client = await repos.apiClients.findById(principal.tenant_id, params.clientId);
+        const updated = await repos.apiClients.update({ ...client, status: "revoked" });
+        return { id: updated.id, status: "revoked" };
+      }
+    });
+  }
 
   // GET /users/:userId/roles
   router.addRoute({
@@ -11353,6 +11513,5 @@ function capitalize(value) {
 /* ──────────────────────────────────────────────────────────────
  * END OF PATCH — paste above closes the registerRoutes() function
  * ────────────────────────────────────────────────────────────── */
-
 
 }

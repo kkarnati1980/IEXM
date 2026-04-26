@@ -1419,6 +1419,24 @@ export function createMemoryRepositories(state) {
         return before - state.iotEnvironmentParityStatuses.length;
       }
     },
+    apiClients: {
+      async create(record) {
+        state.apiClients.push(record);
+        return record;
+      },
+      async listByTenant(tenantId) {
+        return state.apiClients.filter((entry) => entry.tenant_id === tenantId);
+      },
+      async findById(tenantId, id) {
+        return findById(state.apiClients, tenantId, id, "API client");
+      },
+      async update(record) {
+        const index = state.apiClients.findIndex((entry) => entry.id === record.id);
+        if (index === -1) throw new HttpError(404, "API client not found");
+        state.apiClients[index] = record;
+        return record;
+      }
+    },
     metrics: {
       incrementRouteHit(routeId) {
         state.metrics.routeHits[routeId] = (state.metrics.routeHits[routeId] ?? 0) + 1;

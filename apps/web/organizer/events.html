@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Events — Organizer</title>
+    <style>
+      :root{--bg:#101117;--panel:#1a1c25;--panel-2:#14161d;--border:rgba(255,255,255,0.08);--text:#f4f1ea;--muted:#b2ac9f;--accent:#f3c97d;--accent-2:#9fd3c7;--good:#9fd3c7;--warn:#f3c97d;--bad:#ff9f9f;}
+      *{box-sizing:border-box;}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--text);background:radial-gradient(circle at top left,rgba(243,201,125,0.16),transparent 28%),linear-gradient(160deg,var(--bg),#090a0e 66%);min-height:100vh;}
+      .shell{max-width:1440px;margin:0 auto;padding:18px 24px 0;}
+      .shell-bar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+      .shell-title{display:grid;gap:4px;}
+      .shell-title strong{font-size:1.1rem;}
+      .shell-nav{display:flex;gap:10px;flex-wrap:wrap;}
+      .shell-nav a{display:inline-flex;align-items:center;padding:10px 13px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);text-decoration:none;font-size:14px;}
+      .shell-nav a.active{background:rgba(243,201,125,0.18);color:var(--accent);}
+      .eyebrow{display:inline-block;margin-bottom:8px;padding:5px 10px;border-radius:999px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;background:rgba(159,211,199,0.12);color:var(--accent-2);}
+      main{max-width:1440px;margin:0 auto;padding:0 24px 24px;}
+      .card{border-radius:22px;padding:22px;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);margin-bottom:18px;}
+      .status{padding:12px 14px;border-radius:14px;font-size:14px;margin-bottom:14px;}
+      .status.ok{background:rgba(159,211,199,0.16);color:var(--good);}
+      .status.error{background:rgba(255,159,159,0.12);color:var(--bad);}
+      button{border:0;border-radius:12px;padding:10px 16px;cursor:pointer;font:inherit;font-size:14px;}
+      button.primary{background:var(--accent);color:#211503;font-weight:600;}
+      button.secondary{background:rgba(255,255,255,0.1);color:var(--text);}
+      button.sm{padding:7px 12px;font-size:12px;}
+      button:disabled{opacity:0.4;cursor:default;}
+      input,select{width:100%;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:var(--text);padding:10px 12px;font:inherit;}
+      input:focus,select:focus{outline:2px solid var(--accent);border-color:transparent;}
+      table{width:100%;border-collapse:collapse;}
+      th,td{padding:11px;border-bottom:1px solid var(--border);text-align:left;font-size:14px;}
+      th{color:var(--muted);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;}
+      tbody tr:hover{background:rgba(255,255,255,0.03);}
+      .badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid var(--border);font-size:12px;}
+      .badge.live{color:var(--good);}
+      .badge.draft{color:var(--warn);}
+      .badge.published{color:var(--warn);}
+      .badge.closed,.badge.archived{color:var(--bad);}
+      .empty{color:var(--muted);padding:24px;text-align:center;}
+      .section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+      .section-head h3{margin:0;}
+      .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;}
+      .toolbar>div{flex:1 1 180px;min-width:140px;}
+      #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--good);color:#0a1f1b;padding:12px 20px;border-radius:14px;font-weight:600;font-size:14px;opacity:0;transition:opacity 0.2s;z-index:9999;pointer-events:none;}
+      #toast.show{opacity:1;}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <div class="eyebrow">Organizer</div>
+          <strong>Events</strong>
+          <span class="muted">Manage your events</span>
+        </div>
+        <nav class="shell-nav">
+          <a href="events.html" class="active">Events</a>
+          <a href="team.html" id="nav-team">Team</a>
+        </nav>
+      </div>
+    </div>
+
+    <main>
+      <div class="card">
+        <div class="section-head">
+          <h3>My Events</h3>
+          <button class="primary" id="new-event-btn">+ Create Event</button>
+        </div>
+        <div class="toolbar">
+          <div>
+            <label class="muted" style="font-size:12px;display:block;margin-bottom:4px;">Filter by status</label>
+            <select id="filter-status">
+              <option value="">All statuses</option>
+              <option value="draft">Draft</option>
+              <option value="published">Published</option>
+              <option value="live">Live</option>
+              <option value="closed">Closed</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:flex-end;">
+            <button class="secondary" id="apply-filter">Apply</button>
+          </div>
+        </div>
+        <div id="events-status" hidden class="status"></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Event Name</th>
+              <th>Venue</th>
+              <th>Dates</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="events-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+
+    <div id="toast"></div>
+
+    <script type="module">
+      const params = new URLSearchParams(location.search);
+      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "organizer-token";
+
+      document.getElementById("nav-team").href = `team.html?token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
+
+      function esc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+      function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString() : "—"; }
+
+      function showStatus(msg, type) {
+        const el = document.getElementById("events-status");
+        el.textContent = msg; el.className = `status ${type}`; el.hidden = false;
+      }
+
+      async function api(path, options = {}) {
+        const res = await fetch(`${apiBase}${path}`, {
+          method: options.method ?? "GET",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error ?? `Request failed: ${res.status}`);
+        return payload;
+      }
+
+      let allEvents = [];
+
+      async function loadEvents() {
+        try {
+          const data = await api("/events");
+          allEvents = data.events ?? data ?? [];
+          renderEvents(allEvents);
+        } catch (err) {
+          showStatus(err.message, "error");
+        }
+      }
+
+      function renderEvents(events) {
+        const statusFilter = document.getElementById("filter-status").value;
+        const filtered = events.filter(e => !statusFilter || e.status === statusFilter);
+        const tbody = document.getElementById("events-tbody");
+        if (filtered.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" class="empty">No events found</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = filtered.map(e => `
+          <tr>
+            <td><strong>${esc(e.name)}</strong></td>
+            <td class="muted">${esc(e.venue ?? "—")}</td>
+            <td class="muted">${fmtDate(e.starts_at)}${e.ends_at ? " → " + fmtDate(e.ends_at) : ""}</td>
+            <td><span class="badge ${esc(e.status)}">${esc(e.status)}</span></td>
+            <td>
+              <a href="event-detail.html?eventId=${encodeURIComponent(e.id)}&token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}"
+                 style="background:var(--accent);color:#211503;font-size:12px;padding:6px 12px;border-radius:10px;text-decoration:none;font-weight:600;">
+                Manage
+              </a>
+            </td>
+          </tr>
+        `).join("");
+      }
+
+      document.getElementById("apply-filter").addEventListener("click", () => renderEvents(allEvents));
+
+      document.getElementById("new-event-btn").addEventListener("click", () => {
+        alert("Create Event wizard — opens 4-step form (configure in Phase 11)");
+      });
+
+      loadEvents();
+    </script>
+  </body>
+</html>

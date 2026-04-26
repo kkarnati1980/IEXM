@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sponsor Package — Organizer</title>
+    <style>
+      :root{--bg:#101117;--panel:#1a1c25;--panel-2:#14161d;--border:rgba(255,255,255,0.08);--text:#f4f1ea;--muted:#b2ac9f;--accent:#f3c97d;--accent-2:#9fd3c7;--good:#9fd3c7;--warn:#f3c97d;--bad:#ff9f9f;}
+      *{box-sizing:border-box;}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--text);background:radial-gradient(circle at top left,rgba(243,201,125,0.16),transparent 28%),linear-gradient(160deg,var(--bg),#090a0e 66%);min-height:100vh;}
+      .shell{max-width:1440px;margin:0 auto;padding:18px 24px 0;}
+      .shell-bar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+      .shell-title{display:grid;gap:4px;}
+      .shell-title strong{font-size:1.1rem;}
+      .shell-nav{display:flex;gap:10px;flex-wrap:wrap;}
+      .shell-nav a{display:inline-flex;align-items:center;padding:10px 13px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);text-decoration:none;font-size:14px;}
+      .eyebrow{display:inline-block;margin-bottom:8px;padding:5px 10px;border-radius:999px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;background:rgba(159,211,199,0.12);color:var(--accent-2);}
+      main{max-width:900px;margin:0 auto;padding:0 24px 24px;}
+      .card{border-radius:22px;padding:22px;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);margin-bottom:18px;}
+      .status{padding:12px 14px;border-radius:14px;font-size:14px;margin-bottom:14px;}
+      .status.ok{background:rgba(159,211,199,0.16);color:var(--good);}
+      .status.error{background:rgba(255,159,159,0.12);color:var(--bad);}
+      button{border:0;border-radius:12px;padding:10px 16px;cursor:pointer;font:inherit;font-size:14px;}
+      button.primary{background:var(--accent);color:#211503;font-weight:600;}
+      button.secondary{background:rgba(255,255,255,0.1);color:var(--text);}
+      button.bad{background:rgba(255,159,159,0.14);color:var(--bad);}
+      button.sm{padding:7px 12px;font-size:12px;}
+      button:disabled{opacity:0.4;cursor:default;}
+      input,select{width:100%;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:var(--text);padding:10px 12px;font:inherit;}
+      input:focus,select:focus{outline:2px solid var(--accent);border-color:transparent;}
+      table{width:100%;border-collapse:collapse;}
+      th,td{padding:11px;border-bottom:1px solid var(--border);text-align:left;font-size:14px;}
+      th{color:var(--muted);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;}
+      .empty{color:var(--muted);padding:24px;text-align:center;}
+      .detail-row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);align-items:center;}
+      .detail-row:last-child{border-bottom:none;}
+      .detail-row label{min-width:160px;font-size:13px;color:var(--muted);}
+      .section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+      .section-head h3{margin:0;}
+      .badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid var(--border);font-size:12px;}
+      .badge.active{color:var(--good);}
+      .badge.disabled{color:var(--bad);}
+      .entitlement-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);}
+      .entitlement-row:last-child{border-bottom:none;}
+      .enabled{color:var(--good);}
+      .disabled-text{color:var(--bad);}
+      #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--good);color:#0a1f1b;padding:12px 20px;border-radius:14px;font-weight:600;font-size:14px;opacity:0;transition:opacity 0.2s;z-index:9999;pointer-events:none;}
+      #toast.show{opacity:1;}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <div class="eyebrow">Organizer</div>
+          <strong>Sponsor Package</strong>
+          <span class="muted" id="page-sub">Loading…</span>
+        </div>
+        <nav class="shell-nav">
+          <a href="#" id="back-link">← Event</a>
+        </nav>
+      </div>
+    </div>
+
+    <main>
+      <div id="global-status" hidden class="status"></div>
+
+      <!-- Package Identity -->
+      <div class="card">
+        <div class="eyebrow">Package Identity</div>
+        <div class="detail-row">
+          <label>Name</label>
+          <input type="text" id="pkg-name" style="max-width:280px;">
+          <button class="primary sm" id="save-identity-btn">Save</button>
+        </div>
+        <div class="detail-row">
+          <label>Tier</label>
+          <select id="pkg-tier" style="max-width:200px;">
+            <option value="standard">Standard</option>
+            <option value="gold">Gold</option>
+            <option value="platinum">Platinum</option>
+            <option value="title">Title</option>
+          </select>
+        </div>
+        <div id="identity-status" hidden class="status" style="margin-top:10px;"></div>
+      </div>
+
+      <!-- Linked Sponsor Organization -->
+      <div class="card">
+        <div class="section-head"><h3>Linked Sponsor Organization</h3></div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <select id="sponsor-org-select" style="flex:1;max-width:340px;"></select>
+          <button class="primary" id="save-sponsor-btn">Save</button>
+        </div>
+        <div id="sponsor-status" hidden class="status" style="margin-top:10px;"></div>
+      </div>
+
+      <!-- Sponsor Users -->
+      <div class="card">
+        <div class="section-head">
+          <h3>Sponsor Users</h3>
+          <button class="secondary sm" id="assign-sponsor-user-btn">+ Assign</button>
+        </div>
+        <div id="su-status" hidden class="status"></div>
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="su-tbody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- Entitlements -->
+      <div class="card">
+        <div class="section-head"><h3>Entitlements</h3><span class="muted" style="font-size:13px">Driven by data policy</span></div>
+        <div class="entitlement-row">
+          <span>Sponsor PII Access</span>
+          <span id="ent-pii" class="disabled-text">Disabled</span>
+        </div>
+        <div class="entitlement-row">
+          <span>Heatmap Access</span>
+          <span id="ent-heatmap" class="disabled-text">Disabled</span>
+        </div>
+        <div class="entitlement-row">
+          <span>Data Export Allowed</span>
+          <span id="ent-export" class="disabled-text">Disabled</span>
+        </div>
+      </div>
+    </main>
+
+    <div id="toast"></div>
+
+    <script type="module">
+      const params = new URLSearchParams(location.search);
+      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "organizer-token";
+      const packageId = params.get("packageId") ?? "";
+      const eventId = params.get("eventId") ?? "";
+
+      function esc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+      function toast(msg) {
+        const el = document.getElementById("toast");
+        el.textContent = msg; el.classList.add("show");
+        setTimeout(() => el.classList.remove("show"), 2800);
+      }
+      function showGlobal(msg, type) { const el = document.getElementById("global-status"); el.textContent = msg; el.className = `status ${type}`; el.hidden = false; }
+      function showStatus(id, msg, type) { const el = document.getElementById(id); el.textContent = msg; el.className = `status ${type}`; el.hidden = false; }
+
+      async function api(path, options = {}) {
+        const res = await fetch(`${apiBase}${path}`, {
+          method: options.method ?? "GET",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error ?? `Request failed: ${res.status}`);
+        return payload;
+      }
+
+      let pkgData = null;
+
+      async function load() {
+        try {
+          const data = await api(`/sponsor-packages/${encodeURIComponent(packageId)}`);
+          pkgData = data.package ?? data;
+          const ev = pkgData.event_id ?? eventId;
+
+          document.getElementById("back-link").href =
+            `event-detail.html?eventId=${encodeURIComponent(ev)}&token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}#packages`;
+          document.getElementById("page-sub").textContent = pkgData.name;
+          document.getElementById("pkg-name").value = pkgData.name;
+          document.getElementById("pkg-tier").value = pkgData.tier ?? "standard";
+
+          // Load sponsor orgs
+          const orgsData = await api("/organizations");
+          const orgs = (orgsData.organizations ?? orgsData ?? []).filter(o => o.type === "sponsor");
+          const orgSel = document.getElementById("sponsor-org-select");
+          orgSel.innerHTML = `<option value="">— Select sponsor org —</option>` +
+            orgs.map(o => `<option value="${esc(o.id)}" ${pkgData.organization_id === o.id ? "selected" : ""}>${esc(o.name)}</option>`).join("");
+
+          // Load sponsor users
+          const usersData = await api("/users?role=sponsor_user");
+          const users = usersData.users ?? [];
+          const tbody = document.getElementById("su-tbody");
+          tbody.innerHTML = users.length === 0
+            ? `<tr><td colspan="4" class="empty">No sponsor users assigned</td></tr>`
+            : users.map(u => `
+              <tr>
+                <td>${esc(u.display_name)}</td>
+                <td class="muted">${esc(u.email)}</td>
+                <td><span class="badge ${esc(u.status)}">${esc(u.status)}</span></td>
+                <td><button class="sm bad" onclick="removeSU('${esc(u.id)}')">Remove</button></td>
+              </tr>`).join("");
+
+          // Load entitlements from data policy
+          try {
+            const policyData = await api(`/events/${encodeURIComponent(ev)}/data-policy`);
+            const p = policyData.policy ?? policyData ?? {};
+            setEntitlement("ent-pii", p.sponsor_pii_enabled);
+            setEntitlement("ent-heatmap", p.sponsor_pii_enabled);
+            setEntitlement("ent-export", !p.require_export_approval);
+          } catch {
+            // policy may not be set
+          }
+
+        } catch (err) {
+          showGlobal(err.message, "error");
+        }
+      }
+
+      function setEntitlement(id, enabled) {
+        const el = document.getElementById(id);
+        if (enabled) {
+          el.textContent = "Enabled";
+          el.className = "enabled";
+        } else {
+          el.textContent = "Disabled";
+          el.className = "disabled-text";
+        }
+      }
+
+      window.removeSU = async (userId) => {
+        if (!confirm("Remove sponsor user?")) return;
+        try {
+          const roles = await api(`/users/${encodeURIComponent(userId)}/roles`);
+          const assignment = (roles.role_assignments ?? []).find(a => a.role === "sponsor_user" && a.sponsor_package_id === packageId);
+          if (assignment) {
+            await api(`/users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(assignment.id)}`, { method: "DELETE" });
+            toast("Sponsor user removed");
+            load();
+          } else {
+            showStatus("su-status", "Assignment not found", "error");
+          }
+        } catch (err) {
+          showStatus("su-status", err.message, "error");
+        }
+      };
+
+      document.getElementById("save-identity-btn").addEventListener("click", async () => {
+        try {
+          await api(`/sponsor-packages/${encodeURIComponent(packageId)}`, {
+            method: "PATCH",
+            body: {
+              name: document.getElementById("pkg-name").value.trim(),
+              tier: document.getElementById("pkg-tier").value
+            }
+          });
+          toast("Package updated");
+        } catch (err) {
+          showStatus("identity-status", err.message, "error");
+        }
+      });
+
+      document.getElementById("save-sponsor-btn").addEventListener("click", async () => {
+        const orgId = document.getElementById("sponsor-org-select").value;
+        try {
+          await api(`/sponsor-packages/${encodeURIComponent(packageId)}`, {
+            method: "PATCH",
+            body: { organization_id: orgId || null }
+          });
+          toast("Sponsor organization saved");
+        } catch (err) {
+          showStatus("sponsor-status", err.message, "error");
+        }
+      });
+
+      document.getElementById("assign-sponsor-user-btn").addEventListener("click", () => {
+        alert("Assign Sponsor User — opens RoleAssignmentModal");
+      });
+
+      load();
+    </script>
+  </body>
+</html>

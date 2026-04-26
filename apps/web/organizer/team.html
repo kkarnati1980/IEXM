@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Team — Organizer</title>
+    <style>
+      :root { --bg:#101117;--panel:#1a1c25;--panel-2:#14161d;--border:rgba(255,255,255,0.08);--text:#f4f1ea;--muted:#b2ac9f;--accent:#f3c97d;--accent-2:#9fd3c7;--good:#9fd3c7;--warn:#f3c97d;--bad:#ff9f9f; }
+      *{box-sizing:border-box;}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--text);background:radial-gradient(circle at top left,rgba(243,201,125,0.16),transparent 28%),linear-gradient(160deg,var(--bg),#090a0e 66%);min-height:100vh;}
+      .shell{max-width:1440px;margin:0 auto;padding:18px 24px 0;}
+      .shell-bar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+      .shell-title{display:grid;gap:4px;}
+      .shell-title strong{font-size:1.1rem;}
+      .shell-nav{display:flex;gap:10px;flex-wrap:wrap;}
+      .shell-nav a{display:inline-flex;align-items:center;padding:10px 13px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);text-decoration:none;font-size:14px;}
+      .shell-nav a.active{background:rgba(243,201,125,0.18);color:var(--accent);}
+      .eyebrow{display:inline-block;margin-bottom:8px;padding:5px 10px;border-radius:999px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;background:rgba(159,211,199,0.12);color:var(--accent-2);}
+      .layout{display:grid;grid-template-columns:220px 1fr;gap:18px;max-width:1440px;margin:0 auto;padding:0 24px 24px;}
+      .sidebar{border-radius:22px;padding:20px;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);}
+      .sidebar h4{margin:0 0 14px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;}
+      .sidebar select{width:100%;margin-bottom:12px;}
+      main{}
+      .card{border-radius:22px;padding:22px;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);margin-bottom:18px;}
+      .status{padding:12px 14px;border-radius:14px;font-size:14px;margin-bottom:14px;}
+      .status.ok{background:rgba(159,211,199,0.16);color:var(--good);}
+      .status.error{background:rgba(255,159,159,0.12);color:var(--bad);}
+      button{border:0;border-radius:12px;padding:10px 16px;cursor:pointer;font:inherit;font-size:14px;}
+      button.primary{background:var(--accent);color:#211503;font-weight:600;}
+      button.secondary{background:rgba(255,255,255,0.1);color:var(--text);}
+      button.warn{background:rgba(243,201,125,0.16);color:var(--warn);}
+      button.bad{background:rgba(255,159,159,0.14);color:var(--bad);}
+      button.sm{padding:7px 12px;font-size:12px;}
+      button:disabled{opacity:0.4;cursor:default;}
+      input,select,textarea{width:100%;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:var(--text);padding:10px 12px;font:inherit;}
+      input:focus,select:focus{outline:2px solid var(--accent);border-color:transparent;}
+      table{width:100%;border-collapse:collapse;}
+      th,td{padding:11px;border-bottom:1px solid var(--border);text-align:left;font-size:14px;}
+      th{color:var(--muted);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;}
+      tbody tr:hover{background:rgba(255,255,255,0.03);}
+      .badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid var(--border);font-size:12px;}
+      .badge.active,.badge.live{color:var(--good);}
+      .badge.disabled,.badge.revoked{color:var(--bad);}
+      .badge.pending_invite,.badge.draft{color:var(--warn);}
+      .empty{color:var(--muted);padding:24px;text-align:center;}
+      .section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+      .section-head h3{margin:0;}
+      .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9000;}
+      .modal-panel{background:var(--panel);border-radius:22px;border:1px solid var(--border);padding:28px;max-width:560px;width:90%;max-height:90vh;overflow-y:auto;}
+      .field{margin-bottom:14px;}
+      .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:5px;}
+      .modal-actions{display:flex;gap:10px;margin-top:18px;}
+      .modal-actions button{flex:1;}
+      .step-indicator{display:flex;gap:8px;margin-bottom:20px;align-items:center;}
+      .step{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:rgba(255,255,255,0.08);color:var(--muted);}
+      .step.active{background:var(--accent);color:#211503;}
+      .step.done{background:var(--good);color:#0a1f1b;}
+      .step-sep{flex:1;height:2px;background:var(--border);max-width:40px;}
+      #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--good);color:#0a1f1b;padding:12px 20px;border-radius:14px;font-weight:600;font-size:14px;opacity:0;transition:opacity 0.2s;z-index:9999;pointer-events:none;}
+      #toast.show{opacity:1;}
+      @media(max-width:700px){.layout{grid-template-columns:1fr;}}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <div class="eyebrow">Organizer</div>
+          <strong>Team Management</strong>
+          <span class="muted">Manage your event team members</span>
+        </div>
+        <nav class="shell-nav">
+          <a href="events.html" id="nav-events">Events</a>
+          <a href="team.html" class="active">Team</a>
+        </nav>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="sidebar">
+        <h4>Filters</h4>
+        <div class="field">
+          <label>Role</label>
+          <select id="filter-role">
+            <option value="">All roles</option>
+            <option value="organizer_admin">Organizer Admin</option>
+            <option value="vendor_manager">Vendor Manager</option>
+            <option value="sponsor_user">Sponsor User</option>
+            <option value="ops_user">Ops User</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Status</label>
+          <select id="filter-status">
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="pending_invite">Pending</option>
+            <option value="disabled">Disabled</option>
+          </select>
+        </div>
+        <button class="secondary" style="width:100%" id="apply-filters">Apply filters</button>
+      </div>
+
+      <main>
+        <div class="card">
+          <div class="section-head">
+            <h3>Team Members</h3>
+            <button class="primary" id="invite-btn">+ Invite Team Member</button>
+          </div>
+          <div id="team-status" hidden class="status"></div>
+          <table>
+            <thead>
+              <tr>
+                <th>Name / Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="team-tbody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+
+    <!-- Invite Modal (B.2) -->
+    <div id="invite-modal" class="modal-overlay" hidden>
+      <div class="modal-panel">
+        <div class="step-indicator">
+          <div class="step active" id="step1-ind">1</div>
+          <div class="step-sep"></div>
+          <div class="step" id="step2-ind">2</div>
+        </div>
+
+        <!-- Step 1: Identity -->
+        <div id="step1">
+          <h3 style="margin:0 0 18px">Invite Team Member</h3>
+          <div class="field"><label>Full Name</label><input type="text" id="inv-name" placeholder="Jane Smith"></div>
+          <div class="field"><label>Email</label><input type="email" id="inv-email" placeholder="jane@example.com"></div>
+          <div id="inv-step1-error" class="status error" hidden></div>
+          <div class="modal-actions">
+            <button class="secondary" id="inv-cancel">Cancel</button>
+            <button class="primary" id="inv-next">Next →</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Role & Scope -->
+        <div id="step2" hidden>
+          <h3 style="margin:0 0 18px">Assign Role</h3>
+          <div class="field">
+            <label>Role</label>
+            <select id="inv-role">
+              <option value="vendor_manager">Vendor Manager</option>
+              <option value="sponsor_user">Sponsor User</option>
+              <option value="ops_user">Ops User</option>
+            </select>
+          </div>
+          <div class="field" id="inv-event-wrap">
+            <label>Event</label>
+            <select id="inv-event"></select>
+          </div>
+          <div class="field" id="inv-stall-wrap" hidden>
+            <label>Stall</label>
+            <select id="inv-stall"></select>
+          </div>
+          <div id="inv-step2-error" class="status error" hidden></div>
+          <div class="modal-actions">
+            <button class="secondary" id="inv-back">← Back</button>
+            <button class="primary" id="inv-submit">Send Invite</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script type="module">
+      const params = new URLSearchParams(location.search);
+      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "organizer-token";
+
+      // Update nav links
+      ["events"].forEach(p => {
+        const el = document.getElementById(`nav-${p}`);
+        if (el) el.href = `${p}.html?token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
+      });
+
+      function esc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+      function fmt(iso) { return iso ? new Date(iso).toLocaleString() : "—"; }
+
+      function toast(msg) {
+        const el = document.getElementById("toast");
+        el.textContent = msg; el.classList.add("show");
+        setTimeout(() => el.classList.remove("show"), 2800);
+      }
+
+      function showStatus(id, msg, type) {
+        const el = document.getElementById(id);
+        el.textContent = msg; el.className = `status ${type}`; el.hidden = false;
+      }
+      function hideStatus(id) { document.getElementById(id).hidden = true; }
+
+      async function api(path, options = {}) {
+        const res = await fetch(`${apiBase}${path}`, {
+          method: options.method ?? "GET",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error ?? `Request failed: ${res.status}`);
+        return payload;
+      }
+
+      let allUsers = [];
+      let allEvents = [];
+
+      async function loadTeam() {
+        try {
+          const [usersRes, eventsRes] = await Promise.all([
+            api("/users"),
+            api("/events")
+          ]);
+          allUsers = usersRes.users ?? [];
+          allEvents = eventsRes.events ?? eventsRes ?? [];
+          renderTeam(allUsers);
+
+          // Populate invite event dropdown
+          const evSel = document.getElementById("inv-event");
+          evSel.innerHTML = allEvents.map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join("");
+        } catch (err) {
+          showStatus("team-status", err.message, "error");
+        }
+      }
+
+      function renderTeam(users) {
+        const role = document.getElementById("filter-role").value;
+        const status = document.getElementById("filter-status").value;
+        const filtered = users.filter(u =>
+          (!role || u.role === role) && (!status || u.status === status)
+        );
+        const tbody = document.getElementById("team-tbody");
+        if (filtered.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4" class="empty">No team members yet</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = filtered.map(u => `
+          <tr>
+            <td><div>${esc(u.display_name)}</div><div class="muted" style="font-size:12px">${esc(u.email)}</div></td>
+            <td><span class="badge">${esc(u.role)}</span></td>
+            <td><span class="badge ${esc(u.status)}">${esc(u.status)}</span></td>
+            <td style="display:flex;gap:6px;flex-wrap:wrap;">
+              <a href="team-member.html?userId=${encodeURIComponent(u.id)}&token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}" style="color:var(--accent);font-size:13px;text-decoration:none">View</a>
+              ${u.status === "active" ? `<button class="sm bad" onclick="disableUser('${esc(u.id)}')">Disable</button>` : ""}
+              ${u.status === "disabled" ? `<button class="sm secondary" onclick="enableUser('${esc(u.id)}')">Enable</button>` : ""}
+              ${u.status === "pending_invite" ? `<button class="sm secondary" onclick="resendInvite('${esc(u.id)}')">Resend Invite</button>` : ""}
+            </td>
+          </tr>
+        `).join("");
+      }
+
+      document.getElementById("apply-filters").addEventListener("click", () => renderTeam(allUsers));
+
+      window.disableUser = async (userId) => {
+        if (!confirm("Disable this user?")) return;
+        try {
+          await api(`/users/${encodeURIComponent(userId)}/disable`, { method: "POST", body: {} });
+          toast("User disabled");
+          loadTeam();
+        } catch (err) {
+          showStatus("team-status", err.message, "error");
+        }
+      };
+
+      window.enableUser = async (userId) => {
+        try {
+          await api(`/users/${encodeURIComponent(userId)}/enable`, { method: "POST", body: {} });
+          toast("User enabled");
+          loadTeam();
+        } catch (err) {
+          showStatus("team-status", err.message, "error");
+        }
+      };
+
+      window.resendInvite = async (userId) => {
+        try {
+          await api(`/users/${encodeURIComponent(userId)}/resend-invite`, { method: "POST", body: {} });
+          toast("Invite resent");
+        } catch (err) {
+          showStatus("team-status", err.message, "error");
+        }
+      };
+
+      // ── Invite Modal ─────────────────────────────────────────────────────────
+
+      const modal = document.getElementById("invite-modal");
+      let invStep = 1;
+
+      function showStep(n) {
+        invStep = n;
+        document.getElementById("step1").hidden = n !== 1;
+        document.getElementById("step2").hidden = n !== 2;
+        document.getElementById("step1-ind").className = `step ${n === 1 ? "active" : "done"}`;
+        document.getElementById("step2-ind").className = `step ${n === 2 ? "active" : ""}`;
+        hideStatus("inv-step1-error");
+        hideStatus("inv-step2-error");
+      }
+
+      document.getElementById("invite-btn").addEventListener("click", () => {
+        modal.hidden = false;
+        showStep(1);
+      });
+      document.getElementById("inv-cancel").addEventListener("click", () => { modal.hidden = true; });
+      document.getElementById("inv-back").addEventListener("click", () => showStep(1));
+
+      document.getElementById("inv-next").addEventListener("click", () => {
+        const name = document.getElementById("inv-name").value.trim();
+        const email = document.getElementById("inv-email").value.trim();
+        if (!name || !email) {
+          showStatus("inv-step1-error", "Name and email are required", "error");
+          return;
+        }
+        showStep(2);
+      });
+
+      document.getElementById("inv-role").addEventListener("change", () => {
+        const role = document.getElementById("inv-role").value;
+        document.getElementById("inv-stall-wrap").hidden = role !== "vendor_manager";
+      });
+
+      document.getElementById("inv-submit").addEventListener("click", async () => {
+        const btn = document.getElementById("inv-submit");
+        btn.disabled = true;
+        try {
+          const body = {
+            email: document.getElementById("inv-email").value.trim(),
+            display_name: document.getElementById("inv-name").value.trim(),
+            role: document.getElementById("inv-role").value,
+            event_id: document.getElementById("inv-event").value
+          };
+          await api("/users/invite", { method: "POST", body });
+          modal.hidden = true;
+          toast("Invite sent!");
+          loadTeam();
+        } catch (err) {
+          showStatus("inv-step2-error", err.message, "error");
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      loadTeam();
+    </script>
+  </body>
+</html>
