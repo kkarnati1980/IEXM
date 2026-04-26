@@ -4675,7 +4675,27 @@ export function registerRoutes(router) {
         revoked_at: null,
         created_at: new Date().toISOString()
       };
-      return repos.breakGlassAccess.create(request);
+      const created = await repos.breakGlassAccess.create(request);
+
+      const requester = await repos.users.findById(tenantId, principal.user_id).catch(() => null);
+      const allUsers = await repos.users.listByTenant(tenantId);
+      const adminUsers = allUsers.filter((u) => u.role === "platform_admin" && u.id !== principal.user_id && u.status === "active");
+      const recipients = adminUsers.length > 0 ? adminUsers : allUsers.filter((u) => u.role === "platform_admin");
+      for (const admin of recipients) {
+        await dispatchTransactionalEmail({
+          repos,
+          tenantId,
+          recipientEmail: admin.email,
+          messageType: "break_glass_pending_approval",
+          templateVars: {
+            requester_name: requester?.display_name ?? "A platform admin",
+            justification: body.justification
+          },
+          actorUserId: principal.user_id
+        });
+      }
+
+      return created;
     },
     auditEventType: "break_glass.requested"
   });
@@ -5143,6 +5163,10 @@ export function registerRoutes(router) {
       if (!email || typeof email !== "string") throw new HttpError(400, "email is required");
       if (!display_name || typeof display_name !== "string") throw new HttpError(400, "display_name is required");
       if (!role) throw new HttpError(400, "role is required");
+
+      if (principal.role === "organizer_admin" && (role === "organizer_admin" || role === "platform_admin")) {
+        throw new HttpError(403, "INSUFFICIENT_PERMISSIONS");
+      }
 
       validateRoleAssignment({ role, event_id, stall_ids, sponsor_package_id });
 
@@ -6479,6 +6503,169 @@ export function registerRoutes(router) {
         })
       );
       return { users: users.filter(Boolean) };
+    }
+  });
+
+  // GET /devices — list devices for tenant
+  router.addRoute({
+    id: "devices-list",
+    method: "GET",
+    path: "/devices",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ repos, principal }) => {
+      const devices = await repos.devices.listByTenant(principal.tenant_id);
+      return { devices };
+    }
+  });
+
+  // POST /devices — create/register a new device
+  router.addRoute({
+    id: "devices-create",
+    method: "POST",
+    path: "/devices",
+    authRequired: true,
+    allowedRoles: ["platform_admin"],
+    validate: (body) => {
+      required(body, ["serial_number"]);
+      return body;
+    },
+    handler: async ({ repos, body, principal }) => {
+      const now = new Date().toISOString();
+      const device = {
+        id: nextId("device"),
+        tenant_id: principal.tenant_id,
+        serial_number: body.serial_number,
+        label: body.label ?? null,
+        status: "inventory",
+        config_lease_expires_at: null,
+        created_at: now
+      };
+      await repos.devices.create(device);
+      return { device };
+    }
+  });
+
+  // POST /devices/:deviceId/assign — assign device to a stall
+  router.addRoute({
+    id: "devices-assign",
+    method: "POST",
+    path: "/devices/:deviceId/assign",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => {
+      required(body, ["stall_id", "event_id"]);
+      return body;
+    },
+    handler: async ({ repos, body, params, principal }) => {
+      const device = await repos.devices.findById(principal.tenant_id, params.deviceId);
+      const stall = await repos.stalls.findById(principal.tenant_id, body.stall_id);
+      assertEventScoped(principal, stall.event_id);
+
+      const now = new Date().toISOString();
+      const assignment = {
+        id: nextId("assign"),
+        tenant_id: principal.tenant_id,
+        device_id: device.id,
+        event_id: body.event_id,
+        stall_id: body.stall_id,
+        active: true,
+        created_at: now
+      };
+      await repos.deviceAssignments.create(assignment);
+
+      device.status = "live";
+      await repos.devices.update(device);
+
+      return { assignment };
+    }
+  });
+
+  // POST /devices/:deviceId/retire — retire a device
+  router.addRoute({
+    id: "devices-retire",
+    method: "POST",
+    path: "/devices/:deviceId/retire",
+    authRequired: true,
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const device = await repos.devices.findById(principal.tenant_id, params.deviceId);
+      if (device.status === "live") {
+        throw new HttpError(409, "Cannot retire a live device");
+      }
+      device.status = "retired";
+      await repos.devices.update(device);
+      return { device };
+    }
+  });
+
+  // GET /events/:eventId/branding — get branding config
+  router.addRoute({
+    id: "events-branding-get",
+    method: "GET",
+    path: "/events/:eventId/branding",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const branding = await repos.brandingAssets.findActiveByEvent(principal.tenant_id, event.id);
+      if (!branding) {
+        return { branding: null, is_default: true };
+      }
+      return { branding, is_default: false };
+    }
+  });
+
+  // POST /events/:eventId/branding — save branding config
+  router.addRoute({
+    id: "events-branding-save",
+    method: "POST",
+    path: "/events/:eventId/branding",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ repos, params, body, principal }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const now = new Date().toISOString();
+      const existing = await repos.brandingAssets.findActiveByEvent(principal.tenant_id, event.id);
+      if (existing) {
+        const updated = { ...existing, ...body, updated_at: now };
+        await repos.brandingAssets.update(updated);
+        return { branding: updated };
+      }
+      const branding = {
+        id: nextId("branding"),
+        tenant_id: principal.tenant_id,
+        event_id: event.id,
+        status: "active",
+        branding_approved: false,
+        ...body,
+        created_at: now,
+        updated_at: now
+      };
+      await repos.brandingAssets.create(branding);
+      return { branding };
+    }
+  });
+
+  // POST /events/:eventId/branding/approve — approve branding
+  router.addRoute({
+    id: "events-branding-approve",
+    method: "POST",
+    path: "/events/:eventId/branding/approve",
+    authRequired: true,
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      const branding = await repos.brandingAssets.findActiveByEvent(principal.tenant_id, event.id);
+      if (!branding) {
+        throw new HttpError(404, "No branding config found for this event");
+      }
+      const updated = { ...branding, branding_approved: true, updated_at: new Date().toISOString() };
+      await repos.brandingAssets.update(updated);
+      return { branding: updated };
     }
   });
 }

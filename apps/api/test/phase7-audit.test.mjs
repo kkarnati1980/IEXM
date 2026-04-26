@@ -333,7 +333,7 @@ test("break-glass expiry job expires approved session and writes audit", async (
     second_approved_by_user_id: "user-platform-3",
     justification: "Test expiry",
     access_scope: { permissions: ["stall_leads_unmask"] },
-    status: "approved",
+    status: "active",
     starts_at: new Date(now.getTime() - 120_000).toISOString(),
     expires_at: pastExpiry,
     revoked_at: null,

@@ -275,6 +275,19 @@ export function createMemoryRepositories(state) {
     devices: {
       async findById(tenantId, id) {
         return findById(state.devices, tenantId, id, "Device");
+      },
+      async listByTenant(tenantId) {
+        return state.devices.filter((entry) => entry.tenant_id === tenantId);
+      },
+      async create(record) {
+        state.devices.push(record);
+        return record;
+      },
+      async update(record) {
+        const index = state.devices.findIndex((entry) => entry.id === record.id);
+        if (index === -1) throw new HttpError(404, "Device not found");
+        state.devices[index] = record;
+        return record;
       }
     },
     userAccessScopes: {
@@ -372,6 +385,16 @@ export function createMemoryRepositories(state) {
         return state.deviceAssignments.filter(
           (entry) => entry.tenant_id === tenantId && entry.stall_id === stallId && entry.active
         );
+      },
+      async create(record) {
+        state.deviceAssignments.push(record);
+        return record;
+      },
+      async update(record) {
+        const index = state.deviceAssignments.findIndex((entry) => entry.id === record.id);
+        if (index === -1) throw new HttpError(404, "Device assignment not found");
+        state.deviceAssignments[index] = record;
+        return record;
       }
     },
     heartbeats: {
@@ -850,7 +873,7 @@ export function createMemoryRepositories(state) {
         return state.breakGlassAccess.filter(
           (entry) =>
             entry.tenant_id === tenantId &&
-            entry.status === "approved" &&
+            entry.status === "active" &&
             entry.expires_at &&
             Date.parse(entry.expires_at) <= Date.parse(nowIso)
         );

@@ -423,7 +423,14 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   "sponsor-packages-patch": entry({ permission: "sponsor_package.update", roles: organizerOrPlatform, scope: "tenant", description: "Update a sponsor package", sensitivity: "internal" }),
   "sponsor-packages-delete": entry({ permission: "sponsor_package.delete", roles: organizerOrPlatform, scope: "tenant", description: "Delete a sponsor package", sensitivity: "internal" }),
   "stalls-users-list": entry({ permission: "stall.users.list", roles: organizerOrPlatform, scope: "event", description: "List vendor_manager users scoped to a specific stall", sensitivity: "internal" }),
-  "sponsor-packages-users-list": entry({ permission: "sponsor_package.users.list", roles: organizerOrPlatform, scope: "event", description: "List sponsor_user users scoped to a specific sponsor package", sensitivity: "internal" })
+  "sponsor-packages-users-list": entry({ permission: "sponsor_package.users.list", roles: organizerOrPlatform, scope: "event", description: "List sponsor_user users scoped to a specific sponsor package", sensitivity: "internal" }),
+  "devices-list": entry({ permission: "device.list", roles: organizerOrPlatform, scope: "tenant", description: "List devices for tenant", sensitivity: "internal" }),
+  "devices-create": entry({ permission: "device.create", roles: [ROLES.platformAdmin], scope: "tenant", description: "Create/register a new device", sensitivity: "internal" }),
+  "devices-assign": entry({ permission: "device.assign", roles: organizerOrPlatform, scope: "tenant", description: "Assign a device to a stall", sensitivity: "internal" }),
+  "devices-retire": entry({ permission: "device.retire", roles: [ROLES.platformAdmin], scope: "tenant", description: "Retire a device (cannot retire live devices)", sensitivity: "internal" }),
+  "events-branding-get": entry({ permission: "event.branding.view", roles: organizerOrPlatform, scope: "event", description: "Get branding config for an event", sensitivity: "internal" }),
+  "events-branding-save": entry({ permission: "event.branding.save", roles: organizerOrPlatform, scope: "event", description: "Save branding config for an event", sensitivity: "internal" }),
+  "events-branding-approve": entry({ permission: "event.branding.approve", roles: [ROLES.platformAdmin], scope: "event", description: "Approve branding for an event", sensitivity: "internal" })
 });
 
 export function getAccessControlEntry(routeId) {
