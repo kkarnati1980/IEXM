@@ -397,6 +397,63 @@ export function mountBreakGlassSessionBanner(session, { apiBase, token, onExpire
   };
 }
 
+// ─── Session helpers ──────────────────────────────────────────────────────────
+
+const TOKEN_KEY = "codex.token";
+const ACTIVE_EVENT_ID_KEY = "codex.active_event_id";
+
+export function getToken() {
+  return localStorage.getItem(TOKEN_KEY) ?? null;
+}
+
+export function setToken(token) {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function getActiveEventId() {
+  return localStorage.getItem(ACTIVE_EVENT_ID_KEY) ?? null;
+}
+
+export function setActiveEventId(id) {
+  localStorage.setItem(ACTIVE_EVENT_ID_KEY, id);
+}
+
+export function clearActiveEventId() {
+  localStorage.removeItem(ACTIVE_EVENT_ID_KEY);
+}
+
+export function clearSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(ACTIVE_EVENT_ID_KEY);
+  localStorage.removeItem(CONTEXT_KEY);
+}
+
+/**
+ * Decodes the JWT payload and returns true if the token exists and has not expired.
+ */
+export function isAuthenticated() {
+  const token = getToken();
+  if (!token) return false;
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return false;
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+    if (!payload.exp) return true;
+    return Date.now() / 1000 < payload.exp;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Clears session data and redirects to the login page.
+ * @param {string} [loginPath] - path to login page (default "/login.html")
+ */
+export function logoutUser(loginPath = "/login.html") {
+  clearSession();
+  location.href = loginPath;
+}
+
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 export function escHtml(str) {

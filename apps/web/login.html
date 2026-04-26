@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sign In — Codex</title>
+    <style>
+      :root{--bg:#101117;--panel:#1a1c25;--panel-2:#14161d;--border:rgba(255,255,255,0.08);--text:#f4f1ea;--muted:#b2ac9f;--accent:#f3c97d;--accent-2:#9fd3c7;--good:#9fd3c7;--bad:#ff9f9f;}
+      *{box-sizing:border-box;}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--text);background:radial-gradient(circle at top left,rgba(243,201,125,0.16),transparent 28%),linear-gradient(160deg,var(--bg),#090a0e 66%);min-height:100vh;display:flex;align-items:center;justify-content:center;}
+      .card{border-radius:22px;padding:32px;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);width:100%;max-width:400px;}
+      .eyebrow{display:inline-block;margin-bottom:8px;padding:5px 10px;border-radius:999px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;background:rgba(159,211,199,0.12);color:var(--accent-2);}
+      h1{margin:8px 0 24px;font-size:1.5rem;}
+      .field{margin-bottom:16px;}
+      .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;}
+      input{width:100%;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:var(--text);padding:11px 14px;font:inherit;font-size:15px;}
+      input:focus{outline:2px solid var(--accent);border-color:transparent;}
+      button{width:100%;border:0;border-radius:12px;padding:13px;cursor:pointer;font:inherit;font-size:15px;font-weight:600;background:var(--accent);color:#211503;margin-top:4px;}
+      button:disabled{opacity:0.4;cursor:default;}
+      .status{padding:12px 14px;border-radius:12px;font-size:14px;margin-bottom:16px;}
+      .status.error{background:rgba(255,159,159,0.12);color:var(--bad);}
+      .status.ok{background:rgba(159,211,199,0.16);color:var(--good);}
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="eyebrow">Codex</div>
+      <h1>Sign in</h1>
+      <div id="status" hidden class="status"></div>
+      <form id="login-form" novalidate>
+        <div class="field">
+          <label for="email">Email address</label>
+          <input type="email" id="email" autocomplete="email" autofocus required>
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" id="submit-btn">Sign in</button>
+      </form>
+    </div>
+
+    <script type="module">
+      import { setToken, setActiveEventId } from "./components.js";
+
+      const params = new URLSearchParams(location.search);
+      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+
+      const statusEl = document.getElementById("status");
+      const submitBtn = document.getElementById("submit-btn");
+
+      function showError(msg) {
+        statusEl.textContent = msg;
+        statusEl.className = "status error";
+        statusEl.hidden = false;
+      }
+
+      document.getElementById("login-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+        if (!email || !password) { showError("Email and password are required."); return; }
+
+        submitBtn.disabled = true;
+        statusEl.hidden = true;
+
+        try {
+          const res = await fetch(`${apiBase}/auth/login`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ email, password })
+          });
+          const data = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            showError(res.status === 401 ? "Invalid email or password." : res.status === 403 ? "Your account has been disabled." : (data.error ?? "Login failed."));
+            submitBtn.disabled = false;
+            return;
+          }
+
+          setToken(data.token);
+
+          if (data.requires_context_selection) {
+            const ctxParams = new URLSearchParams({ apiBase, token: data.token });
+            if (data.events?.length) ctxParams.set("events", JSON.stringify(data.events));
+            location.href = `select-context.html?${ctxParams}`;
+            return;
+          }
+
+          const redirect = data.redirect_to ?? "/";
+          location.href = `${redirect}?token=${encodeURIComponent(data.token)}&apiBase=${encodeURIComponent(apiBase)}`;
+
+        } catch {
+          showError("Network error — please try again.");
+          submitBtn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -73,6 +73,7 @@
         <nav class="shell-nav">
           <a href="events.html" class="active">Events</a>
           <a href="team.html" id="nav-team">Team</a>
+          <a href="#" id="logout-link" style="color:var(--bad)">Sign out</a>
         </nav>
       </div>
     </div>
@@ -118,10 +119,13 @@
     <div id="toast"></div>
 
     <script type="module">
+      import { isAuthenticated, logoutUser } from "../components.js";
+      if (!isAuthenticated()) { logoutUser("../login.html"); throw new Error("unauthenticated"); }
       const params = new URLSearchParams(location.search);
       const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
       const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "organizer-token";
 
+      document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logoutUser("../login.html"); });
       document.getElementById("nav-team").href = `team.html?token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
 
       function esc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }

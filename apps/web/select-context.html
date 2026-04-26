@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Select Context — Codex</title>
+    <style>
+      :root{--bg:#101117;--panel:#1a1c25;--panel-2:#14161d;--border:rgba(255,255,255,0.08);--text:#f4f1ea;--muted:#b2ac9f;--accent:#f3c97d;--accent-2:#9fd3c7;--good:#9fd3c7;--bad:#ff9f9f;}
+      *{box-sizing:border-box;}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--text);background:radial-gradient(circle at top left,rgba(243,201,125,0.16),transparent 28%),linear-gradient(160deg,var(--bg),#090a0e 66%);min-height:100vh;display:flex;align-items:center;justify-content:center;}
+      .card{border-radius:22px;padding:32px;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);width:100%;max-width:480px;}
+      .eyebrow{display:inline-block;margin-bottom:8px;padding:5px 10px;border-radius:999px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;background:rgba(159,211,199,0.12);color:var(--accent-2);}
+      h1{margin:8px 0 8px;font-size:1.4rem;}
+      p.sub{margin:0 0 24px;font-size:14px;color:var(--muted);}
+      .event-list{display:flex;flex-direction:column;gap:10px;margin-bottom:24px;}
+      .event-card{border-radius:14px;border:1px solid var(--border);padding:14px 16px;cursor:pointer;transition:border-color 0.15s,background 0.15s;background:rgba(255,255,255,0.03);}
+      .event-card:hover{background:rgba(243,201,125,0.07);border-color:rgba(243,201,125,0.3);}
+      .event-card.selected{background:rgba(243,201,125,0.12);border-color:var(--accent);}
+      .event-card strong{display:block;margin-bottom:3px;}
+      .event-card span{font-size:13px;color:var(--muted);}
+      .badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;border:1px solid var(--border);font-size:11px;margin-left:8px;}
+      .badge.live{color:var(--good);}
+      .badge.draft,.badge.published{color:var(--warn);}
+      .badge.closed,.badge.archived{color:var(--bad);}
+      button.primary{width:100%;border:0;border-radius:12px;padding:13px;cursor:pointer;font:inherit;font-size:15px;font-weight:600;background:var(--accent);color:#211503;}
+      button.primary:disabled{opacity:0.4;cursor:default;}
+      .logout-link{display:block;text-align:center;margin-top:14px;font-size:13px;color:var(--muted);cursor:pointer;text-decoration:underline;}
+      .status{padding:12px 14px;border-radius:12px;font-size:14px;margin-bottom:16px;}
+      .status.error{background:rgba(255,159,159,0.12);color:var(--bad);}
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="eyebrow">Codex</div>
+      <h1>Choose your event</h1>
+      <p class="sub">You have access to multiple events. Select one to continue.</p>
+      <div id="status" hidden class="status error"></div>
+      <div class="event-list" id="event-list">
+        <div style="color:var(--muted);font-size:14px;">Loading events…</div>
+      </div>
+      <button class="primary" id="confirm-btn" disabled>Continue →</button>
+      <span class="logout-link" id="logout-link">Sign out</span>
+    </div>
+
+    <script type="module">
+      import { setToken, setActiveEventId, logoutUser } from "./components.js";
+
+      const params = new URLSearchParams(location.search);
+      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const token = params.get("token") ?? localStorage.getItem("codex.token");
+
+      // Events can come from query param (set by login) or fetched live
+      let eventsRaw = null;
+      try { eventsRaw = params.get("events") ? JSON.parse(params.get("events")) : null; } catch {}
+
+      let selectedEventId = null;
+      const listEl = document.getElementById("event-list");
+      const confirmBtn = document.getElementById("confirm-btn");
+      const statusEl = document.getElementById("status");
+
+      function renderEvents(events) {
+        if (!events.length) {
+          listEl.innerHTML = `<div style="color:var(--muted);font-size:14px;">No events available.</div>`;
+          return;
+        }
+        listEl.innerHTML = events.map(ev => `
+          <div class="event-card" data-id="${esc(ev.id)}">
+            <strong>${esc(ev.name)}<span class="badge ${esc(ev.status)}">${esc(ev.status)}</span></strong>
+            <span>${ev.starts_at ? new Date(ev.starts_at).toLocaleDateString() : ""}${ev.ends_at ? " – " + new Date(ev.ends_at).toLocaleDateString() : ""}</span>
+          </div>
+        `).join("");
+
+        listEl.querySelectorAll(".event-card").forEach(card => {
+          card.addEventListener("click", () => {
+            listEl.querySelectorAll(".event-card").forEach(c => c.classList.remove("selected"));
+            card.classList.add("selected");
+            selectedEventId = card.dataset.id;
+            confirmBtn.disabled = false;
+          });
+        });
+      }
+
+      function esc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+      async function loadEvents() {
+        if (eventsRaw) { renderEvents(eventsRaw); return; }
+        try {
+          const res = await fetch(`${apiBase}/events`, {
+            headers: { authorization: `Bearer ${token}` }
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error ?? "Failed to load events");
+          renderEvents(data.events ?? []);
+        } catch (err) {
+          statusEl.textContent = err.message;
+          statusEl.hidden = false;
+          listEl.innerHTML = "";
+        }
+      }
+
+      confirmBtn.addEventListener("click", () => {
+        if (!selectedEventId) return;
+        if (token) setToken(token);
+        setActiveEventId(selectedEventId);
+        const dest = `organizer/event-detail.html?eventId=${encodeURIComponent(selectedEventId)}&token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
+        location.href = dest;
+      });
+
+      document.getElementById("logout-link").addEventListener("click", () => {
+        logoutUser("/login.html");
+      });
+
+      loadEvents();
+    </script>
+  </body>
+</html>

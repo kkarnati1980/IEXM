@@ -82,6 +82,7 @@
         </div>
         <nav class="shell-nav">
           <a href="events.html" id="back-link">← Events</a>
+          <a href="#" id="logout-link" style="color:var(--bad)">Sign out</a>
         </nav>
       </div>
     </div>
@@ -247,12 +248,15 @@
     <div id="toast"></div>
 
     <script type="module">
-      import { onboardingChecklistHtml } from "../components.js";
+      import { onboardingChecklistHtml, isAuthenticated, logoutUser } from "../components.js";
+      if (!isAuthenticated()) { logoutUser("../login.html"); throw new Error("unauthenticated"); }
 
       const params = new URLSearchParams(location.search);
       const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
       const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "organizer-token";
       const eventId = params.get("eventId") ?? "";
+
+      document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logoutUser("../login.html"); });
 
       document.getElementById("back-link").href = `events.html?token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
 

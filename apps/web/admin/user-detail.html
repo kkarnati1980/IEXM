@@ -87,6 +87,7 @@
         <nav class="shell-nav">
           <a href="#" id="back-link">← Tenant</a>
           <a href="user-detail.html" class="active">User Detail</a>
+          <a href="#" id="logout-link" style="color:var(--bad)">Sign out</a>
         </nav>
       </div>
     </div>
@@ -150,13 +151,16 @@
     <div id="toast"></div>
 
     <script type="module">
-      import { showRoleAssignmentModal } from "../components.js";
+      import { showRoleAssignmentModal, isAuthenticated, logoutUser } from "../components.js";
+      if (!isAuthenticated()) { logoutUser("../login.html"); throw new Error("unauthenticated"); }
 
       const params = new URLSearchParams(location.search);
       const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
       const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "platform-token";
       const userId = params.get("userId") ?? "";
       const tenantId = params.get("tenantId") ?? "";
+
+      document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logoutUser("../login.html"); });
 
       const backLink = document.getElementById("back-link");
       if (tenantId) {
