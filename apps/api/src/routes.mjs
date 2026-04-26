@@ -6512,9 +6512,15 @@ export function registerRoutes(router) {
     method: "GET",
     path: "/devices",
     authRequired: true,
-    allowedRoles: ["platform_admin", "organizer_admin"],
-    handler: async ({ repos, principal }) => {
-      const devices = await repos.devices.listByTenant(principal.tenant_id);
+    allowedRoles: ["platform_admin", "organizer_admin", "ops_user"],
+    handler: async ({ repos, principal, query }) => {
+      let devices = await repos.devices.listByTenant(principal.tenant_id);
+      if (query?.status) devices = devices.filter((d) => d.status === query.status);
+      if (query?.event_id) {
+        const assignments = await repos.deviceAssignments.listByEvent(principal.tenant_id, query.event_id);
+        const ids = new Set(assignments.map((a) => a.device_id));
+        devices = devices.filter((d) => ids.has(d.id));
+      }
       return { devices };
     }
   });
@@ -6526,8 +6532,9 @@ export function registerRoutes(router) {
     path: "/devices",
     authRequired: true,
     allowedRoles: ["platform_admin"],
+    statusCode: 201,
     validate: (body) => {
-      required(body, ["serial_number"]);
+      required(body, ["serial_number", "name"]);
       return body;
     },
     handler: async ({ repos, body, principal }) => {
@@ -6536,13 +6543,59 @@ export function registerRoutes(router) {
         id: nextId("device"),
         tenant_id: principal.tenant_id,
         serial_number: body.serial_number,
-        label: body.label ?? null,
+        name: body.name,
+        hardware_type: body.hardware_type ?? null,
         status: "inventory",
         config_lease_expires_at: null,
         created_at: now
       };
       await repos.devices.create(device);
-      return { device };
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.DEVICE_REGISTERED,
+        targetType: "device",
+        targetId: device.id,
+        metadata: { serial_number: device.serial_number }
+      });
+      return { device_id: device.id, serial_number: device.serial_number, status: device.status };
+    }
+  });
+
+  // GET /devices/:deviceId — device detail
+  router.addRoute({
+    id: "devices-get",
+    method: "GET",
+    path: "/devices/:deviceId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin", "ops_user"],
+    handler: async ({ repos, params, principal }) => {
+      const device = await repos.devices.findById(principal.tenant_id, params.deviceId);
+      const reader = await repos.nfcReaders.findByDevice(principal.tenant_id, device.id).catch(() => null);
+      return { device, nfc_reader: reader ?? null };
+    }
+  });
+
+  // PATCH /devices/:deviceId — update name or status (repair transitions only)
+  router.addRoute({
+    id: "devices-patch",
+    method: "PATCH",
+    path: "/devices/:deviceId",
+    authRequired: true,
+    allowedRoles: ["platform_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ repos, params, body, principal }) => {
+      const device = await repos.devices.findById(principal.tenant_id, params.deviceId);
+      if (body.status !== undefined) {
+        const allowed = new Map([["inventory", "repair"], ["repair", "inventory"]]);
+        if (!allowed.has(device.status) || allowed.get(device.status) !== body.status) {
+          throw new HttpError(400, "INVALID_STATUS_TRANSITION");
+        }
+      }
+      const updated = { ...device, ...body, id: device.id, tenant_id: device.tenant_id };
+      await repos.devices.update(updated);
+      return { device: updated };
     }
   });
 
@@ -6552,15 +6605,23 @@ export function registerRoutes(router) {
     method: "POST",
     path: "/devices/:deviceId/assign",
     authRequired: true,
-    allowedRoles: ["platform_admin", "organizer_admin"],
+    allowedRoles: ["platform_admin", "organizer_admin", "ops_user"],
     validate: (body) => {
       required(body, ["stall_id", "event_id"]);
       return body;
     },
     handler: async ({ repos, body, params, principal }) => {
       const device = await repos.devices.findById(principal.tenant_id, params.deviceId);
+      if (device.status === "assigned" || device.status === "live") {
+        throw new HttpError(409, "DEVICE_ALREADY_ASSIGNED");
+      }
       const stall = await repos.stalls.findById(principal.tenant_id, body.stall_id);
       assertEventScoped(principal, stall.event_id);
+
+      const existingAssignments = await repos.deviceAssignments.listByStall(principal.tenant_id, body.stall_id);
+      if (existingAssignments.some((a) => a.active)) {
+        throw new HttpError(409, "STALL_ALREADY_HAS_DEVICE");
+      }
 
       const now = new Date().toISOString();
       const assignment = {
@@ -6570,14 +6631,68 @@ export function registerRoutes(router) {
         event_id: body.event_id,
         stall_id: body.stall_id,
         active: true,
+        starts_at: body.starts_at ?? now,
+        ends_at: body.ends_at ?? null,
         created_at: now
       };
       await repos.deviceAssignments.create(assignment);
 
-      device.status = "live";
+      device.status = "assigned";
       await repos.devices.update(device);
 
-      return { assignment };
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.DEVICE_ASSIGNED,
+        targetType: "device",
+        targetId: device.id,
+        metadata: { stall_id: body.stall_id, event_id: body.event_id }
+      });
+
+      return { device_id: device.id, status: "assigned", stall_id: body.stall_id, event_id: body.event_id };
+    }
+  });
+
+  // POST /devices/:deviceId/unassign — unassign a device
+  router.addRoute({
+    id: "devices-unassign",
+    method: "POST",
+    path: "/devices/:deviceId/unassign",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin", "ops_user"],
+    validate: (body) => body ?? {},
+    handler: async ({ repos, params, principal }) => {
+      const device = await repos.devices.findById(principal.tenant_id, params.deviceId);
+      if (device.status !== "assigned") {
+        throw new HttpError(400, "INVALID_STATUS_TRANSITION: Device must be in assigned status to unassign");
+      }
+
+      const assignments = await repos.deviceAssignments.listByEvent(principal.tenant_id, device.id).catch(() => []);
+      const stallAssignments = (await Promise.all(
+        (await repos.deviceAssignments.listByEvent(principal.tenant_id, device.id).catch(() => [])).map(async (a) => a)
+      ));
+
+      const allActive = (await repos.deviceAssignments.findActiveByDeviceId(principal.tenant_id, device.id).catch(() => null));
+      if (allActive) {
+        allActive.active = false;
+        allActive.ended_at = new Date().toISOString();
+        await repos.deviceAssignments.update(allActive);
+      }
+
+      device.status = "inventory";
+      await repos.devices.update(device);
+
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.DEVICE_UNASSIGNED,
+        targetType: "device",
+        targetId: device.id
+      });
+
+      return { device_id: device.id, status: "inventory" };
     }
   });
 
@@ -6588,14 +6703,73 @@ export function registerRoutes(router) {
     path: "/devices/:deviceId/retire",
     authRequired: true,
     allowedRoles: ["platform_admin"],
+    validate: (body) => body ?? {},
     handler: async ({ repos, params, principal }) => {
       const device = await repos.devices.findById(principal.tenant_id, params.deviceId);
       if (device.status === "live") {
-        throw new HttpError(409, "Cannot retire a live device");
+        throw new HttpError(400, "CANNOT_RETIRE_LIVE_DEVICE");
+      }
+      if (device.status === "assigned") {
+        throw new HttpError(400, "CANNOT_RETIRE_ASSIGNED_DEVICE: Unassign device first");
       }
       device.status = "retired";
       await repos.devices.update(device);
-      return { device };
+
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.DEVICE_RETIRED,
+        targetType: "device",
+        targetId: device.id
+      });
+
+      return { device_id: device.id, status: "retired" };
+    }
+  });
+
+  // POST /nfc-readers — pair NFC reader to device
+  router.addRoute({
+    id: "nfc-readers-create",
+    method: "POST",
+    path: "/nfc-readers",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin", "ops_user"],
+    statusCode: 201,
+    validate: (body) => {
+      required(body, ["device_id"]);
+      return body;
+    },
+    handler: async ({ repos, body, principal }) => {
+      await repos.devices.findById(principal.tenant_id, body.device_id);
+      const now = new Date().toISOString();
+      const reader = {
+        id: nextId("nfc"),
+        tenant_id: principal.tenant_id,
+        device_id: body.device_id,
+        model: body.model ?? "ACR122U",
+        firmware_version: body.firmware_version ?? null,
+        created_at: now,
+        updated_at: now
+      };
+      await repos.nfcReaders.create(reader);
+      return { reader_id: reader.id, device_id: reader.device_id, model: reader.model, firmware_version: reader.firmware_version };
+    }
+  });
+
+  // PATCH /nfc-readers/:readerId — update reader firmware or model
+  router.addRoute({
+    id: "nfc-readers-patch",
+    method: "PATCH",
+    path: "/nfc-readers/:readerId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin", "ops_user"],
+    validate: (body) => body ?? {},
+    handler: async ({ repos, params, body, principal }) => {
+      const reader = await repos.nfcReaders.findById(principal.tenant_id, params.readerId);
+      const updated = { ...reader, ...body, id: reader.id, tenant_id: reader.tenant_id, device_id: reader.device_id, updated_at: new Date().toISOString() };
+      await repos.nfcReaders.update(updated);
+      return { reader: updated };
     }
   });
 
@@ -6666,6 +6840,254 @@ export function registerRoutes(router) {
       const updated = { ...branding, branding_approved: true, updated_at: new Date().toISOString() };
       await repos.brandingAssets.update(updated);
       return { branding: updated };
+    }
+  });
+
+  const VALID_BG_ACCESS_SCOPES = new Set(["interaction_pii", "attendee_pii", "export_review", "incident_debug"]);
+  const VALID_BG_DURATIONS = new Set([30, 60, 120, 240]);
+
+  // POST /admin/break-glass/request
+  router.addRoute({
+    id: "admin-break-glass-request",
+    method: "POST",
+    path: "/admin/break-glass/request",
+    authRequired: true,
+    allowedRoles: ["platform_admin"],
+    statusCode: 201,
+    validate: (body) => {
+      if (!body?.justification || typeof body.justification !== "string" || body.justification.trim().length < 20) {
+        throw new HttpError(400, "justification must be at least 20 characters");
+      }
+      if (!body.access_scope || !VALID_BG_ACCESS_SCOPES.has(body.access_scope)) {
+        throw new HttpError(400, `access_scope must be one of: ${[...VALID_BG_ACCESS_SCOPES].join(", ")}`);
+      }
+      const dur = Number(body.requested_duration_minutes);
+      if (!VALID_BG_DURATIONS.has(dur)) {
+        throw new HttpError(400, `requested_duration_minutes must be one of: ${[...VALID_BG_DURATIONS].join(", ")}`);
+      }
+      return body;
+    },
+    handler: async ({ repos, body, principal }) => {
+      const now = new Date().toISOString();
+      const request = {
+        id: nextId("bg"),
+        tenant_id: principal.tenant_id,
+        requested_by_user_id: principal.user_id,
+        approved_by_user_id: null,
+        rejected_by_user_id: null,
+        rejection_reason: null,
+        justification: body.justification.trim(),
+        access_scope: body.access_scope,
+        event_id: body.event_id ?? null,
+        requested_duration_minutes: Number(body.requested_duration_minutes),
+        status: "requested",
+        starts_at: null,
+        expires_at: null,
+        revoked_at: null,
+        created_at: now
+      };
+      await repos.breakGlassAccess.create(request);
+
+      const requester = await repos.users.findById(principal.tenant_id, principal.user_id).catch(() => null);
+      const allUsers = await repos.users.listByTenant(principal.tenant_id);
+      const otherAdmins = allUsers.filter((u) => u.role === "platform_admin" && u.id !== principal.user_id);
+      for (const admin of otherAdmins) {
+        await dispatchTransactionalEmail({
+          repos,
+          tenantId: principal.tenant_id,
+          recipientEmail: admin.email,
+          messageType: "break_glass_pending_approval",
+          templateVars: {
+            requester_name: requester?.display_name ?? "A platform admin",
+            justification: body.justification
+          },
+          actorUserId: principal.user_id
+        });
+      }
+
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.BREAK_GLASS_REQUESTED,
+        targetType: "break_glass_request",
+        targetId: request.id,
+        metadata: { access_scope: request.access_scope }
+      });
+
+      return { id: request.id, status: "requested" };
+    }
+  });
+
+  // GET /admin/break-glass — list all requests
+  router.addRoute({
+    id: "admin-break-glass-list",
+    method: "GET",
+    path: "/admin/break-glass",
+    authRequired: true,
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, principal, query }) => {
+      const allUsers = await repos.users.listByTenant(principal.tenant_id);
+      const nameOf = (id) => allUsers.find((u) => u.id === id)?.display_name ?? id ?? null;
+
+      let items = await repos.breakGlassAccess.listByTenant(principal.tenant_id);
+      if (query?.status) items = items.filter((r) => r.status === query.status);
+
+      return {
+        items: items.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).map((r) => ({
+          id: r.id,
+          requested_by_name: nameOf(r.requested_by_user_id),
+          access_scope: r.access_scope,
+          justification: r.justification,
+          event_id: r.event_id ?? null,
+          requested_duration_minutes: r.requested_duration_minutes ?? null,
+          status: r.status,
+          created_at: r.created_at,
+          approved_by_name: nameOf(r.approved_by_user_id),
+          starts_at: r.starts_at ?? null,
+          expires_at: r.expires_at ?? null
+        }))
+      };
+    }
+  });
+
+  // GET /admin/break-glass/:requestId — single request detail
+  router.addRoute({
+    id: "admin-break-glass-get",
+    method: "GET",
+    path: "/admin/break-glass/:requestId",
+    authRequired: true,
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const request = await repos.breakGlassAccess.findById(principal.tenant_id, params.requestId);
+      const allUsers = await repos.users.listByTenant(principal.tenant_id);
+      const nameOf = (id) => allUsers.find((u) => u.id === id)?.display_name ?? id ?? null;
+      return {
+        ...request,
+        requested_by_name: nameOf(request.requested_by_user_id),
+        approved_by_name: nameOf(request.approved_by_user_id ?? null)
+      };
+    }
+  });
+
+  // POST /admin/break-glass/:requestId/approve
+  router.addRoute({
+    id: "admin-break-glass-approve",
+    method: "POST",
+    path: "/admin/break-glass/:requestId/approve",
+    authRequired: true,
+    allowedRoles: ["platform_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ repos, params, principal }) => {
+      const request = await repos.breakGlassAccess.findById(principal.tenant_id, params.requestId);
+      if (request.requested_by_user_id === principal.user_id) {
+        throw new HttpError(403, "SELF_APPROVAL_FORBIDDEN");
+      }
+      if (request.status !== "requested") {
+        throw new HttpError(400, "INVALID_STATUS_TRANSITION");
+      }
+      const now = new Date();
+      const durationMs = (request.requested_duration_minutes ?? 60) * 60 * 1000;
+      const starts_at = now.toISOString();
+      const expires_at = new Date(now.getTime() + durationMs).toISOString();
+
+      const updated = {
+        ...request,
+        approved_by_user_id: principal.user_id,
+        status: "active",
+        starts_at,
+        expires_at
+      };
+      await repos.breakGlassAccess.update(updated);
+
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.BREAK_GLASS_APPROVED,
+        targetType: "break_glass_request",
+        targetId: request.id,
+        metadata: { approved_by: principal.user_id, expires_at }
+      });
+
+      console.log(`TODO: fire break_glass_organizer_alert notification to organizer admins for this event (Phase 15 SG11)`);
+      return { id: updated.id, status: "active", expires_at };
+    }
+  });
+
+  // POST /admin/break-glass/:requestId/reject
+  router.addRoute({
+    id: "admin-break-glass-reject",
+    method: "POST",
+    path: "/admin/break-glass/:requestId/reject",
+    authRequired: true,
+    allowedRoles: ["platform_admin"],
+    validate: (body) => {
+      if (!body?.rejection_reason || typeof body.rejection_reason !== "string") {
+        throw new HttpError(400, "rejection_reason is required");
+      }
+      return body;
+    },
+    handler: async ({ repos, params, body, principal }) => {
+      const request = await repos.breakGlassAccess.findById(principal.tenant_id, params.requestId);
+      if (request.requested_by_user_id === principal.user_id) {
+        throw new HttpError(403, "SELF_APPROVAL_FORBIDDEN");
+      }
+      if (request.status !== "requested") {
+        throw new HttpError(400, "INVALID_STATUS_TRANSITION");
+      }
+      const updated = {
+        ...request,
+        rejected_by_user_id: principal.user_id,
+        rejection_reason: body.rejection_reason,
+        status: "rejected"
+      };
+      await repos.breakGlassAccess.update(updated);
+
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.BREAK_GLASS_REJECTED,
+        targetType: "break_glass_request",
+        targetId: request.id,
+        metadata: { rejected_by: principal.user_id }
+      });
+
+      return { id: updated.id, status: "rejected" };
+    }
+  });
+
+  // POST /admin/break-glass/:requestId/revoke
+  router.addRoute({
+    id: "admin-break-glass-revoke",
+    method: "POST",
+    path: "/admin/break-glass/:requestId/revoke",
+    authRequired: true,
+    allowedRoles: ["platform_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ repos, params, principal }) => {
+      const request = await repos.breakGlassAccess.findById(principal.tenant_id, params.requestId);
+      if (request.status !== "active") {
+        throw new HttpError(400, "INVALID_STATUS_TRANSITION: Only active sessions can be revoked");
+      }
+      const updated = {
+        ...request,
+        status: "revoked",
+        revoked_at: new Date().toISOString()
+      };
+      await repos.breakGlassAccess.update(updated);
+
+      await writeAuditEvent(repos, {
+        tenantId: principal.tenant_id,
+        actorType: "user",
+        actorId: principal.actor_id,
+        eventType: AUDIT_EVENT_TYPES.BREAK_GLASS_REVOKED,
+        targetType: "break_glass_request",
+        targetId: request.id
+      });
+
+      return { id: updated.id, status: "revoked" };
     }
   });
 }

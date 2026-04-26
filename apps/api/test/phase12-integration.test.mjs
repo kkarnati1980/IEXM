@@ -577,9 +577,9 @@ test("Event: go-live succeeds after branding approved and device heartbeat", asy
     method: "POST",
     path: "/devices",
     headers: bearer(jwt),
-    body: { serial_number: "SN-GOLIVE" }
+    body: { serial_number: "SN-GOLIVE", name: "Go Live Device" }
   });
-  const newDeviceId = newDeviceRes.body.device.id;
+  const newDeviceId = newDeviceRes.body.device_id;
 
   // Get a stall in this event
   const stallInEvent = state.stalls.find((s) => s.event_id === newEventId);
@@ -637,8 +637,8 @@ test("Event: close transitions live event to closed", async () => {
   await app.inject({ method: "POST", path: `/events/${newEventId}/branding/approve`, headers: bearer(jwt), body: {} });
   await app.inject({ method: "POST", path: `/events/${newEventId}/publish`, headers: bearer(jwt), body: {} });
 
-  const newDeviceRes = await app.inject({ method: "POST", path: "/devices", headers: bearer(jwt), body: { serial_number: "SN-CLOSE" } });
-  const newDeviceId = newDeviceRes.body.device.id;
+  const newDeviceRes = await app.inject({ method: "POST", path: "/devices", headers: bearer(jwt), body: { serial_number: "SN-CLOSE", name: "Close Device" } });
+  const newDeviceId = newDeviceRes.body.device_id;
   const stallInEvent = state.stalls.find((s) => s.event_id === newEventId);
   await app.inject({ method: "POST", path: `/devices/${newDeviceId}/assign`, headers: bearer(jwt), body: { stall_id: stallInEvent.id, event_id: newEventId } });
   state.heartbeats.push({ id: `hb-close-${Date.now()}`, tenant_id: "tenant-demo", device_id: newDeviceId, event_id: newEventId, received_at: new Date().toISOString(), created_at: new Date().toISOString() });
@@ -682,8 +682,8 @@ test("Event: archive transitions closed event to archived", async () => {
   await app.inject({ method: "POST", path: `/events/${newEventId}/branding/approve`, headers: bearer(jwt), body: {} });
   await app.inject({ method: "POST", path: `/events/${newEventId}/publish`, headers: bearer(jwt), body: {} });
 
-  const newDeviceRes = await app.inject({ method: "POST", path: "/devices", headers: bearer(jwt), body: { serial_number: "SN-ARCHIVE" } });
-  const newDeviceId = newDeviceRes.body.device.id;
+  const newDeviceRes = await app.inject({ method: "POST", path: "/devices", headers: bearer(jwt), body: { serial_number: "SN-ARCHIVE", name: "Archive Device" } });
+  const newDeviceId = newDeviceRes.body.device_id;
   const stallInEvent = state.stalls.find((s) => s.event_id === newEventId);
   await app.inject({ method: "POST", path: `/devices/${newDeviceId}/assign`, headers: bearer(jwt), body: { stall_id: stallInEvent.id, event_id: newEventId } });
   state.heartbeats.push({ id: `hb-archive-${Date.now()}`, tenant_id: "tenant-demo", device_id: newDeviceId, event_id: newEventId, received_at: new Date().toISOString(), created_at: new Date().toISOString() });
@@ -823,14 +823,15 @@ test("Device: platform_admin can create a device with status=inventory", async (
     method: "POST",
     path: "/devices",
     headers: bearer(jwt),
-    body: { serial_number: "SN-NEW-001", label: "Test Device" }
+    body: { serial_number: "SN-NEW-001", name: "Test Device" }
   });
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.body.device.status, "inventory");
-  assert.equal(res.body.device.serial_number, "SN-NEW-001");
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.body.status, "inventory");
+  assert.equal(res.body.serial_number, "SN-NEW-001");
+  assert.ok(res.body.device_id);
 });
 
-test("Device: assign changes device status to live", async () => {
+test("Device: assign changes device status to assigned", async () => {
   const state = createSeedState();
   const app = await makeApp(state);
   const jwt = jwtFor(state, "platform_admin");
@@ -839,20 +840,21 @@ test("Device: assign changes device status to live", async () => {
     method: "POST",
     path: "/devices",
     headers: bearer(jwt),
-    body: { serial_number: "SN-ASSIGN-001" }
+    body: { serial_number: "SN-ASSIGN-001", name: "Assign Device" }
   });
-  const deviceId = createRes.body.device.id;
+  const deviceId = createRes.body.device_id;
 
   const assignRes = await app.inject({
     method: "POST",
     path: `/devices/${deviceId}/assign`,
     headers: bearer(jwt),
-    body: { stall_id: "stall-a1", event_id: "event-demo" }
+    body: { stall_id: "stall-a2", event_id: "event-demo" }
   });
   assert.equal(assignRes.statusCode, 200);
+  assert.equal(assignRes.body.status, "assigned");
 
   const device = state.devices.find((d) => d.id === deviceId);
-  assert.equal(device.status, "live");
+  assert.equal(device.status, "assigned");
 });
 
 test("Device: organizer_admin can list devices", async () => {
@@ -879,7 +881,7 @@ test("Device: cannot retire a live device", async () => {
     headers: bearer(jwt),
     body: {}
   });
-  assert.equal(res.statusCode, 409);
+  assert.equal(res.statusCode, 400);
 });
 
 // ─────────────────────────────────────────────────────────────

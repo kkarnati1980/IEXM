@@ -272,6 +272,7 @@ export function createSeedState() {
     iotEnvironmentParityStatuses: [],
     pentestFindings: [],
     apiClients: [],
+    nfcReaders: [],
     sessionSecret: "pilot-attendee-session-secret",
     metrics: {
       routeHits: {}

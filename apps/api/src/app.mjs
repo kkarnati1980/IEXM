@@ -283,6 +283,11 @@ async function authMiddleware(ctx) {
     return;
   }
 
+  await authenticateApiClient(ctx, token);
+  if (ctx.principal) {
+    return;
+  }
+
   throw new HttpError(401, "Invalid bearer token");
 }
 
@@ -450,6 +455,33 @@ async function authenticateDevicePrincipal(ctx, token) {
   await ctx.baseRepos.scope?.({ tenantId: device.tenant_id })?.deviceCredentials.update?.(credential);
 
   return buildDevicePrincipal(device, assignment, credential);
+}
+
+async function authenticateApiClient(ctx, token) {
+  const repos = ctx.baseRepos;
+  if (!repos?.apiClients?.findBySecretHash) return;
+
+  const { createHmac } = await import("node:crypto");
+  const sessionSecret = ctx.state?.sessionSecret ?? "default-secret";
+  const hash = createHmac("sha256", sessionSecret).update(token).digest("hex");
+
+  const client = await repos.apiClients.findBySecretHash(hash);
+  if (!client) return;
+
+  if (client.status === "revoked") {
+    throw new HttpError(401, "API_CLIENT_REVOKED");
+  }
+
+  client.last_used_at = new Date().toISOString();
+  await repos.apiClients.update(client).catch(() => {});
+
+  ctx.principal = {
+    type: "api_client",
+    role: "api_client",
+    actor_id: client.id,
+    tenant_id: client.tenant_id,
+    scopes: client.scopes ?? []
+  };
 }
 
 async function authenticateSeedPrincipal(ctx, token) {

@@ -424,13 +424,24 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   "sponsor-packages-delete": entry({ permission: "sponsor_package.delete", roles: organizerOrPlatform, scope: "tenant", description: "Delete a sponsor package", sensitivity: "internal" }),
   "stalls-users-list": entry({ permission: "stall.users.list", roles: organizerOrPlatform, scope: "event", description: "List vendor_manager users scoped to a specific stall", sensitivity: "internal" }),
   "sponsor-packages-users-list": entry({ permission: "sponsor_package.users.list", roles: organizerOrPlatform, scope: "event", description: "List sponsor_user users scoped to a specific sponsor package", sensitivity: "internal" }),
-  "devices-list": entry({ permission: "device.list", roles: organizerOrPlatform, scope: "tenant", description: "List devices for tenant", sensitivity: "internal" }),
+  "devices-list": entry({ permission: "device.list", roles: [ROLES.platformAdmin, ROLES.organizerAdmin, ROLES.opsUser], scope: "tenant", description: "List devices for tenant", sensitivity: "internal" }),
   "devices-create": entry({ permission: "device.create", roles: [ROLES.platformAdmin], scope: "tenant", description: "Create/register a new device", sensitivity: "internal" }),
-  "devices-assign": entry({ permission: "device.assign", roles: organizerOrPlatform, scope: "tenant", description: "Assign a device to a stall", sensitivity: "internal" }),
-  "devices-retire": entry({ permission: "device.retire", roles: [ROLES.platformAdmin], scope: "tenant", description: "Retire a device (cannot retire live devices)", sensitivity: "internal" }),
+  "devices-get": entry({ permission: "device.view", roles: [ROLES.platformAdmin, ROLES.organizerAdmin, ROLES.opsUser], scope: "tenant", description: "Get a device by ID", sensitivity: "internal" }),
+  "devices-patch": entry({ permission: "device.update", roles: [ROLES.platformAdmin], scope: "tenant", description: "Update device name or status (repair transitions only)", sensitivity: "internal" }),
+  "devices-assign": entry({ permission: "device.assign", roles: [ROLES.platformAdmin, ROLES.organizerAdmin, ROLES.opsUser], scope: "tenant", description: "Assign a device to a stall", sensitivity: "internal" }),
+  "devices-unassign": entry({ permission: "device.unassign", roles: [ROLES.platformAdmin, ROLES.organizerAdmin, ROLES.opsUser], scope: "tenant", description: "Unassign a device from its stall", sensitivity: "internal" }),
+  "devices-retire": entry({ permission: "device.retire", roles: [ROLES.platformAdmin], scope: "tenant", description: "Retire a device (cannot retire live or assigned devices)", sensitivity: "internal" }),
+  "nfc-readers-create": entry({ permission: "nfc_reader.create", roles: [ROLES.platformAdmin, ROLES.organizerAdmin, ROLES.opsUser], scope: "tenant", description: "Pair an NFC reader to a device", sensitivity: "internal" }),
+  "nfc-readers-patch": entry({ permission: "nfc_reader.update", roles: [ROLES.platformAdmin, ROLES.organizerAdmin, ROLES.opsUser], scope: "tenant", description: "Update NFC reader firmware or model", sensitivity: "internal" }),
   "events-branding-get": entry({ permission: "event.branding.view", roles: organizerOrPlatform, scope: "event", description: "Get branding config for an event", sensitivity: "internal" }),
   "events-branding-save": entry({ permission: "event.branding.save", roles: organizerOrPlatform, scope: "event", description: "Save branding config for an event", sensitivity: "internal" }),
-  "events-branding-approve": entry({ permission: "event.branding.approve", roles: [ROLES.platformAdmin], scope: "event", description: "Approve branding for an event", sensitivity: "internal" })
+  "events-branding-approve": entry({ permission: "event.branding.approve", roles: [ROLES.platformAdmin], scope: "event", description: "Approve branding for an event", sensitivity: "internal" }),
+  "admin-break-glass-request": entry({ permission: "admin.break_glass.request", roles: platform, scope: "tenant", description: "Submit a break-glass access request", sensitivity: "security" }),
+  "admin-break-glass-list": entry({ permission: "admin.break_glass.list", roles: platform, scope: "tenant", description: "List break-glass requests", sensitivity: "security" }),
+  "admin-break-glass-get": entry({ permission: "admin.break_glass.view", roles: platform, scope: "tenant", description: "View a single break-glass request", sensitivity: "security" }),
+  "admin-break-glass-approve": entry({ permission: "admin.break_glass.approve", roles: platform, scope: "tenant", description: "Approve a break-glass request", sensitivity: "security" }),
+  "admin-break-glass-reject": entry({ permission: "admin.break_glass.reject", roles: platform, scope: "tenant", description: "Reject a break-glass request", sensitivity: "security" }),
+  "admin-break-glass-revoke": entry({ permission: "admin.break_glass.revoke", roles: platform, scope: "tenant", description: "Revoke an active break-glass session", sensitivity: "security" })
 });
 
 export function getAccessControlEntry(routeId) {

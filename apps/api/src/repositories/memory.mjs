@@ -1453,10 +1453,31 @@ export function createMemoryRepositories(state) {
       async findById(tenantId, id) {
         return findById(state.apiClients, tenantId, id, "API client");
       },
+      async findBySecretHash(secretHash) {
+        return state.apiClients.find((entry) => entry.client_secret_hash === secretHash) ?? null;
+      },
       async update(record) {
         const index = state.apiClients.findIndex((entry) => entry.id === record.id);
         if (index === -1) throw new HttpError(404, "API client not found");
         state.apiClients[index] = record;
+        return record;
+      }
+    },
+    nfcReaders: {
+      async create(record) {
+        state.nfcReaders.push(record);
+        return record;
+      },
+      async findById(tenantId, id) {
+        return findById(state.nfcReaders, tenantId, id, "NFC reader");
+      },
+      async findByDevice(tenantId, deviceId) {
+        return state.nfcReaders.find((r) => r.tenant_id === tenantId && r.device_id === deviceId) ?? null;
+      },
+      async update(record) {
+        const index = state.nfcReaders.findIndex((r) => r.id === record.id);
+        if (index === -1) throw new HttpError(404, "NFC reader not found");
+        state.nfcReaders[index] = record;
         return record;
       }
     },
