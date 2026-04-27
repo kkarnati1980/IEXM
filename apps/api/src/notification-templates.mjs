@@ -13,6 +13,9 @@ export function renderTemplate(messageType, vars = {}) {
     case "dsr_export_ready": return renderDsrExportReady(vars);
     case "dsr_delete_confirmed": return renderDsrDeleteConfirmed(vars);
     case "offboarding_deletion_certificate": return renderOffboardingDeletionCertificate(vars);
+    case "offboarding_initiated": return renderOffboardingInitiated(vars);
+    case "offboarding_deletion_reminder_14d": return renderOffboardingDeletionReminder14d(vars);
+    case "offboarding_deletion_reminder_3d": return renderOffboardingDeletionReminder3d(vars);
     default: throw new Error(`Unknown notification template: ${messageType}`);
   }
 }
@@ -281,6 +284,80 @@ function renderDsrDeleteConfirmed({
       `What was kept: anonymised analytics data used for aggregate event reporting (no personal identifiers).`,
       ``,
       `If you have any questions, please contact us.`
+    ].join("\n")
+  };
+}
+
+function renderOffboardingInitiated({
+  organizer_name = "there",
+  tenant_name = "your organisation",
+  data_handling_path = "immediate_delete",
+  grace_period_days = null,
+  scheduled_deletion_at = null,
+  contact_email = "support@codex.io"
+}) {
+  let pathDescription;
+  if (data_handling_path === "export_then_delete") {
+    pathDescription = "Your data will be exported first. You will receive a download link before any deletion occurs.";
+  } else if (data_handling_path === "grace_period_delete") {
+    pathDescription = `Your data will be retained for ${grace_period_days ?? "?"} days, then permanently deleted on ${scheduled_deletion_at ?? "the scheduled date"}.`;
+  } else {
+    pathDescription = "Your data will be permanently deleted. This process requires a second administrator approval.";
+  }
+  return {
+    subject: `Account offboarding initiated — ${tenant_name}`,
+    body: [
+      `Hi ${organizer_name},`,
+      ``,
+      `Your account offboarding for "${tenant_name}" has been initiated.`,
+      ``,
+      pathDescription,
+      ``,
+      `If you did not request this or have questions, contact ${contact_email} immediately.`
+    ].join("\n")
+  };
+}
+
+function renderOffboardingDeletionReminder14d({
+  organizer_name = "there",
+  tenant_name = "your organisation",
+  scheduled_deletion_at = "",
+  contact_email = "support@codex.io"
+}) {
+  return {
+    subject: `Your data will be deleted in 14 days — ${tenant_name}`,
+    body: [
+      `Hi ${organizer_name},`,
+      ``,
+      `This is a reminder that the data for "${tenant_name}" is scheduled for permanent deletion on ${scheduled_deletion_at}.`,
+      ``,
+      `You have 14 days remaining before this deletion occurs.`,
+      ``,
+      `To cancel or pause the offboarding process, contact ${contact_email} as soon as possible.`,
+      ``,
+      `After deletion is complete, data cannot be recovered.`
+    ].join("\n")
+  };
+}
+
+function renderOffboardingDeletionReminder3d({
+  organizer_name = "there",
+  tenant_name = "your organisation",
+  scheduled_deletion_at = "",
+  contact_email = "support@codex.io"
+}) {
+  return {
+    subject: `URGENT: Your data will be deleted in 3 days — ${tenant_name}`,
+    body: [
+      `Hi ${organizer_name},`,
+      ``,
+      `URGENT: The data for "${tenant_name}" will be permanently deleted on ${scheduled_deletion_at}.`,
+      ``,
+      `You have only 3 days remaining before this deletion occurs.`,
+      ``,
+      `To cancel or pause the offboarding process, contact ${contact_email} immediately.`,
+      ``,
+      `After deletion is complete, data cannot be recovered. This action is irreversible.`
     ].join("\n")
   };
 }

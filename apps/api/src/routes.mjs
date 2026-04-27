@@ -7542,7 +7542,26 @@ export function registerRoutes(router) {
       await repos.tenants.update({ ...tenant, offboarding_status: "offboarding_initiated", offboarding_initiated_at: now });
       await writePrivacyAudit(repos, { tenantId: tenant.id, actorUserId: principal.user_id, actorRole: "platform_admin", action: "tenant.offboarding_initiated", targetType: "tenant", targetId: tenant.id, metadata: { data_handling_path: body.data_handling_path, job_id: job.id } });
       await writeAuditEvent(repos, { tenantId: tenant.id, actorType: "user", actorId: principal.actor_id, eventType: "tenant.offboarding_initiated", targetType: "tenant", targetId: tenant.id });
-      console.log(`TODO: dispatch offboarding_initiated notification for tenant ${tenant.id} (Phase 17)`);
+      const allTenantUsers = await repos.users.listByTenant(tenant.id);
+      const primaryContact = allTenantUsers.find((u) => u.role === "organizer_admin" && u.status === "active" && u.email)
+        ?? allTenantUsers.find((u) => u.status === "active" && u.email);
+      if (primaryContact) {
+        await dispatchTransactionalEmail({
+          repos,
+          tenantId: tenant.id,
+          recipientEmail: primaryContact.email,
+          messageType: "offboarding_initiated",
+          templateVars: {
+            organizer_name: primaryContact.display_name ?? "there",
+            tenant_name: tenant.name,
+            data_handling_path: body.data_handling_path,
+            grace_period_days: body.grace_period_days ?? null,
+            scheduled_deletion_at: null,
+            contact_email: process.env.SUPPORT_EMAIL ?? "support@codex.io"
+          },
+          actorUserId: principal.user_id
+        });
+      }
       return { job_id: job.id, status: "awaiting_approval" };
     },
     auditEventType: "tenant.offboarding_initiated"

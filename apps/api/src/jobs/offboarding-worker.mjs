@@ -2,6 +2,44 @@ import { createHash } from "node:crypto";
 import { nextId } from "../store.mjs";
 import { dispatchTransactionalEmail } from "../notification-dispatch.mjs";
 
+async function scheduleOffboardingReminders(repos, job, tenant, scheduledDeletionAt) {
+  const now = Date.now();
+  const deletionTime = new Date(scheduledDeletionAt).getTime();
+  const allUsers = await repos.users.listByTenant(tenant.id);
+  const admins = allUsers.filter((u) => u.role === "organizer_admin" && u.status === "active" && u.email);
+  const contactEmail = process.env.SUPPORT_EMAIL ?? "support@codex.io";
+
+  const sendReminder = async (messageType) => {
+    for (const admin of admins) {
+      await dispatchTransactionalEmail({
+        repos,
+        tenantId: tenant.id,
+        recipientEmail: admin.email,
+        messageType,
+        templateVars: {
+          organizer_name: admin.display_name ?? "there",
+          tenant_name: tenant.name,
+          scheduled_deletion_at: scheduledDeletionAt,
+          contact_email: contactEmail
+        }
+      }).catch((err) => console.error(`[offboarding-worker] Reminder dispatch error:`, err));
+    }
+  };
+
+  const ms14d = deletionTime - 14 * 24 * 60 * 60 * 1000 - now;
+  const ms3d = deletionTime - 3 * 24 * 60 * 60 * 1000 - now;
+
+  if (ms14d > 0) setTimeout(() => sendReminder("offboarding_deletion_reminder_14d"), ms14d);
+  if (ms3d > 0) setTimeout(() => sendReminder("offboarding_deletion_reminder_3d"), ms3d);
+  if (deletionTime > now) {
+    setTimeout(() => {
+      processTenantOffboarding(repos, null, job.id).catch((err) =>
+        console.error(`[offboarding-worker] Scheduled deletion failed for job ${job.id}:`, err)
+      );
+    }, deletionTime - now);
+  }
+}
+
 export async function processTenantOffboarding(repos, state, jobId) {
   const job = await repos.tenantOffboardingJobs.findById(jobId);
   if (!job) {
@@ -18,6 +56,19 @@ export async function processTenantOffboarding(repos, state, jobId) {
     if (job.data_handling_path === "export_then_delete" && !job.export_file_url) {
       console.log(`[offboarding-worker] Job ${jobId}: export not yet complete, aborting deletion`);
       await repos.tenantOffboardingJobs.update({ ...job, status: "awaiting_approval" });
+      return;
+    }
+
+    if (job.data_handling_path === "grace_period_delete" && !job.scheduled_deletion_at) {
+      const graceDays = job.grace_period_days ?? 30;
+      const scheduledAt = new Date(Date.now() + graceDays * 24 * 60 * 60 * 1000).toISOString();
+      const updated = await repos.tenantOffboardingJobs.update({
+        ...job,
+        status: "awaiting_grace_period",
+        scheduled_deletion_at: scheduledAt
+      });
+      await scheduleOffboardingReminders(repos, updated, tenant, scheduledAt);
+      console.log(`[offboarding-worker] Job ${jobId}: grace period set, deletion scheduled at ${scheduledAt}`);
       return;
     }
 
