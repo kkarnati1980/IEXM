@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Your Data &amp; Privacy Rights</title>
+    <style>
+      :root{--bg:#101117;--panel:#1a1c25;--panel-2:#14161d;--border:rgba(255,255,255,0.08);--text:#f4f1ea;--muted:#b2ac9f;--accent:#f3c97d;--accent-2:#9fd3c7;--good:#9fd3c7;--warn:#f3c97d;--bad:#ff9f9f;}
+      *{box-sizing:border-box;}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--text);background:radial-gradient(circle at top left,rgba(243,201,125,0.16),transparent 28%),linear-gradient(160deg,var(--bg),#090a0e 66%);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 16px;}
+      .page-header{max-width:720px;width:100%;text-align:center;margin-bottom:32px;}
+      .page-header h1{font-size:1.8rem;margin:0 0 12px;}
+      .page-header p{color:var(--muted);font-size:15px;line-height:1.6;margin:0;}
+      .card-grid{max-width:720px;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;}
+      @media(max-width:600px){.card-grid{grid-template-columns:1fr;}}
+      .card{border-radius:22px;padding:24px;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);}
+      .card h3{margin:0 0 8px;font-size:1rem;}
+      .card p{font-size:13px;color:var(--muted);line-height:1.5;margin:0 0 16px;}
+      .status{padding:12px 14px;border-radius:14px;font-size:14px;margin-bottom:12px;}
+      .status.ok{background:rgba(159,211,199,0.16);color:var(--good);}
+      .status.error{background:rgba(255,159,159,0.12);color:var(--bad);}
+      .status.warn{background:rgba(243,201,125,0.14);color:var(--warn);}
+      button{border:0;border-radius:12px;padding:10px 16px;cursor:pointer;font:inherit;font-size:14px;width:100%;}
+      button.primary{background:var(--accent);color:#211503;font-weight:600;}
+      button.bad{background:rgba(255,159,159,0.14);color:var(--bad);}
+      button:disabled{opacity:0.4;cursor:default;}
+      input{width:100%;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:var(--text);padding:10px 12px;font:inherit;margin-bottom:10px;}
+      input:focus{outline:2px solid var(--accent);border-color:transparent;}
+      .badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid var(--border);font-size:12px;}
+      .badge.completed{color:var(--good);}
+      .badge.processing,.badge.requested{color:var(--warn);}
+      .badge.failed{color:var(--bad);}
+      .active-requests{max-width:720px;width:100%;}
+      table{width:100%;border-collapse:collapse;}
+      th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left;font-size:13px;}
+      th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:0.06em;}
+      .empty{color:var(--muted);text-align:center;padding:20px;}
+      #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--good);color:#0a1f1b;padding:12px 20px;border-radius:14px;font-weight:600;font-size:14px;opacity:0;transition:opacity 0.2s;z-index:9999;pointer-events:none;}
+      #toast.show{opacity:1;}
+    </style>
+  </head>
+  <body>
+    <div class="page-header">
+      <h1>Your Data &amp; Privacy Rights</h1>
+      <p>You have the right to access or delete your personal data collected at events you attended.</p>
+    </div>
+
+    <div id="global-status" hidden class="status" style="max-width:720px;width:100%;margin-bottom:16px;"></div>
+
+    <div class="card-grid">
+      <!-- Export card -->
+      <div class="card">
+        <h3>Export My Data</h3>
+        <p>Download a copy of your personal data, interactions, and consent history.</p>
+        <div id="export-status" hidden class="status warn">Preparing your export…</div>
+        <div id="export-poll-badge" hidden style="margin-bottom:12px;"></div>
+        <button class="primary" id="export-btn">Request Data Export</button>
+        <div id="export-download-wrap" hidden style="margin-top:10px;">
+          <button class="primary" id="export-dl-btn">Download My Data</button>
+          <div id="export-used-msg" hidden class="status ok" style="margin-top:8px;">Download complete. This link cannot be used again.</div>
+        </div>
+      </div>
+
+      <!-- Delete card -->
+      <div class="card">
+        <h3>Delete My Data</h3>
+        <p>Remove your personal information from this platform. Your anonymised interaction records will be retained for event analytics.</p>
+        <div class="status warn" style="font-size:13px;padding:10px 12px;">⚠ This action cannot be undone.</div>
+        <div id="delete-status" hidden class="status warn">Processing deletion request…</div>
+        <input type="email" id="delete-email-confirm" placeholder="Type your email address to confirm">
+        <button class="bad" id="delete-btn" disabled>Delete My Data</button>
+      </div>
+    </div>
+
+    <!-- Active requests -->
+    <div class="active-requests">
+      <div class="card">
+        <h3 style="margin-bottom:14px;">Active &amp; Recent Requests</h3>
+        <div id="requests-status" hidden class="status"></div>
+        <table>
+          <thead><tr><th>Submitted</th><th>Type</th><th>Status</th><th>Completed</th></tr></thead>
+          <tbody id="requests-tbody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script type="module">
+      const params = new URLSearchParams(location.search);
+      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const token = params.get("token") ?? localStorage.getItem("codex.attendee_token") ?? "attendee-token";
+      const eventId = params.get("event_id") ?? params.get("eventId") ?? "";
+
+      function esc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+      function fmt(iso) { return iso ? new Date(iso).toLocaleDateString() : "—"; }
+      function toast(msg) {
+        const el = document.getElementById("toast");
+        el.textContent = msg; el.classList.add("show");
+        setTimeout(() => el.classList.remove("show"), 2800);
+      }
+
+      async function api(path, options = {}) {
+        const res = await fetch(`${apiBase}${path}`, {
+          method: options.method ?? "GET",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error ?? `Request failed: ${res.status}`);
+        return payload;
+      }
+
+      let exportPollHandle = null;
+      let deletePollHandle = null;
+      let currentExportDsrId = null;
+      let currentDeleteDsrId = null;
+
+      // Export flow
+      document.getElementById("export-btn").addEventListener("click", async () => {
+        const btn = document.getElementById("export-btn");
+        btn.disabled = true;
+        try {
+          const data = await api("/attendee/privacy/dsr", {
+            method: "POST",
+            body: { request_type: "export", event_id: eventId }
+          });
+          currentExportDsrId = data.dsr_id ?? data.id;
+          document.getElementById("export-status").hidden = false;
+          document.getElementById("export-status").textContent = "Your export is being prepared. You will receive a notification when it is ready.";
+          document.getElementById("export-status").className = "status warn";
+          startExportPoll();
+          loadRequests();
+          toast("Export request submitted");
+        } catch (err) {
+          const el = document.getElementById("global-status");
+          el.textContent = err.message; el.className = "status error"; el.hidden = false;
+          btn.disabled = false;
+        }
+      });
+
+      function startExportPoll() {
+        if (exportPollHandle) clearInterval(exportPollHandle);
+        exportPollHandle = setInterval(async () => {
+          if (!currentExportDsrId) return;
+          try {
+            const data = await api(`/attendee/privacy/dsr/${encodeURIComponent(currentExportDsrId)}`);
+            const status = data.status ?? "requested";
+            const badge = document.getElementById("export-poll-badge");
+            badge.hidden = false;
+            badge.innerHTML = `<span class="badge ${esc(status)}">${esc(status)}</span>`;
+            if (status === "completed") {
+              clearInterval(exportPollHandle);
+              document.getElementById("export-status").className = "status ok";
+              document.getElementById("export-status").textContent = "Your export is ready!";
+              document.getElementById("export-download-wrap").hidden = false;
+            } else if (status === "failed") {
+              clearInterval(exportPollHandle);
+              document.getElementById("export-status").className = "status error";
+              document.getElementById("export-status").textContent = "Export failed. Please try again.";
+            }
+          } catch {}
+        }, 10000);
+      }
+
+      document.getElementById("export-dl-btn").addEventListener("click", async () => {
+        if (!currentExportDsrId) return;
+        try {
+          const res = await fetch(`${apiBase}/attendee/privacy/dsr/${encodeURIComponent(currentExportDsrId)}/download`, {
+            headers: { authorization: `Bearer ${token}` }
+          });
+          if (res.status === 410) {
+            document.getElementById("export-used-msg").hidden = false;
+            document.getElementById("export-dl-btn").disabled = true;
+            return;
+          }
+          if (!res.ok) throw new Error("Download failed");
+          const blob = await res.blob();
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = `my-data-export.json`;
+          a.click();
+          document.getElementById("export-used-msg").hidden = false;
+          document.getElementById("export-dl-btn").disabled = true;
+          toast("Download complete");
+        } catch (err) {
+          const el = document.getElementById("global-status");
+          el.textContent = err.message; el.className = "status error"; el.hidden = false;
+        }
+      });
+
+      // Delete flow
+      const deleteEmailInput = document.getElementById("delete-email-confirm");
+      const deleteBtn = document.getElementById("delete-btn");
+      deleteEmailInput.addEventListener("input", () => {
+        deleteBtn.disabled = !deleteEmailInput.value.includes("@");
+      });
+
+      deleteBtn.addEventListener("click", async () => {
+        if (!deleteEmailInput.value.includes("@")) return;
+        if (!confirm("Are you sure you want to permanently delete your personal data? This cannot be undone.")) return;
+        deleteBtn.disabled = true;
+        try {
+          const data = await api("/attendee/privacy/dsr", {
+            method: "POST",
+            body: { request_type: "delete", event_id: eventId, email_confirmation: deleteEmailInput.value }
+          });
+          currentDeleteDsrId = data.dsr_id ?? data.id;
+          document.getElementById("delete-status").hidden = false;
+          document.getElementById("delete-status").textContent = "Your deletion request has been submitted. You will receive a confirmation email when complete.";
+          document.getElementById("delete-status").className = "status warn";
+          startDeletePoll();
+          loadRequests();
+          toast("Deletion request submitted");
+        } catch (err) {
+          const el = document.getElementById("global-status");
+          el.textContent = err.message; el.className = "status error"; el.hidden = false;
+          deleteBtn.disabled = false;
+        }
+      });
+
+      function startDeletePoll() {
+        if (deletePollHandle) clearInterval(deletePollHandle);
+        deletePollHandle = setInterval(async () => {
+          if (!currentDeleteDsrId) return;
+          try {
+            const data = await api(`/attendee/privacy/dsr/${encodeURIComponent(currentDeleteDsrId)}`);
+            const status = data.status ?? "requested";
+            if (status === "completed") {
+              clearInterval(deletePollHandle);
+              document.getElementById("delete-status").className = "status ok";
+              document.getElementById("delete-status").textContent = "Your data has been deleted successfully.";
+              loadRequests();
+            } else if (status === "failed") {
+              clearInterval(deletePollHandle);
+              document.getElementById("delete-status").className = "status error";
+              document.getElementById("delete-status").textContent = "Deletion failed. Please contact support.";
+            }
+          } catch {}
+        }, 10000);
+      }
+
+      async function loadRequests() {
+        const tbody = document.getElementById("requests-tbody");
+        try {
+          const data = await api("/attendee/privacy/dsr");
+          const items = data.requests ?? data.items ?? (Array.isArray(data) ? data : []);
+          if (!items.length) {
+            tbody.innerHTML = `<tr><td colspan="4" class="empty">No requests yet</td></tr>`;
+            return;
+          }
+          tbody.innerHTML = items.map(r => `
+            <tr>
+              <td>${fmt(r.created_at)}</td>
+              <td><span class="badge">${esc(r.request_type)}</span></td>
+              <td><span class="badge ${esc(r.status)}">${esc(r.status)}</span></td>
+              <td class="muted">${fmt(r.completed_at)}</td>
+            </tr>`).join("");
+        } catch {
+          tbody.innerHTML = `<tr><td colspan="4" class="empty muted">Could not load requests</td></tr>`;
+        }
+      }
+
+      loadRequests();
+    </script>
+  </body>
+</html>

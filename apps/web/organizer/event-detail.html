@@ -118,6 +118,17 @@
           <h3 style="margin:0 0 14px">Onboarding Checklist</h3>
           <div id="checklist">Loading…</div>
         </div>
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px;">
+            <h3 style="margin:0;">Data Retention</h3>
+            <a id="change-retention-link" href="#policy" style="font-size:13px;color:var(--accent);text-decoration:none;">Change Retention Policy</a>
+          </div>
+          <div id="retention-status-widget">Loading…</div>
+        </div>
+        <div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">
+          <div><strong style="display:block;margin-bottom:4px;">Export Event Data</strong><span class="muted" style="font-size:13px;">Download a portable copy of all event data.</span></div>
+          <a id="export-link" href="#" style="text-decoration:none;"><button class="secondary">Export Event Data →</button></a>
+        </div>
       </div>
 
       <!-- Halls & Stalls Tab -->
@@ -197,8 +208,13 @@
           </div>
         </div>
         <div class="card">
-          <h3 style="margin:0 0 14px">Change History</h3>
-          <div id="policy-history" class="empty">Loading…</div>
+          <div class="accordion-header" id="policy-history-toggle" onclick="document.getElementById('policy-history-body').hidden=!document.getElementById('policy-history-body').hidden;this.querySelector('.toggle-arrow').textContent=document.getElementById('policy-history-body').hidden?'▼':'▲'">
+            <strong>Policy Change History</strong>
+            <span class="toggle-arrow muted" style="font-size:13px;">▼ Show Change History</span>
+          </div>
+          <div id="policy-history-body" hidden style="padding-top:12px;">
+            <div id="policy-history" class="empty">Loading…</div>
+          </div>
         </div>
       </div>
 
@@ -234,6 +250,20 @@
 
       <!-- Audit Tab -->
       <div id="tab-audit" class="tab-content">
+        <div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:14px;">
+          <div>
+            <strong style="display:block;margin-bottom:4px;">Platform Access Log</strong>
+            <span class="muted" style="font-size:13px;">All platform operator actions on this event's data.</span>
+          </div>
+          <a id="platform-access-log-link" href="#" style="text-decoration:none;"><button class="secondary sm">View Platform Access Log →</button></a>
+        </div>
+        <div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:14px;">
+          <div>
+            <strong style="display:block;margin-bottom:4px;">Privacy Requests</strong>
+            <span class="muted" style="font-size:13px;">Attendee data subject requests (export &amp; delete).</span>
+          </div>
+          <a id="privacy-requests-link" href="#" style="text-decoration:none;"><button class="secondary sm">View Privacy Requests →</button></a>
+        </div>
         <div class="card">
           <h3 style="margin:0 0 14px">Audit Log</h3>
           <div id="audit-status" hidden class="status"></div>
@@ -248,7 +278,7 @@
     <div id="toast"></div>
 
     <script type="module">
-      import { onboardingChecklistHtml, isAuthenticated, logoutUser } from "../components.js";
+      import { onboardingChecklistHtml, isAuthenticated, logoutUser, checkBreakGlassAlerts } from "../components.js";
       if (!isAuthenticated()) { logoutUser("../login.html"); throw new Error("unauthenticated"); }
 
       const params = new URLSearchParams(location.search);
@@ -353,6 +383,36 @@
           } catch {
             document.getElementById("checklist").innerHTML = `<div class="empty muted">Checklist unavailable</div>`;
           }
+
+          // Retention status widget (M.2)
+          try {
+            const retData = await api(`/events/${encodeURIComponent(eventId)}/retention/status`);
+            const rs = retData.retention_status ?? retData;
+            const status = rs.retention_status ?? rs.status ?? "active";
+            const days = rs.retention_days ?? "—";
+            const expiry = rs.expiry_date ?? rs.retention_expiry_date ?? null;
+            const purgedAt = rs.purged_at ?? null;
+            let widget = `<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+              <span class="muted" style="font-size:13px;">Retention: <strong>${esc(days)} days</strong></span>
+              ${expiry ? `<span class="muted" style="font-size:13px;">Expiry: <strong>${fmtDate(expiry)}</strong></span>` : ""}
+              <span class="badge ${esc(status)}">${esc(status.replace(/_/g," "))}</span>
+            </div>`;
+            if (status === "purged" && purgedAt) {
+              widget += `<div class="status warn" style="margin-top:10px;">Event data was anonymised on ${fmtDate(purgedAt)}. Aggregate analytics preserved.</div>`;
+            } else if (status === "expiring_soon") {
+              const daysLeft = expiry ? Math.ceil((new Date(expiry) - Date.now()) / 86400000) : "?";
+              widget += `<div class="status warn" style="margin-top:10px;">Your event data will be anonymised in ${esc(String(daysLeft))} days.</div>`;
+            }
+            document.getElementById("retention-status-widget").innerHTML = widget;
+          } catch {
+            document.getElementById("retention-status-widget").innerHTML = `<div class="muted" style="font-size:13px;">Retention status unavailable</div>`;
+          }
+
+          // Wire navigation links
+          const base = `?token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}&event_id=${encodeURIComponent(eventId)}`;
+          document.getElementById("export-link").href = `data-export.html${base}`;
+          document.getElementById("platform-access-log-link").href = `platform-access-log.html${base}`;
+          document.getElementById("privacy-requests-link").href = `privacy-requests.html${base}`;
         } catch (err) {
           showGlobal(err.message, "error");
         }
@@ -667,6 +727,7 @@
       }
 
       loadOverview();
+      if (eventId) checkBreakGlassAlerts({ apiBase, token, eventId }).catch(() => {});
     </script>
   </body>
 </html>

@@ -454,6 +454,81 @@ export function logoutUser(loginPath = "/login.html") {
   location.href = loginPath;
 }
 
+// ─── BreakGlassOrganizerAlert ─────────────────────────────────────────────────
+
+const BG_DISMISSED_KEY = "codex.bg_alerts_dismissed";
+
+function getDismissedAlerts() {
+  try { return new Set(JSON.parse(localStorage.getItem(BG_DISMISSED_KEY) ?? "[]")); } catch { return new Set(); }
+}
+
+function dismissAlert(id) {
+  const set = getDismissedAlerts();
+  set.add(id);
+  localStorage.setItem(BG_DISMISSED_KEY, JSON.stringify([...set]));
+}
+
+/**
+ * Shows a dismissible amber banner for a break-glass organizer alert.
+ * Stores dismissed alert IDs in localStorage to prevent re-showing.
+ * @param {object} alertData - { id, occurred_at, event_id, event_name }
+ */
+export function showBreakGlassOrganizerAlert(alertData) {
+  const dismissed = getDismissedAlerts();
+  if (dismissed.has(alertData.id)) return;
+
+  const banner = document.createElement("div");
+  banner.style.cssText =
+    "position:sticky;top:0;z-index:7500;padding:12px 20px;background:rgba(243,201,125,0.16);" +
+    "border-bottom:1px solid rgba(243,201,125,0.35);display:flex;align-items:center;gap:16px;flex-wrap:wrap;";
+
+  const date = alertData.occurred_at ? new Date(alertData.occurred_at).toLocaleString() : "recently";
+  const logUrl = `platform-access-log.html?event_id=${encodeURIComponent(alertData.event_id ?? "")}&token=${encodeURIComponent(localStorage.getItem("codex.token") ?? "")}`;
+
+  const label = document.createElement("span");
+  label.style.cssText = "flex:1;color:#f3c97d;font-size:14px;";
+  label.innerHTML = `⚠️ A platform operator accessed your event data on ${escHtml(date)}. <a href="${escHtml(logUrl)}" style="color:#f3c97d;font-weight:600;">View Platform Access Log →</a>`;
+
+  const dismissBtn = document.createElement("button");
+  dismissBtn.textContent = "×";
+  dismissBtn.style.cssText = "background:none;border:none;color:#f3c97d;font-size:20px;cursor:pointer;padding:0 4px;line-height:1;";
+  dismissBtn.title = "Dismiss";
+  dismissBtn.addEventListener("click", () => {
+    dismissAlert(alertData.id);
+    banner.remove();
+  });
+
+  banner.appendChild(label);
+  banner.appendChild(dismissBtn);
+
+  const shellBar = document.querySelector(".shell");
+  if (shellBar) shellBar.insertAdjacentElement("afterend", banner);
+  else document.body.prepend(banner);
+}
+
+/**
+ * Checks for unacknowledged break-glass alerts on page load and shows banners.
+ * Should be called from organizer pages that display event data.
+ * @param {object} opts - { apiBase, token, eventId }
+ */
+export async function checkBreakGlassAlerts({ apiBase, token, eventId }) {
+  if (!eventId) return;
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    const res = await fetch(`${apiBase}/events/${encodeURIComponent(eventId)}/platform-access-log?action_type=break_glass&from=${sevenDaysAgo}`, {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) return;
+    const data = await res.json().catch(() => ({}));
+    const entries = data.entries ?? data.logs ?? data ?? [];
+    const dismissed = getDismissedAlerts();
+    entries
+      .filter(e => !dismissed.has(e.id))
+      .slice(0, 3)
+      .forEach(e => showBreakGlassOrganizerAlert({ id: e.id, occurred_at: e.occurred_at, event_id: eventId }));
+  } catch {}
+}
+
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 export function escHtml(str) {

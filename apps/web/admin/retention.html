@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Retention Enforcement — Platform Admin</title>
+    <style>
+      :root{--bg:#101117;--panel:#1a1c25;--panel-2:#14161d;--border:rgba(255,255,255,0.08);--text:#f4f1ea;--muted:#b2ac9f;--accent:#f3c97d;--accent-2:#9fd3c7;--good:#9fd3c7;--warn:#f3c97d;--bad:#ff9f9f;}
+      *{box-sizing:border-box;}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--text);background:radial-gradient(circle at top left,rgba(243,201,125,0.16),transparent 28%),linear-gradient(160deg,var(--bg),#090a0e 66%);min-height:100vh;}
+      .shell{max-width:1440px;margin:0 auto;padding:18px 24px 0;}
+      .shell-bar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+      .shell-title{display:grid;gap:4px;}
+      .shell-title strong{font-size:1.1rem;}
+      .shell-nav{display:flex;gap:10px;flex-wrap:wrap;}
+      .shell-nav a{display:inline-flex;align-items:center;padding:10px 13px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);text-decoration:none;font-size:14px;}
+      .eyebrow{display:inline-block;margin-bottom:8px;padding:5px 10px;border-radius:999px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;background:rgba(159,211,199,0.12);color:var(--accent-2);}
+      main{max-width:1440px;margin:0 auto;padding:0 24px 24px;}
+      .card{border-radius:22px;padding:22px;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);margin-bottom:18px;}
+      .status{padding:12px 14px;border-radius:14px;font-size:14px;margin-bottom:14px;}
+      .status.ok{background:rgba(159,211,199,0.16);color:var(--good);}
+      .status.error{background:rgba(255,159,159,0.12);color:var(--bad);}
+      .status.warn{background:rgba(243,201,125,0.14);color:var(--warn);}
+      button{border:0;border-radius:12px;padding:10px 16px;cursor:pointer;font:inherit;font-size:14px;}
+      button.primary{background:var(--accent);color:#211503;font-weight:600;}
+      button.secondary{background:rgba(255,255,255,0.1);color:var(--text);}
+      button.bad{background:rgba(255,159,159,0.14);color:var(--bad);}
+      button.sm{padding:7px 12px;font-size:12px;}
+      button:disabled{opacity:0.4;cursor:default;}
+      table{width:100%;border-collapse:collapse;}
+      th,td{padding:11px;border-bottom:1px solid var(--border);text-align:left;font-size:14px;}
+      th{color:var(--muted);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;}
+      tbody tr:hover{background:rgba(255,255,255,0.03);}
+      .badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid var(--border);font-size:12px;}
+      .badge.active{color:var(--good);}
+      .badge.expiring_soon{color:var(--warn);}
+      .badge.expired_pending_purge,.badge.purge_failed{color:var(--bad);}
+      .badge.purging{color:var(--accent);}
+      .badge.purged{color:var(--muted);}
+      .empty{color:var(--muted);padding:32px;text-align:center;}
+      .metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px;}
+      .metric{border-radius:18px;border:1px solid var(--border);padding:16px;background:rgba(255,255,255,0.03);}
+      .metric span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;}
+      .metric strong{display:block;margin-top:6px;font-size:1.6rem;}
+      .section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+      .section-head h3{margin:0;}
+      .detail-card{border-radius:14px;padding:14px;background:rgba(255,255,255,0.03);border:1px solid var(--border);margin-top:8px;font-size:13px;color:var(--muted);}
+      #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--good);color:#0a1f1b;padding:12px 20px;border-radius:14px;font-weight:600;font-size:14px;opacity:0;transition:opacity 0.2s;z-index:9999;pointer-events:none;}
+      #toast.show{opacity:1;}
+      @media(max-width:900px){.metric-grid{grid-template-columns:repeat(2,1fr);}}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <div class="eyebrow">Platform Admin</div>
+          <strong id="page-title">Retention Enforcement</strong>
+          <span class="muted" id="page-sub">Loading…</span>
+        </div>
+        <nav class="shell-nav">
+          <a href="#" id="back-link">← Tenant Detail</a>
+          <a href="#" id="logout-link" style="color:var(--bad)">Sign out</a>
+        </nav>
+      </div>
+    </div>
+
+    <main>
+      <div id="global-status" hidden class="status"></div>
+
+      <div class="metric-grid">
+        <div class="metric"><span>Active Events</span><strong id="stat-active">—</strong></div>
+        <div class="metric"><span>Expiring Soon</span><strong id="stat-expiring" style="color:var(--warn);">—</strong></div>
+        <div class="metric"><span>Expired / Pending Purge</span><strong id="stat-expired" style="color:var(--bad);">—</strong></div>
+        <div class="metric"><span>Purged</span><strong id="stat-purged" style="color:var(--muted);">—</strong></div>
+      </div>
+
+      <div class="card">
+        <div class="section-head">
+          <h3>Retention Status by Event</h3>
+          <button class="secondary sm" id="refresh-btn">Refresh</button>
+        </div>
+        <div id="table-status" hidden class="status"></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Event Name</th>
+              <th>Retention (days)</th>
+              <th>Event End Date</th>
+              <th>Retention Expiry</th>
+              <th>Status</th>
+              <th>Last Purge Run</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="events-tbody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+
+    <div id="toast"></div>
+
+    <script type="module">
+      import { isAuthenticated, logoutUser } from "../components.js";
+      if (!isAuthenticated()) { logoutUser("../login.html"); throw new Error("unauthenticated"); }
+
+      const params = new URLSearchParams(location.search);
+      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "platform-token";
+      const tenantId = params.get("tenantId") ?? "";
+
+      document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logoutUser("../login.html"); });
+      document.getElementById("back-link").href = `tenant-detail.html?tenantId=${encodeURIComponent(tenantId)}&token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
+
+      function esc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+      function fmt(iso) { return iso ? new Date(iso).toLocaleString() : "—"; }
+      function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString() : "—"; }
+      function toast(msg) {
+        const el = document.getElementById("toast");
+        el.textContent = msg; el.classList.add("show");
+        setTimeout(() => el.classList.remove("show"), 2800);
+      }
+
+      async function api(path, options = {}) {
+        const res = await fetch(`${apiBase}${path}`, {
+          method: options.method ?? "GET",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error ?? `Request failed: ${res.status}`);
+        return payload;
+      }
+
+      let allEvents = [];
+
+      async function load() {
+        const tbody = document.getElementById("events-tbody");
+        tbody.innerHTML = `<tr><td colspan="7" class="empty">Loading…</td></tr>`;
+        try {
+          const data = await api(`/admin/tenants/${encodeURIComponent(tenantId)}/retention`);
+          allEvents = data.events ?? data.items ?? data ?? [];
+
+          document.getElementById("page-sub").textContent = data.tenant_name ?? tenantId;
+          if (data.tenant_name) document.getElementById("page-title").textContent = `Retention Enforcement — ${data.tenant_name}`;
+
+          const counts = { active: 0, expiring_soon: 0, expired_pending_purge: 0, purged: 0 };
+          allEvents.forEach(ev => {
+            const s = ev.retention_status ?? "active";
+            if (counts[s] !== undefined) counts[s]++;
+          });
+          document.getElementById("stat-active").textContent = counts.active;
+          document.getElementById("stat-expiring").textContent = counts.expiring_soon;
+          document.getElementById("stat-expired").textContent = counts.expired_pending_purge;
+          document.getElementById("stat-purged").textContent = counts.purged;
+
+          if (!allEvents.length) {
+            tbody.innerHTML = `<tr><td colspan="7" class="empty">No events found.</td></tr>`;
+            return;
+          }
+
+          tbody.innerHTML = allEvents.map(ev => {
+            const status = ev.retention_status ?? "active";
+            const expiryDate = ev.ends_at && ev.retention_days
+              ? new Date(new Date(ev.ends_at).getTime() + ev.retention_days * 86400000).toISOString()
+              : null;
+            return `<tr>
+              <td><strong>${esc(ev.name)}</strong></td>
+              <td class="muted">${esc(ev.retention_days ?? 30)} days</td>
+              <td class="muted">${fmtDate(ev.ends_at)}</td>
+              <td class="muted">${fmtDate(expiryDate)}</td>
+              <td><span class="badge ${esc(status)}">${esc(status.replace(/_/g, " "))}</span></td>
+              <td class="muted" style="font-size:12px;">${fmt(ev.purged_at)}</td>
+              <td>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                  ${status === "expired_pending_purge"
+                    ? `<button class="bad sm" data-force-purge="${esc(ev.id)}">Force Purge</button>` : ""}
+                  <button class="secondary sm" data-expand="${esc(ev.id)}">▼ Detail</button>
+                </div>
+                <div id="detail-${esc(ev.id)}" class="detail-card" hidden>
+                  Records scanned: ${ev.records_scanned ?? "—"}<br>
+                  PII fields anonymised: ${ev.records_purged ?? "—"}<br>
+                  Last run duration: ${ev.last_purge_duration_ms != null ? ev.last_purge_duration_ms + "ms" : "—"}<br>
+                  ${ev.privacy_audit_log_id
+                    ? `<a href="privacy-audit-log.html?event_id=${esc(ev.id)}&token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}" style="color:var(--accent);font-size:13px;">View audit entry →</a>`
+                    : ""}
+                </div>
+              </td>
+            </tr>`;
+          }).join("");
+
+          tbody.querySelectorAll("[data-expand]").forEach(btn => {
+            btn.addEventListener("click", () => {
+              const detail = document.getElementById(`detail-${btn.dataset.expand}`);
+              if (detail) {
+                detail.hidden = !detail.hidden;
+                btn.textContent = detail.hidden ? "▼ Detail" : "▲ Hide";
+              }
+            });
+          });
+
+          tbody.querySelectorAll("[data-force-purge]").forEach(btn => {
+            btn.addEventListener("click", () => forcePurge(btn.dataset.forcePurge));
+          });
+        } catch (err) {
+          tbody.innerHTML = `<tr><td colspan="7" class="empty" style="color:var(--bad);">${esc(err.message)}</td></tr>`;
+          const el = document.getElementById("global-status");
+          el.textContent = err.message; el.className = "status error"; el.hidden = false;
+        }
+      }
+
+      async function forcePurge(eventId) {
+        const ev = allEvents.find(e => e.id === eventId);
+        if (!confirm(`Force purge all PII for "${ev?.name ?? eventId}"? This cannot be undone.`)) return;
+        try {
+          await api(`/admin/events/${encodeURIComponent(eventId)}/retention/force-purge`, {
+            method: "POST",
+            body: { confirm: true }
+          });
+          toast("Purge started");
+          load();
+        } catch (err) {
+          const el = document.getElementById("global-status");
+          el.textContent = err.message; el.className = "status error"; el.hidden = false;
+        }
+      }
+
+      document.getElementById("refresh-btn").addEventListener("click", load);
+
+      if (tenantId) {
+        load();
+      } else {
+        document.getElementById("global-status").textContent = "No tenantId in URL";
+        document.getElementById("global-status").className = "status error";
+        document.getElementById("global-status").hidden = false;
+      }
+    </script>
+  </body>
+</html>

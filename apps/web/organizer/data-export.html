@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Export Event Data — Organizer</title>
+    <style>
+      :root{--bg:#101117;--panel:#1a1c25;--panel-2:#14161d;--border:rgba(255,255,255,0.08);--text:#f4f1ea;--muted:#b2ac9f;--accent:#f3c97d;--accent-2:#9fd3c7;--good:#9fd3c7;--warn:#f3c97d;--bad:#ff9f9f;}
+      *{box-sizing:border-box;}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--text);background:radial-gradient(circle at top left,rgba(243,201,125,0.16),transparent 28%),linear-gradient(160deg,var(--bg),#090a0e 66%);min-height:100vh;}
+      .shell{max-width:1440px;margin:0 auto;padding:18px 24px 0;}
+      .shell-bar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+      .shell-title{display:grid;gap:4px;}
+      .shell-title strong{font-size:1.1rem;}
+      .shell-nav{display:flex;gap:10px;flex-wrap:wrap;}
+      .shell-nav a{display:inline-flex;align-items:center;padding:10px 13px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);text-decoration:none;font-size:14px;}
+      .eyebrow{display:inline-block;margin-bottom:8px;padding:5px 10px;border-radius:999px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;background:rgba(159,211,199,0.12);color:var(--accent-2);}
+      main{max-width:900px;margin:0 auto;padding:0 24px 24px;}
+      .card{border-radius:22px;padding:22px;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);margin-bottom:18px;}
+      .status{padding:12px 14px;border-radius:14px;font-size:14px;margin-bottom:14px;}
+      .status.ok{background:rgba(159,211,199,0.16);color:var(--good);}
+      .status.error{background:rgba(255,159,159,0.12);color:var(--bad);}
+      .status.warn{background:rgba(243,201,125,0.14);color:var(--warn);}
+      button{border:0;border-radius:12px;padding:10px 16px;cursor:pointer;font:inherit;font-size:14px;}
+      button.primary{background:var(--accent);color:#211503;font-weight:600;}
+      button.secondary{background:rgba(255,255,255,0.1);color:var(--text);}
+      button.sm{padding:7px 12px;font-size:12px;}
+      button:disabled{opacity:0.4;cursor:default;}
+      table{width:100%;border-collapse:collapse;}
+      th,td{padding:11px;border-bottom:1px solid var(--border);text-align:left;font-size:14px;}
+      th{color:var(--muted);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;}
+      tbody tr:hover{background:rgba(255,255,255,0.03);}
+      .badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid var(--border);font-size:12px;}
+      .badge.completed{color:var(--good);}
+      .badge.processing{color:var(--accent);}
+      .badge.requested{color:var(--muted);}
+      .badge.failed{color:var(--bad);}
+      .empty{color:var(--muted);padding:24px;text-align:center;}
+      .check-item{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);}
+      .check-item:last-child{border-bottom:none;}
+      .check-item label{cursor:pointer;font-size:14px;}
+      .check-item input[type=checkbox]{width:16px;height:16px;cursor:pointer;flex-shrink:0;margin-top:2px;}
+      .radio-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:14px;border:1px solid var(--border);cursor:pointer;margin-bottom:8px;}
+      .radio-item input[type=radio]{width:16px;height:16px;cursor:pointer;}
+      .radio-item:has(input:checked){border-color:var(--accent);background:rgba(243,201,125,0.07);}
+      .section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+      .section-head h3{margin:0;}
+      #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--good);color:#0a1f1b;padding:12px 20px;border-radius:14px;font-weight:600;font-size:14px;opacity:0;transition:opacity 0.2s;z-index:9999;pointer-events:none;}
+      #toast.show{opacity:1;}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <div class="eyebrow">Organizer</div>
+          <strong id="page-title">Export Event Data</strong>
+          <span class="muted" id="page-sub">Loading…</span>
+        </div>
+        <nav class="shell-nav">
+          <a href="#" id="back-link">← Event Detail</a>
+          <a href="#" id="logout-link" style="color:var(--bad)">Sign out</a>
+        </nav>
+      </div>
+    </div>
+
+    <main>
+      <div id="global-status" hidden class="status"></div>
+
+      <div class="card">
+        <div class="eyebrow">Full Export</div>
+        <h2 style="margin:8px 0 8px;">Export Event Data</h2>
+        <p class="muted" style="margin:0 0 20px;font-size:14px;">Download a complete portable export of all data for this event.</p>
+
+        <h3 style="margin:0 0 12px;font-size:15px;">Include in export</h3>
+        <div id="include-checks">
+          <div class="check-item"><input type="checkbox" id="inc-interactions" value="interactions" checked><label for="inc-interactions"><strong>All interaction records</strong></label></div>
+          <div class="check-item"><input type="checkbox" id="inc-consents" value="consents" checked><label for="inc-consents"><strong>All consent records</strong></label></div>
+          <div class="check-item"><input type="checkbox" id="inc-leads" value="lead_metadata" checked><label for="inc-leads"><strong>Lead export metadata</strong></label></div>
+          <div class="check-item"><input type="checkbox" id="inc-config" value="event_config" checked><label for="inc-config"><strong>Event configuration</strong> <span class="muted">(halls, stalls, sponsor packages, data policy history)</span></label></div>
+          <div class="check-item"><input type="checkbox" id="inc-access-log" value="platform_access_log" checked><label for="inc-access-log"><strong>Platform access log</strong></label></div>
+          <div class="check-item"><input type="checkbox" id="inc-audit" value="audit_trail" checked><label for="inc-audit"><strong>Audit trail</strong></label></div>
+          <div class="check-item"><input type="checkbox" id="inc-attendee" value="attendee_data" checked><label for="inc-attendee"><strong>Attendee data</strong> <span class="muted">(PII only for consented interactions)</span></label></div>
+        </div>
+
+        <h3 style="margin:20px 0 12px;font-size:15px;">Format</h3>
+        <div>
+          <label class="radio-item"><input type="radio" name="format" value="json" checked> <span><strong>JSON</strong> — structured, machine-readable</span></label>
+          <label class="radio-item"><input type="radio" name="format" value="csv"> <span><strong>CSV</strong> — spreadsheet-compatible</span></label>
+          <label class="radio-item"><input type="radio" name="format" value="zip"> <span><strong>ZIP</strong> — both JSON and CSV bundled</span></label>
+        </div>
+
+        <div style="margin-top:20px;">
+          <button class="primary" id="request-btn">Request Full Export</button>
+        </div>
+      </div>
+
+      <!-- Status polling section -->
+      <div id="export-status-card" class="card" hidden>
+        <div class="section-head">
+          <h3>Export Status</h3>
+          <span id="export-status-badge" class="badge requested">Requested</span>
+        </div>
+        <div id="export-status-msg" class="status warn">Your export is being prepared…</div>
+        <div id="download-section" hidden>
+          <button class="primary" id="download-btn">Download Export</button>
+          <div id="download-used-msg" hidden class="status ok" style="margin-top:12px;">
+            Download complete. This link cannot be used again.
+          </div>
+        </div>
+        <p class="muted" style="font-size:13px;margin:16px 0 0;">
+          This export contains personal data. You are responsible for its secure storage.
+        </p>
+      </div>
+
+      <!-- Export history -->
+      <div class="card">
+        <div class="section-head">
+          <h3>Export History</h3>
+          <button class="secondary sm" id="refresh-history-btn">Refresh</button>
+        </div>
+        <div id="history-status" hidden class="status"></div>
+        <table>
+          <thead><tr><th>Requested At</th><th>Status</th><th>Format</th><th>Actions</th></tr></thead>
+          <tbody id="history-tbody"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+
+    <div id="toast"></div>
+
+    <script type="module">
+      import { isAuthenticated, logoutUser } from "../components.js";
+      if (!isAuthenticated()) { logoutUser("../login.html"); throw new Error("unauthenticated"); }
+
+      const params = new URLSearchParams(location.search);
+      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "organizer-token";
+      const eventId = params.get("event_id") ?? params.get("eventId") ?? "";
+
+      document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logoutUser("../login.html"); });
+      document.getElementById("back-link").href = `event-detail.html?eventId=${encodeURIComponent(eventId)}&token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
+
+      function esc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+      function fmt(iso) { return iso ? new Date(iso).toLocaleString() : "—"; }
+      function toast(msg) {
+        const el = document.getElementById("toast");
+        el.textContent = msg; el.classList.add("show");
+        setTimeout(() => el.classList.remove("show"), 2800);
+      }
+
+      async function api(path, options = {}) {
+        const res = await fetch(`${apiBase}${path}`, {
+          method: options.method ?? "GET",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error ?? `Request failed: ${res.status}`);
+        return payload;
+      }
+
+      let pollHandle = null;
+      let currentExportId = null;
+
+      async function loadEventName() {
+        try {
+          const data = await api(`/events/${encodeURIComponent(eventId)}`);
+          const ev = data.event ?? data;
+          document.getElementById("page-title").textContent = `Export Event Data — ${ev.name}`;
+          document.getElementById("page-sub").textContent = ev.name;
+        } catch {}
+      }
+
+      document.getElementById("request-btn").addEventListener("click", async () => {
+        const include = [...document.querySelectorAll("#include-checks input:checked")].map(cb => cb.value);
+        const format = document.querySelector("input[name=format]:checked")?.value ?? "json";
+        const btn = document.getElementById("request-btn");
+        btn.disabled = true;
+        try {
+          const data = await api(`/events/${encodeURIComponent(eventId)}/full-export`, {
+            method: "POST",
+            body: { include, format }
+          });
+          currentExportId = data.export_id;
+          showExportStatus("requested");
+          startPolling();
+          toast("Export requested");
+        } catch (err) {
+          const el = document.getElementById("global-status");
+          el.textContent = err.message; el.className = "status error"; el.hidden = false;
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      function showExportStatus(status) {
+        const card = document.getElementById("export-status-card");
+        card.hidden = false;
+        const badge = document.getElementById("export-status-badge");
+        badge.className = `badge ${status}`;
+        badge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+        const msg = document.getElementById("export-status-msg");
+        if (status === "completed") {
+          msg.className = "status ok"; msg.textContent = "Your export is ready to download.";
+          document.getElementById("download-section").hidden = false;
+        } else if (status === "failed") {
+          msg.className = "status error"; msg.textContent = "Export failed. Please try again.";
+        } else {
+          msg.className = "status warn"; msg.textContent = "Your export is being prepared…";
+        }
+      }
+
+      function startPolling() {
+        if (pollHandle) clearInterval(pollHandle);
+        pollHandle = setInterval(async () => {
+          if (!currentExportId) return;
+          try {
+            const data = await api(`/events/${encodeURIComponent(eventId)}/full-export/status`);
+            const status = data.status ?? "requested";
+            showExportStatus(status);
+            if (status === "completed" || status === "failed") {
+              clearInterval(pollHandle);
+              loadHistory();
+            }
+          } catch {}
+        }, 5000);
+      }
+
+      document.getElementById("download-btn").addEventListener("click", async () => {
+        try {
+          const res = await fetch(`${apiBase}/events/${encodeURIComponent(eventId)}/full-export/download`, {
+            headers: { authorization: `Bearer ${token}` }
+          });
+          if (res.status === 410) {
+            document.getElementById("download-used-msg").hidden = false;
+            document.getElementById("download-btn").disabled = true;
+            return;
+          }
+          if (!res.ok) throw new Error("Download failed");
+          const blob = await res.blob();
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = `event-export-${eventId}.json`;
+          a.click();
+          document.getElementById("download-used-msg").hidden = false;
+          document.getElementById("download-btn").disabled = true;
+          toast("Download complete");
+        } catch (err) {
+          const el = document.getElementById("global-status");
+          el.textContent = err.message; el.className = "status error"; el.hidden = false;
+        }
+      });
+
+      async function loadHistory() {
+        const tbody = document.getElementById("history-tbody");
+        try {
+          const data = await api(`/events/${encodeURIComponent(eventId)}/full-export/history`);
+          const items = data.exports ?? data.items ?? data ?? [];
+          if (!items.length) {
+            tbody.innerHTML = `<tr><td colspan="4" class="empty">No previous exports</td></tr>`;
+            return;
+          }
+          tbody.innerHTML = items.map(item => `
+            <tr>
+              <td style="font-size:13px;">${fmt(item.created_at)}</td>
+              <td><span class="badge ${esc(item.status)}">${esc(item.status)}</span></td>
+              <td class="muted">${esc(item.format ?? "json")}</td>
+              <td>${item.status === "completed" && !item.download_used
+                ? `<button class="secondary sm" data-dl-id="${esc(item.id)}">Download</button>`
+                : item.download_used ? `<span class="muted" style="font-size:12px;">Used</span>` : "—"}</td>
+            </tr>`).join("");
+          tbody.querySelectorAll("[data-dl-id]").forEach(btn => {
+            btn.addEventListener("click", () => {
+              currentExportId = btn.dataset.dlId;
+              document.getElementById("download-section").hidden = false;
+              document.getElementById("export-status-card").hidden = false;
+            });
+          });
+        } catch (err) {
+          tbody.innerHTML = `<tr><td colspan="4" class="empty" style="color:var(--bad);">${esc(err.message)}</td></tr>`;
+        }
+      }
+
+      document.getElementById("refresh-history-btn").addEventListener("click", loadHistory);
+
+      if (eventId) {
+        loadEventName();
+        loadHistory();
+      }
+    </script>
+  </body>
+</html>

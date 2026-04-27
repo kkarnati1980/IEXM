@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Privacy Requests — Organizer</title>
+    <style>
+      :root{--bg:#101117;--panel:#1a1c25;--panel-2:#14161d;--border:rgba(255,255,255,0.08);--text:#f4f1ea;--muted:#b2ac9f;--accent:#f3c97d;--accent-2:#9fd3c7;--good:#9fd3c7;--warn:#f3c97d;--bad:#ff9f9f;}
+      *{box-sizing:border-box;}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--text);background:radial-gradient(circle at top left,rgba(243,201,125,0.16),transparent 28%),linear-gradient(160deg,var(--bg),#090a0e 66%);min-height:100vh;}
+      .shell{max-width:1440px;margin:0 auto;padding:18px 24px 0;}
+      .shell-bar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+      .shell-title{display:grid;gap:4px;}
+      .shell-title strong{font-size:1.1rem;}
+      .shell-nav{display:flex;gap:10px;flex-wrap:wrap;}
+      .shell-nav a{display:inline-flex;align-items:center;padding:10px 13px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);text-decoration:none;font-size:14px;}
+      .eyebrow{display:inline-block;margin-bottom:8px;padding:5px 10px;border-radius:999px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;background:rgba(159,211,199,0.12);color:var(--accent-2);}
+      main{max-width:1440px;margin:0 auto;padding:0 24px 24px;}
+      .card{border-radius:22px;padding:22px;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);margin-bottom:18px;}
+      .status{padding:12px 14px;border-radius:14px;font-size:14px;margin-bottom:14px;}
+      .status.ok{background:rgba(159,211,199,0.16);color:var(--good);}
+      .status.error{background:rgba(255,159,159,0.12);color:var(--bad);}
+      button{border:0;border-radius:12px;padding:10px 16px;cursor:pointer;font:inherit;font-size:14px;}
+      button.primary{background:var(--accent);color:#211503;font-weight:600;}
+      button.secondary{background:rgba(255,255,255,0.1);color:var(--text);}
+      button.bad{background:rgba(255,159,159,0.14);color:var(--bad);}
+      button.sm{padding:7px 12px;font-size:12px;}
+      button:disabled{opacity:0.4;cursor:default;}
+      input,select{width:100%;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:var(--text);padding:10px 12px;font:inherit;}
+      input:focus,select:focus{outline:2px solid var(--accent);border-color:transparent;}
+      table{width:100%;border-collapse:collapse;}
+      th,td{padding:11px;border-bottom:1px solid var(--border);text-align:left;font-size:14px;}
+      th{color:var(--muted);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;}
+      tbody tr:hover{background:rgba(255,255,255,0.03);}
+      .badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid var(--border);font-size:12px;}
+      .badge.completed{color:var(--good);}
+      .badge.processing,.badge.requested{color:var(--warn);}
+      .badge.failed,.badge.rejected{color:var(--bad);}
+      .badge.export{color:var(--accent-2);}
+      .badge.delete{color:var(--bad);}
+      .empty{color:var(--muted);padding:32px;text-align:center;}
+      .metric-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px;}
+      .metric{border-radius:18px;border:1px solid var(--border);padding:16px;background:rgba(255,255,255,0.03);}
+      .metric span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;}
+      .metric strong{display:block;margin-top:6px;font-size:1.6rem;}
+      .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:14px;}
+      .toolbar>div{flex:1 1 140px;min-width:120px;}
+      .toolbar label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;}
+      .section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+      .section-head h3{margin:0;}
+      .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:9000;}
+      .modal-panel{background:var(--panel);border-radius:22px;border:1px solid var(--border);padding:28px;max-width:520px;width:90%;max-height:90vh;overflow-y:auto;}
+      .detail-row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);}
+      .detail-row:last-child{border-bottom:none;}
+      .detail-row label{min-width:120px;font-size:13px;color:var(--muted);}
+      #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--good);color:#0a1f1b;padding:12px 20px;border-radius:14px;font-weight:600;font-size:14px;opacity:0;transition:opacity 0.2s;z-index:9999;pointer-events:none;}
+      #toast.show{opacity:1;}
+      @media(max-width:700px){.metric-grid{grid-template-columns:1fr 1fr;}}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <div class="eyebrow">Organizer</div>
+          <strong id="page-title">Privacy Requests</strong>
+          <span class="muted" id="page-sub">Loading…</span>
+        </div>
+        <nav class="shell-nav">
+          <a href="#" id="back-link">← Event Detail</a>
+          <a href="#" id="logout-link" style="color:var(--bad)">Sign out</a>
+        </nav>
+      </div>
+    </div>
+
+    <main>
+      <div id="global-status" hidden class="status"></div>
+
+      <div class="metric-grid">
+        <div class="metric"><span>Total Requests</span><strong id="stat-total">—</strong></div>
+        <div class="metric"><span>Avg Processing Time</span><strong id="stat-avg">—</strong></div>
+        <div class="metric"><span>Completion Rate</span><strong id="stat-rate">—</strong></div>
+      </div>
+
+      <div class="card">
+        <div class="section-head">
+          <h3>Privacy Requests</h3>
+        </div>
+
+        <div class="toolbar">
+          <div>
+            <label>Request Type</label>
+            <select id="filter-type">
+              <option value="">All types</option>
+              <option value="export">Export</option>
+              <option value="delete">Delete</option>
+            </select>
+          </div>
+          <div>
+            <label>Status</label>
+            <select id="filter-status">
+              <option value="">All statuses</option>
+              <option value="requested">Requested</option>
+              <option value="processing">Processing</option>
+              <option value="completed">Completed</option>
+              <option value="failed">Failed</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </div>
+          <div>
+            <label>Date From</label>
+            <input type="date" id="filter-from">
+          </div>
+          <div>
+            <label>Date To</label>
+            <input type="date" id="filter-to">
+          </div>
+          <div style="display:flex;align-items:end;">
+            <button class="primary" id="apply-btn" style="width:100%;">Apply</button>
+          </div>
+        </div>
+
+        <div id="table-status" hidden class="status"></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Submitted At</th>
+              <th>Request Type</th>
+              <th>Status</th>
+              <th>Completed At</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="requests-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+
+    <div id="toast"></div>
+
+    <script type="module">
+      import { isAuthenticated, logoutUser } from "../components.js";
+      if (!isAuthenticated()) { logoutUser("../login.html"); throw new Error("unauthenticated"); }
+
+      const params = new URLSearchParams(location.search);
+      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "organizer-token";
+      const eventId = params.get("event_id") ?? params.get("eventId") ?? "";
+
+      document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logoutUser("../login.html"); });
+      document.getElementById("back-link").href = `event-detail.html?eventId=${encodeURIComponent(eventId)}&token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
+
+      function esc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+      function fmt(iso) { return iso ? new Date(iso).toLocaleString() : "—"; }
+      function toast(msg) {
+        const el = document.getElementById("toast");
+        el.textContent = msg; el.classList.add("show");
+        setTimeout(() => el.classList.remove("show"), 2800);
+      }
+
+      async function api(path, options = {}) {
+        const res = await fetch(`${apiBase}${path}`, {
+          method: options.method ?? "GET",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error ?? `Request failed: ${res.status}`);
+        return payload;
+      }
+
+      let allRequests = [];
+
+      function filtered() {
+        const type = document.getElementById("filter-type").value;
+        const status = document.getElementById("filter-status").value;
+        const from = document.getElementById("filter-from").value;
+        const to = document.getElementById("filter-to").value;
+        return allRequests.filter(r => {
+          if (type && r.request_type !== type) return false;
+          if (status && r.status !== status) return false;
+          if (from && r.created_at < from) return false;
+          if (to && r.created_at > to + "T23:59:59") return false;
+          return true;
+        });
+      }
+
+      async function loadRequests() {
+        const tbody = document.getElementById("requests-tbody");
+        tbody.innerHTML = `<tr><td colspan="5" class="empty">Loading…</td></tr>`;
+        try {
+          const data = await api(`/events/${encodeURIComponent(eventId)}/privacy-requests`);
+          allRequests = data.requests ?? data.items ?? data ?? [];
+          renderStats();
+          renderTable(filtered());
+
+          const evName = data.event_name ?? "";
+          if (evName) {
+            document.getElementById("page-title").textContent = `Privacy Requests — ${evName}`;
+          }
+          document.getElementById("page-sub").textContent = `${allRequests.length} requests`;
+        } catch (err) {
+          tbody.innerHTML = `<tr><td colspan="5" class="empty" style="color:var(--bad);">${esc(err.message)}</td></tr>`;
+        }
+      }
+
+      function renderStats() {
+        const completed = allRequests.filter(r => r.status === "completed");
+        document.getElementById("stat-total").textContent = allRequests.length;
+        document.getElementById("stat-rate").textContent = allRequests.length
+          ? `${Math.round(completed.length / allRequests.length * 100)}%` : "—";
+
+        if (completed.length) {
+          const avgMs = completed.reduce((sum, r) => {
+            if (!r.created_at || !r.completed_at) return sum;
+            return sum + (new Date(r.completed_at) - new Date(r.created_at));
+          }, 0) / completed.length;
+          const hours = Math.round(avgMs / 3600000);
+          document.getElementById("stat-avg").textContent = hours < 1 ? "<1h" : `${hours}h`;
+        } else {
+          document.getElementById("stat-avg").textContent = "—";
+        }
+      }
+
+      function renderTable(requests) {
+        const tbody = document.getElementById("requests-tbody");
+        if (!requests.length) {
+          tbody.innerHTML = `<tr><td colspan="5" class="empty">No privacy requests have been submitted for this event.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = requests.map(r => `
+          <tr>
+            <td style="font-size:13px;">${fmt(r.created_at)}</td>
+            <td><span class="badge ${esc(r.request_type)}">${esc(r.request_type)}</span></td>
+            <td><span class="badge ${esc(r.status)}">${esc(r.status)}</span></td>
+            <td class="muted">${fmt(r.completed_at)}</td>
+            <td style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="secondary sm" data-view="${esc(r.id)}">View Detail</button>
+              ${r.status === "requested"
+                ? `<button class="bad sm" data-reject="${esc(r.id)}">Reject</button>` : ""}
+            </td>
+          </tr>`).join("");
+
+        tbody.querySelectorAll("[data-view]").forEach(btn => {
+          btn.addEventListener("click", () => openDetail(allRequests.find(r => r.id === btn.dataset.view)));
+        });
+        tbody.querySelectorAll("[data-reject]").forEach(btn => {
+          btn.addEventListener("click", () => rejectDSR(btn.dataset.reject));
+        });
+      }
+
+      function openDetail(r) {
+        if (!r) return;
+        const overlay = document.createElement("div");
+        overlay.className = "modal-overlay";
+        overlay.innerHTML = `
+          <div class="modal-panel">
+            <h3 style="margin:0 0 16px;">Request Detail</h3>
+            <div class="detail-row"><label>ID</label><span style="font-family:monospace;font-size:12px;">${esc(r.id)}</span></div>
+            <div class="detail-row"><label>Type</label><span class="badge ${esc(r.request_type)}">${esc(r.request_type)}</span></div>
+            <div class="detail-row"><label>Status</label><span class="badge ${esc(r.status)}">${esc(r.status)}</span></div>
+            <div class="detail-row"><label>Submitted</label><span>${fmt(r.created_at)}</span></div>
+            <div class="detail-row"><label>Completed</label><span>${fmt(r.completed_at)}</span></div>
+            ${r.request_type === "export" && r.export_file_url
+              ? `<div class="detail-row"><label>Data categories</label><span class="muted" style="font-size:13px;">interactions, consents, attendee profile</span></div>`
+              : r.request_type === "delete"
+                ? `<div class="detail-row"><label>Fields anonymised</label><span class="muted" style="font-size:13px;">full_name, email, phone, company_name, attendee_id</span></div>`
+                : ""}
+            ${r.rejection_reason ? `<div class="detail-row"><label>Rejection reason</label><span class="muted">${esc(r.rejection_reason)}</span></div>` : ""}
+            <div style="margin-top:16px;"><button class="secondary" id="close-detail">Close</button></div>
+          </div>`;
+        document.body.appendChild(overlay);
+        overlay.querySelector("#close-detail").addEventListener("click", () => overlay.remove());
+        overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
+      }
+
+      async function rejectDSR(dsrId) {
+        const reason = prompt("Rejection reason (required):");
+        if (!reason?.trim()) return;
+        try {
+          await api(`/events/${encodeURIComponent(eventId)}/privacy-requests/${encodeURIComponent(dsrId)}/reject`, {
+            method: "POST",
+            body: { rejection_reason: reason.trim() }
+          });
+          toast("Request rejected");
+          loadRequests();
+        } catch (err) {
+          const el = document.getElementById("global-status");
+          el.textContent = err.message; el.className = "status error"; el.hidden = false;
+        }
+      }
+
+      document.getElementById("apply-btn").addEventListener("click", () => renderTable(filtered()));
+
+      if (eventId) {
+        loadRequests();
+      } else {
+        document.getElementById("requests-tbody").innerHTML = `<tr><td colspan="5" class="empty" style="color:var(--bad);">No event_id in URL</td></tr>`;
+      }
+    </script>
+  </body>
+</html>

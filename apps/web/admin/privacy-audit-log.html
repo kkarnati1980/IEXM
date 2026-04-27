@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Privacy Audit Log — Platform Admin</title>
+    <style>
+      :root{--bg:#101117;--panel:#1a1c25;--panel-2:#14161d;--border:rgba(255,255,255,0.08);--text:#f4f1ea;--muted:#b2ac9f;--accent:#f3c97d;--accent-2:#9fd3c7;--good:#9fd3c7;--warn:#f3c97d;--bad:#ff9f9f;}
+      *{box-sizing:border-box;}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--text);background:radial-gradient(circle at top left,rgba(243,201,125,0.16),transparent 28%),linear-gradient(160deg,var(--bg),#090a0e 66%);min-height:100vh;}
+      .shell{max-width:1440px;margin:0 auto;padding:18px 24px 0;}
+      .shell-bar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+      .shell-title{display:grid;gap:4px;}
+      .shell-title strong{font-size:1.1rem;}
+      .shell-nav{display:flex;gap:10px;flex-wrap:wrap;}
+      .shell-nav a{display:inline-flex;align-items:center;padding:10px 13px;border-radius:999px;border:1px solid var(--border);background:rgba(255,255,255,0.04);color:var(--text);text-decoration:none;font-size:14px;}
+      .eyebrow{display:inline-block;margin-bottom:8px;padding:5px 10px;border-radius:999px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;background:rgba(159,211,199,0.12);color:var(--accent-2);}
+      main{max-width:1440px;margin:0 auto;padding:0 24px 24px;}
+      .card{border-radius:22px;padding:22px;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);margin-bottom:18px;}
+      .status{padding:12px 14px;border-radius:14px;font-size:14px;margin-bottom:14px;}
+      .status.ok{background:rgba(159,211,199,0.16);color:var(--good);}
+      .status.error{background:rgba(255,159,159,0.12);color:var(--bad);}
+      .status.info{background:rgba(159,211,199,0.08);color:var(--muted);border:1px solid var(--border);}
+      button{border:0;border-radius:12px;padding:10px 16px;cursor:pointer;font:inherit;font-size:14px;}
+      button.primary{background:var(--accent);color:#211503;font-weight:600;}
+      button.secondary{background:rgba(255,255,255,0.1);color:var(--text);}
+      button.sm{padding:7px 12px;font-size:12px;}
+      button:disabled{opacity:0.4;cursor:default;}
+      input,select{width:100%;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:var(--text);padding:10px 12px;font:inherit;}
+      input:focus,select:focus{outline:2px solid var(--accent);border-color:transparent;}
+      table{width:100%;border-collapse:collapse;}
+      th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left;font-size:13px;}
+      th{color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:0.06em;}
+      tbody tr:hover{background:rgba(255,255,255,0.03);}
+      .badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;border:1px solid var(--border);font-size:11px;}
+      .empty{color:var(--muted);padding:32px;text-align:center;}
+      .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:14px;}
+      .toolbar>div{flex:1 1 150px;min-width:120px;}
+      .toolbar label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;}
+      .section-head{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+      .section-head h3{margin:0;}
+      .pagination{display:flex;align-items:center;gap:12px;margin-top:14px;font-size:14px;flex-wrap:wrap;}
+      .pagination .muted{flex:1;}
+      code{font-size:11px;color:var(--accent-2);background:rgba(159,211,199,0.08);padding:2px 6px;border-radius:6px;}
+      .meta-preview{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted);}
+      #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--good);color:#0a1f1b;padding:12px 20px;border-radius:14px;font-weight:600;font-size:14px;opacity:0;transition:opacity 0.2s;z-index:9999;pointer-events:none;}
+      #toast.show{opacity:1;}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <div class="eyebrow">Platform Admin</div>
+          <strong>Privacy Audit Log</strong>
+          <span class="muted">Complete record of all privacy-related actions. This log cannot be modified.</span>
+        </div>
+        <nav class="shell-nav">
+          <a href="tenants.html" id="back-link">← Tenants</a>
+          <a href="#" id="logout-link" style="color:var(--bad)">Sign out</a>
+        </nav>
+      </div>
+    </div>
+
+    <main>
+      <div id="global-status" hidden class="status"></div>
+
+      <div class="card">
+        <div class="section-head">
+          <h3>Privacy Audit Log</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="secondary sm" id="export-csv-btn">Export as CSV</button>
+            <button class="secondary sm" id="export-json-btn">Export as JSON</button>
+            <select id="page-size" style="width:auto;min-width:80px;">
+              <option value="20">20/page</option>
+              <option value="50">50/page</option>
+              <option value="100">100/page</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="status info" style="margin-bottom:14px;">
+          The act of exporting this log is itself recorded in the log.
+        </div>
+
+        <div class="toolbar">
+          <div>
+            <label>Tenant</label>
+            <select id="filter-tenant">
+              <option value="">All tenants</option>
+            </select>
+          </div>
+          <div>
+            <label>Action Type</label>
+            <select id="filter-action">
+              <option value="">All actions</option>
+              <option value="dsr.processing">dsr.processing</option>
+              <option value="dsr.completed">dsr.completed</option>
+              <option value="data_policy.changed">data_policy.changed</option>
+              <option value="retention.purge_completed">retention.purge_completed</option>
+              <option value="retention.expiry_warning">retention.expiry_warning</option>
+              <option value="tenant.data_deleted">tenant.data_deleted</option>
+              <option value="tenant.offboarding_initiated">tenant.offboarding_initiated</option>
+              <option value="break_glass.approved">break_glass.approved</option>
+              <option value="break_glass.accessed">break_glass.accessed</option>
+              <option value="export.requested">export.requested</option>
+              <option value="export.downloaded">export.downloaded</option>
+              <option value="full_export.requested">full_export.requested</option>
+              <option value="full_export.completed">full_export.completed</option>
+              <option value="consent.recorded">consent.recorded</option>
+              <option value="consent.updated">consent.updated</option>
+              <option value="data_access.granted">data_access.granted</option>
+              <option value="data_access.denied">data_access.denied</option>
+              <option value="anonymisation.completed">anonymisation.completed</option>
+            </select>
+          </div>
+          <div>
+            <label>Actor Role</label>
+            <select id="filter-role">
+              <option value="">All roles</option>
+              <option value="system">system</option>
+              <option value="platform_admin">platform_admin</option>
+              <option value="organizer_admin">organizer_admin</option>
+            </select>
+          </div>
+          <div>
+            <label>Date From</label>
+            <input type="date" id="filter-from">
+          </div>
+          <div>
+            <label>Date To</label>
+            <input type="date" id="filter-to">
+          </div>
+          <div style="display:flex;align-items:end;">
+            <button class="primary" id="apply-btn" style="width:100%;">Apply</button>
+          </div>
+        </div>
+
+        <div id="table-status" hidden class="status"></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Occurred At (IST)</th>
+              <th>Tenant</th>
+              <th>Event</th>
+              <th>Actor Role</th>
+              <th>Action</th>
+              <th>Target</th>
+              <th>Metadata</th>
+            </tr>
+          </thead>
+          <tbody id="log-tbody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+        </table>
+
+        <div class="pagination">
+          <span class="muted" id="pagination-info">—</span>
+          <button class="secondary sm" id="prev-btn" disabled>← Prev</button>
+          <button class="secondary sm" id="next-btn" disabled>Next →</button>
+        </div>
+      </div>
+    </main>
+
+    <div id="toast"></div>
+
+    <script type="module">
+      import { isAuthenticated, logoutUser } from "../components.js";
+      if (!isAuthenticated()) { logoutUser("../login.html"); throw new Error("unauthenticated"); }
+
+      const params = new URLSearchParams(location.search);
+      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "platform-token";
+      const filterEventId = params.get("event_id") ?? "";
+      const filterTenantId = params.get("tenant_id") ?? "";
+
+      document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logoutUser("../login.html"); });
+
+      function esc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+      function fmtIST(iso) {
+        if (!iso) return "—";
+        return new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" });
+      }
+      function toast(msg) {
+        const el = document.getElementById("toast");
+        el.textContent = msg; el.classList.add("show");
+        setTimeout(() => el.classList.remove("show"), 2800);
+      }
+
+      async function api(path, options = {}) {
+        const res = await fetch(`${apiBase}${path}`, {
+          method: options.method ?? "GET",
+          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error ?? `Request failed: ${res.status}`);
+        return payload;
+      }
+
+      let allLogs = [];
+      let currentPage = 0;
+      let pageSize = 20;
+
+      function buildQueryParams() {
+        const p = new URLSearchParams();
+        const tenant = document.getElementById("filter-tenant").value;
+        const action = document.getElementById("filter-action").value;
+        const role = document.getElementById("filter-role").value;
+        const from = document.getElementById("filter-from").value;
+        const to = document.getElementById("filter-to").value;
+        if (tenant) p.set("tenant_id", tenant);
+        if (action) p.set("action", action);
+        if (role) p.set("actor_role", role);
+        if (from) p.set("from", from);
+        if (to) p.set("to", to);
+        if (filterEventId) p.set("event_id", filterEventId);
+        return p.toString() ? `?${p}` : "";
+      }
+
+      async function loadTenants() {
+        try {
+          const data = await api("/admin/tenants");
+          const tenants = data.tenants ?? data.items ?? [];
+          const sel = document.getElementById("filter-tenant");
+          tenants.forEach(t => {
+            const opt = document.createElement("option");
+            opt.value = t.id; opt.textContent = t.name;
+            sel.appendChild(opt);
+          });
+          if (filterTenantId) sel.value = filterTenantId;
+        } catch {}
+      }
+
+      async function loadLogs() {
+        const tbody = document.getElementById("log-tbody");
+        tbody.innerHTML = `<tr><td colspan="7" class="empty">Loading…</td></tr>`;
+        try {
+          const endpoint = filterEventId
+            ? `/events/${encodeURIComponent(filterEventId)}/privacy-audit-log${buildQueryParams()}`
+            : `/admin/privacy-audit-log${buildQueryParams()}`;
+          const data = await api(endpoint);
+          allLogs = data.entries ?? data.logs ?? data ?? [];
+          currentPage = 0;
+          renderPage();
+        } catch (err) {
+          tbody.innerHTML = `<tr><td colspan="7" class="empty" style="color:var(--bad);">${esc(err.message)}</td></tr>`;
+          const el = document.getElementById("global-status");
+          el.textContent = err.message; el.className = "status error"; el.hidden = false;
+        }
+      }
+
+      function renderPage() {
+        const tbody = document.getElementById("log-tbody");
+        const start = currentPage * pageSize;
+        const end = Math.min(start + pageSize, allLogs.length);
+        const page = allLogs.slice(start, end);
+
+        if (!allLogs.length) {
+          tbody.innerHTML = `<tr><td colspan="7" class="empty">No privacy events recorded yet.</td></tr>`;
+          document.getElementById("pagination-info").textContent = "No entries";
+          document.getElementById("prev-btn").disabled = true;
+          document.getElementById("next-btn").disabled = true;
+          return;
+        }
+
+        tbody.innerHTML = page.map(entry => {
+          const metaStr = entry.metadata ? JSON.stringify(entry.metadata) : "";
+          const metaTrunc = metaStr.length > 80 ? metaStr.slice(0, 80) + "…" : metaStr;
+          return `<tr>
+            <td style="white-space:nowrap;">${fmtIST(entry.occurred_at)}</td>
+            <td class="muted" style="font-size:12px;">${esc((entry.tenant_id ?? "").slice(0, 16))}</td>
+            <td class="muted" style="font-size:12px;">${entry.event_id ? esc(entry.event_id.slice(0, 16)) : "—"}</td>
+            <td><span class="badge">${esc(entry.actor_role ?? "—")}</span></td>
+            <td><code>${esc(entry.action)}</code></td>
+            <td class="muted" style="font-size:12px;">${entry.target_type ? `${esc(entry.target_type)}: ${esc((entry.target_id ?? "").slice(0, 16))}` : "—"}</td>
+            <td><span class="meta-preview" title="${esc(metaStr)}">${esc(metaTrunc) || "—"}${metaStr.length > 80 ? ` <button class="sm secondary" style="padding:2px 6px;font-size:11px;" onclick="this.closest('td').querySelector('.meta-preview').textContent='${esc(metaStr)}'">expand</button>` : ""}</span></td>
+          </tr>`;
+        }).join("");
+
+        document.getElementById("pagination-info").textContent = `Showing ${start + 1}–${end} of ${allLogs.length} entries`;
+        document.getElementById("prev-btn").disabled = currentPage === 0;
+        document.getElementById("next-btn").disabled = end >= allLogs.length;
+      }
+
+      document.getElementById("prev-btn").addEventListener("click", () => { if (currentPage > 0) { currentPage--; renderPage(); } });
+      document.getElementById("next-btn").addEventListener("click", () => { if ((currentPage + 1) * pageSize < allLogs.length) { currentPage++; renderPage(); } });
+      document.getElementById("apply-btn").addEventListener("click", loadLogs);
+      document.getElementById("page-size").addEventListener("change", e => { pageSize = parseInt(e.target.value); currentPage = 0; renderPage(); });
+
+      async function exportLog(format) {
+        try {
+          const qs = buildQueryParams();
+          const sep = qs ? "&" : "?";
+          const url = `${apiBase}/admin/privacy-audit-log/export${qs}${sep}format=${format}`;
+          const res = await fetch(url, { method: "POST", headers: { authorization: `Bearer ${token}` } });
+          if (!res.ok) throw new Error("Export failed");
+          const blob = await res.blob();
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = `privacy-audit-log.${format}`;
+          a.click();
+          toast(`${format.toUpperCase()} export started`);
+        } catch (err) {
+          const el = document.getElementById("global-status");
+          el.textContent = err.message; el.className = "status error"; el.hidden = false;
+        }
+      }
+
+      document.getElementById("export-csv-btn").addEventListener("click", () => exportLog("csv"));
+      document.getElementById("export-json-btn").addEventListener("click", () => exportLog("json"));
+
+      loadTenants();
+      loadLogs();
+    </script>
+  </body>
+</html>

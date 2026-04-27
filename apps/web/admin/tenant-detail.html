@@ -173,6 +173,9 @@
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
             <button class="secondary" id="edit-name-btn">Edit name</button>
             <button class="warn" id="suspend-btn">Suspend tenant</button>
+            <a id="compliance-link" href="#" style="text-decoration:none;"><button class="secondary">Compliance Settings</button></a>
+            <a id="retention-link" href="#" style="text-decoration:none;"><button class="secondary">Retention Dashboard</button></a>
+            <a id="offboarding-link" href="#" style="text-decoration:none;"><button class="bad" id="offboarding-btn" hidden>Initiate Offboarding</button></a>
           </div>
           <div id="edit-name-wrap" hidden style="margin-top:14px;max-width:340px;">
             <div class="field">
@@ -430,6 +433,13 @@
           document.getElementById("ov-status").innerHTML = `<span class="badge ${esc(tenantData.status)}">${esc(tenantData.status)}</span>`;
           document.getElementById("ov-created").textContent = fmtDate(tenantData.created_at);
           document.getElementById("edit-name-input").value = tenantData.name;
+          const linkBase = `tenantId=${encodeURIComponent(tenantId)}&token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
+          document.getElementById("compliance-link").href = `compliance.html?${linkBase}`;
+          document.getElementById("retention-link").href = `retention.html?${linkBase}`;
+          document.getElementById("offboarding-link").href = `offboarding.html?${linkBase}`;
+          if (tenantData.offboarding_status === "active" || !tenantData.offboarding_status) {
+            document.getElementById("offboarding-btn").hidden = false;
+          }
           const suspendBtn = document.getElementById("suspend-btn");
           if (tenantData.status === "suspended") {
             suspendBtn.textContent = "Restore tenant";
