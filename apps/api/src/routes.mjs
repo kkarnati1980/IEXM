@@ -7518,7 +7518,27 @@ export function registerRoutes(router) {
       assertEventScoped(principal, event.id);
       const dsr = await repos.dataSubjectRequests.findById(principal.tenant_id, params.dsrId);
       if (dsr.event_id !== event.id) throw new HttpError(403, "DSR not associated with this event");
-      return { id: dsr.id, request_type: dsr.request_type, status: dsr.status, submitted_at: dsr.submitted_at ?? dsr.created_at, completed_at: dsr.completed_at ?? null, rejection_reason: dsr.rejection_reason ?? null, metadata: dsr.metadata ?? null };
+      const response = {
+        id: dsr.id,
+        request_type: dsr.request_type,
+        status: dsr.status,
+        submitted_at: dsr.submitted_at ?? dsr.created_at,
+        completed_at: dsr.completed_at ?? null,
+        rejection_reason: dsr.rejection_reason ?? null,
+        metadata: dsr.metadata ?? null
+      };
+      if (dsr.request_type === "delete" && dsr.attendee_id) {
+        const crmJobs = await repos.crmSyncJobs.findByAttendeeId(dsr.attendee_id);
+        response.crm_deletion_attempts = crmJobs
+          .filter((j) => j.external_record_id)
+          .map((j) => ({
+            provider: j.provider ?? null,
+            external_record_id: j.external_record_id ? j.external_record_id.slice(0, 8) + "…" : null,
+            deletion_status: j.deletion_status ?? null,
+            deletion_error: j.deletion_error ?? null
+          }));
+      }
+      return response;
     }
   });
 

@@ -1,6 +1,7 @@
 import { nextId } from "../store.mjs";
 import { dispatchTransactionalEmail } from "../notification-dispatch.mjs";
 import { uploadFile } from "../storage/storage-adapter.mjs";
+import { dispatchCRMDeletion } from "../integrations/crm-deletion.mjs";
 
 export function startDSRWorker(repos, state, intervalMs = 5 * 60 * 1000) {
   const handle = setInterval(() => {
@@ -184,7 +185,19 @@ export async function processDSRJob(repos, state, dsrId) {
         });
       }
 
-      console.log(`TODO: dispatch CRM deletion push for attendee ${dsr.attendee_id} — requires CRM integration`);
+      // CRM deletion — best-effort, does not block DSR completion
+      const crmJobs = await repos.crmSyncJobs.findByAttendeeId(dsr.attendee_id);
+      const crmDeletionResults = [];
+      for (const job of crmJobs) {
+        if (!job.external_record_id) continue;
+        const result = await dispatchCRMDeletion(repos, job.connection_id, job.external_record_id, dsr.attendee_id);
+        await repos.crmSyncJobs.update(job.id, {
+          deletion_requested_at: completedAt,
+          deletion_status: result.success ? "deleted" : "deletion_failed",
+          deletion_error: result.success ? null : (result.reason ?? null)
+        });
+        crmDeletionResults.push({ job_id: job.id, provider: job.provider ?? null, ...result });
+      }
 
       await repos.dataSubjectRequests.update({
         ...dsr,
@@ -201,7 +214,7 @@ export async function processDSRJob(repos, state, dsrId) {
         action: "dsr.completed",
         target_type: "data_subject_request",
         target_id: dsrId,
-        metadata: { request_type: "delete", outcome: "success" },
+        metadata: { request_type: "delete", outcome: "success", crm_deletions: crmDeletionResults },
         occurred_at: completedAt
       });
 

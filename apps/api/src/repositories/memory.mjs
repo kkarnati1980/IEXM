@@ -980,6 +980,29 @@ export function createMemoryRepositories(state) {
         return findById(state.crmSyncRecords, tenantId, id, "CRM sync record");
       }
     },
+    crmConnections: {
+      async findById(id) {
+        return state.crmConnections.find((c) => c.id === id) ?? null;
+      },
+      async listByTenant(tenantId) {
+        return state.crmConnections.filter((c) => c.tenant_id === tenantId);
+      }
+    },
+    crmSyncJobs: {
+      async findByAttendeeId(attendeeId) {
+        return state.crmSyncJobs.filter((j) => j.attendee_id === attendeeId);
+      },
+      async update(id, fields) {
+        const index = state.crmSyncJobs.findIndex((j) => j.id === id);
+        if (index === -1) throw new Error(`CRM sync job ${id} not found`);
+        state.crmSyncJobs[index] = { ...state.crmSyncJobs[index], ...fields };
+        return state.crmSyncJobs[index];
+      },
+      async create(record) {
+        state.crmSyncJobs.push(record);
+        return record;
+      }
+    },
     dataSubjectRequests: {
       async create(record) {
         state.dataSubjectRequests.push(record);

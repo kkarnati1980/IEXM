@@ -267,6 +267,8 @@ export function createSeedState() {
     reportSnapshots: [],
     leaderboardSnapshots: [],
     crmSyncRecords: [],
+    crmConnections: [],
+    crmSyncJobs: [],
     dataSubjectRequests: [],
     downstreamDeletionRecords: [],
     complianceRuns: [],
