@@ -442,6 +442,15 @@ export function createMemoryRepositories(state) {
       },
       async findById(tenantId, id) {
         return findById(state.attendees, tenantId, id, "Attendee");
+      },
+      async update(record) {
+        const index = state.attendees.findIndex((entry) => entry.id === record.id);
+        if (index === -1) throw new HttpError(404, "Attendee not found");
+        state.attendees[index] = record;
+        return record;
+      },
+      async listByTenant(tenantId) {
+        return state.attendees.filter((entry) => entry.tenant_id === tenantId);
       }
     },
     attendeeProfiles: {

@@ -7,6 +7,12 @@ export function renderTemplate(messageType, vars = {}) {
     case "break_glass_pending_approval": return renderBreakGlassPendingApproval(vars);
     case "break_glass_organizer_alert": return renderBreakGlassOrganizerAlert(vars);
     case "data_policy_changed": return renderDataPolicyChanged(vars);
+    case "retention_purge_completed": return renderRetentionPurgeCompleted(vars);
+    case "retention_expiry_warning": return renderRetentionExpiryWarning(vars);
+    case "full_export_ready": return renderFullExportReady(vars);
+    case "dsr_export_ready": return renderDsrExportReady(vars);
+    case "dsr_delete_confirmed": return renderDsrDeleteConfirmed(vars);
+    case "offboarding_deletion_certificate": return renderOffboardingDeletionCertificate(vars);
     default: throw new Error(`Unknown notification template: ${messageType}`);
   }
 }
@@ -149,6 +155,158 @@ function renderDataPolicyChanged({
       review_url,
       ``,
       `If you did not expect this change, contact ${platform_name} support immediately.`
+    ].join("\n")
+  };
+}
+
+function renderRetentionPurgeCompleted({
+  organizer_name = "there",
+  event_name = "your event",
+  records_anonymised = 0,
+  purged_at = new Date().toISOString(),
+  retention_days = 30,
+  platform_name = "Codex"
+}) {
+  return {
+    subject: `Event data anonymised — ${event_name}`,
+    body: [
+      `Hi ${organizer_name},`,
+      ``,
+      `The data for "${event_name}" has been anonymised in accordance with your ${retention_days}-day retention policy.`,
+      ``,
+      `Anonymised on: ${purged_at}`,
+      `Records processed: ${records_anonymised}`,
+      ``,
+      `What was removed: attendee PII (name, email, phone, company), interaction identifiers.`,
+      `What was kept: anonymised analytics, aggregate metrics, consent audit trail.`,
+      ``,
+      `If you have questions, contact ${platform_name} support.`
+    ].join("\n")
+  };
+}
+
+function renderRetentionExpiryWarning({
+  organizer_name = "there",
+  event_name = "your event",
+  retention_expiry_date = "",
+  days_remaining = 14,
+  data_policy_url = "",
+  platform_name = "Codex"
+}) {
+  return {
+    subject: `Your event data will be anonymised in ${days_remaining} days — ${event_name}`,
+    body: [
+      `Hi ${organizer_name},`,
+      ``,
+      `The data for "${event_name}" will be automatically anonymised on ${retention_expiry_date} (${days_remaining} day(s) from now).`,
+      ``,
+      `What will be removed: attendee PII (name, email, phone, company), interaction identifiers.`,
+      `What will be kept: anonymised analytics, aggregate metrics, consent audit trail.`,
+      ``,
+      `To change your retention policy before this date, visit:`,
+      data_policy_url || `(Log in to ${platform_name} to update your data policy)`,
+      ``,
+      `If you have questions, contact ${platform_name} support.`
+    ].join("\n")
+  };
+}
+
+function renderFullExportReady({
+  organizer_name = "there",
+  event_name = "your event",
+  export_id = "",
+  download_url = "",
+  expires_in_hours = 24,
+  platform_name = "Codex"
+}) {
+  return {
+    subject: `Your event data export is ready — ${event_name}`,
+    body: [
+      `Hi ${organizer_name},`,
+      ``,
+      `Your full data export for "${event_name}" is ready to download.`,
+      ``,
+      `Export ID: ${export_id}`,
+      download_url ? `Download link: ${download_url}` : `Log in to ${platform_name} to download your export.`,
+      ``,
+      `This download link expires in ${expires_in_hours} hours and can only be used once.`,
+      ``,
+      `Please store the downloaded file securely — it contains event data subject to your data policy.`,
+      ``,
+      `If you did not request this export, contact ${platform_name} support immediately.`
+    ].join("\n")
+  };
+}
+
+function renderDsrExportReady({
+  attendee_name = "there",
+  export_id = "",
+  download_url = "",
+  expires_in_hours = 24
+}) {
+  return {
+    subject: `Your data export is ready`,
+    body: [
+      `Hi ${attendee_name},`,
+      ``,
+      `Your personal data export is ready to download.`,
+      ``,
+      `Export ID: ${export_id}`,
+      download_url ? `Download link: ${download_url}` : `Please log in to download your data export.`,
+      ``,
+      `This link expires in ${expires_in_hours} hours and can only be used once.`,
+      ``,
+      `The export contains all personal data we hold for you as requested. Please store it securely.`,
+      ``,
+      `If you did not request this export, please contact us immediately.`
+    ].join("\n")
+  };
+}
+
+function renderDsrDeleteConfirmed({
+  attendee_name = "there",
+  event_name = "your event",
+  completed_at = new Date().toISOString()
+}) {
+  return {
+    subject: `Your data has been deleted`,
+    body: [
+      `Hi ${attendee_name},`,
+      ``,
+      `Your personal data associated with "${event_name}" has been deleted as requested.`,
+      ``,
+      `Deletion completed on: ${completed_at}`,
+      ``,
+      `What was removed: your name, email, phone number, company, and interaction details.`,
+      `What was kept: anonymised analytics data used for aggregate event reporting (no personal identifiers).`,
+      ``,
+      `If you have any questions, please contact us.`
+    ].join("\n")
+  };
+}
+
+function renderOffboardingDeletionCertificate({
+  organizer_name = "there",
+  tenant_name = "your organisation",
+  deleted_at = new Date().toISOString(),
+  certificate_download_url = "",
+  platform_name = "Codex"
+}) {
+  return {
+    subject: `Data deletion certificate — ${tenant_name}`,
+    body: [
+      `Hi ${organizer_name},`,
+      ``,
+      `The data deletion for "${tenant_name}" on ${platform_name} has been completed.`,
+      ``,
+      `Deletion completed on: ${deleted_at}`,
+      ``,
+      `Your data deletion certificate is available here:`,
+      certificate_download_url || `(Log in to ${platform_name} to download your certificate)`,
+      ``,
+      `Please retain this certificate for your records. As per data protection regulations, this certificate will be kept for 7 years.`,
+      ``,
+      `If you have questions about this deletion, contact ${platform_name} support.`
     ].join("\n")
   };
 }

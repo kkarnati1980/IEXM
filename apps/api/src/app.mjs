@@ -14,6 +14,9 @@ import { verifyPlatformToken } from "./auth/platform-jwt.mjs";
 import { hashDeviceCredentialToken } from "./device-credentials.mjs";
 import { createIotOperationsRuntime } from "./iot/runtime.mjs";
 import { startBreakGlassExpiryJob } from "./jobs/break-glass-expiry.mjs";
+import { startRetentionPurgeJob, startRetentionExpiryCountdownJob } from "./jobs/retention-purge.mjs";
+import { startFullExportWorker } from "./jobs/full-export-worker.mjs";
+import { startDSRWorker } from "./jobs/dsr-worker.mjs";
 
 export async function createApp(options = {}) {
   const router = createRouter();
@@ -73,6 +76,10 @@ export async function createApp(options = {}) {
   if (options.enableJobs === true) {
     const tenantIds = state.tenants.map((t) => t.id);
     startBreakGlassExpiryJob(repos, tenantIds);
+    startRetentionPurgeJob(repos, state);
+    startRetentionExpiryCountdownJob(repos, state);
+    startFullExportWorker(repos, state);
+    startDSRWorker(repos, state);
   }
 
   return {

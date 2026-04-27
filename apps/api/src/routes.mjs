@@ -56,6 +56,10 @@ import {
 } from "./notification-providers.mjs";
 import { dispatchTransactionalEmail } from "./notification-dispatch.mjs";
 import { writeAuditEvent, AUDIT_EVENT_TYPES } from "./audit.mjs";
+import { runRetentionPurgeOnce } from "./jobs/retention-purge.mjs";
+import { processFullExportJob } from "./jobs/full-export-worker.mjs";
+import { processDSRJob } from "./jobs/dsr-worker.mjs";
+import { processTenantOffboarding } from "./jobs/offboarding-worker.mjs";
 
 export function registerRoutes(router) {
   router.addRoute({
@@ -7282,7 +7286,7 @@ export function registerRoutes(router) {
     allowedRoles: ["organizer_admin"],
     statusCode: 201,
     validate: (body) => body ?? {},
-    handler: async ({ repos, params, principal, body }) => {
+    handler: async ({ repos, params, principal, body, state }) => {
       const event = await repos.events.findById(principal.tenant_id, params.eventId);
       assertEventScoped(principal, event.id);
       const include = body.include ?? VALID_EXPORT_INCLUDES;
@@ -7303,7 +7307,11 @@ export function registerRoutes(router) {
         tenantId: principal.tenant_id, eventId: event.id, actorUserId: principal.user_id,
         actorRole: principal.role, action: "full_export.requested", targetType: "export_request", targetId: exportRequest.id
       });
-      console.log(`TODO: trigger full export worker for export ${exportRequest.id} (Phase 16)`);
+      setImmediate(() => {
+        processFullExportJob(repos, state, exportRequest.id).catch((err) => {
+          console.error(`[routes] Full export worker error for ${exportRequest.id}:`, err);
+        });
+      });
       return { export_id: exportRequest.id, status: "requested", message: "Export is being prepared. You will be notified when ready." };
     },
     auditEventType: "full_export.created"
@@ -7405,7 +7413,11 @@ export function registerRoutes(router) {
         targetType: "data_subject_request", targetId: dsr.id
       });
       await dispatchSovereigntyWebhook(repos, tenantId, event_id, "dsr.submitted", { event_id, request_type, occurred_at: now });
-      console.log(`TODO: trigger DSR worker for request ${dsr.id} (Phase 16)`);
+      setImmediate(() => {
+        processDSRJob(repos, state, dsr.id).catch((err) => {
+          console.error(`[routes] DSR worker error for ${dsr.id}:`, err);
+        });
+      });
       return { dsr_id: dsr.id, status: "requested" };
     }
   });
@@ -7541,13 +7553,17 @@ export function registerRoutes(router) {
     method: "POST",
     path: "/admin/tenants/:tenantId/offboard/:jobId/approve",
     allowedRoles: ["platform_admin"],
-    handler: async ({ repos, params, principal }) => {
+    handler: async ({ repos, params, principal, state }) => {
       const job = await repos.tenantOffboardingJobs.findById(params.jobId);
       if (!job || job.tenant_id !== params.tenantId) throw new HttpError(404, "Offboarding job not found");
       if (job.initiated_by_user_id === principal.user_id) throw new HttpError(403, "SAME_USER_APPROVAL_FORBIDDEN", { message: "The approver must be a different platform_admin than the initiator" });
       const newStatus = job.data_handling_path === "immediate_delete" ? "deletion_in_progress" : "export_in_progress";
       const updated = await repos.tenantOffboardingJobs.update({ ...job, approved_by_user_id: principal.user_id, status: newStatus });
-      console.log(`TODO: trigger offboarding worker for job ${job.id} (Phase 16)`);
+      setImmediate(() => {
+        processTenantOffboarding(repos, state, job.id).catch((err) => {
+          console.error(`[routes] Offboarding worker error for job ${job.id}:`, err);
+        });
+      });
       return { job_id: updated.id, status: updated.status };
     },
     auditEventType: "tenant.offboarding_approved"
@@ -7614,7 +7630,10 @@ export function registerRoutes(router) {
       const event = await repos.events.findById(principal.tenant_id, params.eventId);
       await repos.events.update({ ...event, retention_status: "purging" });
       await writePrivacyAudit(repos, { tenantId: principal.tenant_id, eventId: event.id, actorUserId: principal.user_id, actorRole: "platform_admin", action: "retention.purge_executed", targetType: "event", targetId: event.id });
-      console.log(`TODO: execute actual purge for event ${event.id} (Phase 16)`);
+      const singleEventState = { tenants: [{ id: principal.tenant_id }] };
+      runRetentionPurgeOnce(repos, singleEventState).catch((err) => {
+        console.error(`[routes] Force-purge worker error for event ${event.id}:`, err);
+      });
       return { message: "Purge initiated", event_id: event.id, status: "purging" };
     },
     auditEventType: "retention.force_purge_initiated"
