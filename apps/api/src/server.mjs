@@ -1,7 +1,54 @@
 import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { resolve, extname, join } from "node:path";
 
 import { createApp } from "./app.mjs";
+
+const __serverDir = resolve(fileURLToPath(import.meta.url), "..");
+// apps/api/src → ../../.. → project root → apps/web
+const WEB_DIR = resolve(__serverDir, "../../..", "apps/web");
+
+const MIME_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon"
+};
+
+async function tryServeStaticFile(req, res) {
+  if (req.method !== "GET") return false;
+
+  let urlPath = req.url.split("?")[0];
+  if (urlPath === "/") urlPath = "/index.html";
+
+  // Resolve candidate paths — exact match, then .html suffix, then /index.html
+  const candidates = [urlPath];
+  if (!extname(urlPath)) {
+    candidates.push(urlPath + ".html");
+    candidates.push(urlPath + "/index.html");
+  }
+
+  for (const candidate of candidates) {
+    // Guard against path traversal
+    const resolved = resolve(WEB_DIR, "." + candidate);
+    if (!resolved.startsWith(WEB_DIR + "/") && resolved !== WEB_DIR) continue;
+
+    try {
+      const content = await readFile(resolved);
+      const mime = MIME_TYPES[extname(resolved)] ?? "application/octet-stream";
+      res.writeHead(200, { "content-type": mime, "cache-control": "no-cache" });
+      res.end(content);
+      return true;
+    } catch {
+      continue;
+    }
+  }
+  return false;
+}
 
 const ALLOWED_METHODS = ["GET", "POST", "PATCH", "DELETE", "OPTIONS"];
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? null;
@@ -47,6 +94,9 @@ export function createHttpHandler(app, options = {}) {
     }
 
     try {
+      // Serve static web files before JSON API routing
+      if (req.method === "GET" && await tryServeStaticFile(req, res)) return;
+
       rejectDisallowedCorsOrigin(req, cors);
       validateContentType(req);
 
