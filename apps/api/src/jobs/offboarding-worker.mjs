@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { nextId } from "../store.mjs";
 import { dispatchTransactionalEmail } from "../notification-dispatch.mjs";
+import { uploadFile } from "../storage/storage-adapter.mjs";
 
 async function scheduleOffboardingReminders(repos, job, tenant, scheduledDeletionAt) {
   const now = Date.now();
@@ -127,13 +128,17 @@ export async function processTenantOffboarding(repos, state, jobId) {
       witness_approver_id_hash: witnessHash
     };
 
-    const certB64 = Buffer.from(JSON.stringify(certificate)).toString("base64");
-    const certDataUri = `data:application/json;base64,${certB64}`;
+    const { url: certUrl } = await uploadFile(
+      `certificates/${job.tenant_id}/deletion-cert-${jobId}.json`,
+      Buffer.from(JSON.stringify(certificate)),
+      "application/json",
+      { expiresIn: 365 * 24 * 3600 }
+    );
 
     await repos.tenantOffboardingJobs.update({
       ...job,
       status: "completed",
-      deletion_certificate_url: certDataUri,
+      deletion_certificate_url: certUrl,
       completed_at: now
     });
 
@@ -166,7 +171,7 @@ export async function processTenantOffboarding(repos, state, jobId) {
           organizer_name: admin.display_name ?? "there",
           tenant_name: tenant.name,
           deleted_at: now,
-          certificate_download_url: certDataUri,
+          certificate_download_url: certUrl,
           platform_name: "Codex"
         }
       });

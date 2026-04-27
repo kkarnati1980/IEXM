@@ -467,7 +467,8 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   "admin-tenant-compliance-check": entry({ permission: "admin.tenant.compliance.check", roles: platform, scope: "tenant", description: "Run infrastructure compliance check", sensitivity: "security" }),
   "admin-privacy-audit-log": entry({ permission: "admin.privacy_audit_log.view", roles: platform, scope: "tenant", description: "View privacy audit log entries across all events", sensitivity: "security" }),
   "event-privacy-audit-log": entry({ permission: "organizer.privacy_audit_log.view", roles: organizer, scope: "event", description: "View privacy audit log for own event (no actor identity)", sensitivity: "security" }),
-  "admin-privacy-audit-log-export": entry({ permission: "admin.privacy_audit_log.export", roles: platform, scope: "tenant", description: "Export full privacy audit log as CSV", sensitivity: "security" })
+  "admin-privacy-audit-log-export": entry({ permission: "admin.privacy_audit_log.export", roles: platform, scope: "tenant", description: "Export full privacy audit log as CSV", sensitivity: "security" }),
+  "storage-local-download": publicEntry("storage.local.download", "Download a signed local export file (token IS the auth)", "pii")
 });
 
 export function getAccessControlEntry(routeId) {

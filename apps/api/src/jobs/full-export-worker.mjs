@@ -1,5 +1,6 @@
 import { nextId } from "../store.mjs";
 import { dispatchTransactionalEmail } from "../notification-dispatch.mjs";
+import { uploadFile } from "../storage/storage-adapter.mjs";
 
 export function startFullExportWorker(repos, state, intervalMs = 30_000) {
   const handle = setInterval(() => {
@@ -156,16 +157,20 @@ export async function processFullExportJob(repos, state, exportId) {
     }
 
     const json = JSON.stringify(exportData);
-    const b64 = Buffer.from(json).toString("base64");
-    const dataUri = `data:application/json;base64,${b64}`;
     const completedAt = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    const { url: fileUrl, expires_at: fileExpiresAt } = await uploadFile(
+      `exports/${eventId}/full-export-${exportId}.json`,
+      Buffer.from(json),
+      "application/json",
+      { expiresIn: 86400 }
+    );
 
     await repos.exportRequests.update({
       ...exportRequest,
       status: "completed",
-      export_file_url: dataUri,
-      export_expires_at: expiresAt,
+      export_file_url: fileUrl,
+      export_expires_at: fileExpiresAt.toISOString(),
       download_used: false
     });
 

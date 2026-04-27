@@ -60,8 +60,32 @@ import { runRetentionPurgeOnce } from "./jobs/retention-purge.mjs";
 import { processFullExportJob } from "./jobs/full-export-worker.mjs";
 import { processDSRJob } from "./jobs/dsr-worker.mjs";
 import { processTenantOffboarding } from "./jobs/offboarding-worker.mjs";
+import { validateDownloadToken, readLocalFile } from "./storage/storage-adapter.mjs";
 
 export function registerRoutes(router) {
+  router.addRoute({
+    id: "storage-local-download",
+    method: "GET",
+    path: "/api/exports/download",
+    authRequired: false,
+    handler: async ({ query }) => {
+      const { key, expires, sig } = query;
+      if (!key || !expires || !sig) {
+        throw new HttpError(400, "MISSING_DOWNLOAD_PARAMS");
+      }
+      if (!validateDownloadToken(key, expires, sig)) {
+        throw new HttpError(403, "DOWNLOAD_LINK_EXPIRED_OR_INVALID");
+      }
+      let data;
+      try {
+        data = readLocalFile(key).toString("utf8");
+      } catch {
+        throw new HttpError(404, "EXPORT_FILE_NOT_FOUND");
+      }
+      return { key, content_type: "application/json", data };
+    }
+  });
+
   router.addRoute({
     id: "health",
     method: "GET",
@@ -7357,7 +7381,8 @@ export function registerRoutes(router) {
       await dispatchSovereigntyWebhook(repos, principal.tenant_id, event.id, "export.downloaded", {
         event_id: event.id, export_type: latest.export_type, export_id: latest.id, actor_role: principal.role, occurred_at: new Date().toISOString()
       });
-      return { export_id: latest.id, download_url: `${process.env.PLATFORM_BASE_URL ?? "https://placeholder.example.com"}/exports/${latest.id}/file`, expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString() };
+      const downloadUrl = latest.export_file_url ?? `${process.env.PLATFORM_BASE_URL ?? "http://localhost:3000"}/exports/${latest.id}/file`;
+      return { export_id: latest.id, download_url: downloadUrl, expires_at: latest.export_expires_at ?? new Date(Date.now() + 15 * 60 * 1000).toISOString() };
     },
     auditEventType: "full_export.downloaded"
   });

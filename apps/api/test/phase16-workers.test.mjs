@@ -208,8 +208,8 @@ test("Full export worker: processFullExportJob sets status=completed, export_fil
 
   const exportRequest = state.exportRequests.find((e) => e.id === exportId);
   assert.equal(exportRequest.status, "completed");
-  assert.ok(exportRequest.export_file_url?.startsWith("data:application/json;base64,"),
-    "export_file_url should be a data URI");
+  assert.ok(exportRequest.export_file_url && !exportRequest.export_file_url.startsWith("data:"),
+    "export_file_url should be a signed URL, not a data URI");
   assert.ok(exportRequest.export_expires_at, "export_expires_at should be set");
 
   // Check privacy audit log
@@ -297,8 +297,8 @@ test("DSR export worker: processDSRJob with type=export sets status=completed, e
 
   const dsr = state.dataSubjectRequests.find((d) => d.id === dsrId);
   assert.equal(dsr.status, "completed");
-  assert.ok(dsr.export_file_url?.startsWith("data:application/json;base64,"),
-    "export_file_url should be a data URI");
+  assert.ok(dsr.export_file_url && !dsr.export_file_url.startsWith("data:"),
+    "export_file_url should be a signed URL, not a data URI");
   assert.equal(dsr.download_used, false);
 
   // Check privacy audit log
@@ -466,8 +466,8 @@ test("Offboarding worker: processTenantOffboarding purges tenant PII, generates 
   // Job completed with certificate
   const job = state.tenantOffboardingJobs.find((j) => j.id === jobId);
   assert.equal(job.status, "completed");
-  assert.ok(job.deletion_certificate_url?.startsWith("data:application/json;base64,"),
-    "deletion_certificate_url should be a data URI");
+  assert.ok(job.deletion_certificate_url && !job.deletion_certificate_url.startsWith("data:"),
+    "deletion_certificate_url should be a signed URL, not a data URI");
   assert.ok(job.completed_at, "completed_at should be set");
 
   // Attendee PII nulled

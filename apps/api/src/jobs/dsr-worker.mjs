@@ -1,5 +1,6 @@
 import { nextId } from "../store.mjs";
 import { dispatchTransactionalEmail } from "../notification-dispatch.mjs";
+import { uploadFile } from "../storage/storage-adapter.mjs";
 
 export function startDSRWorker(repos, state, intervalMs = 5 * 60 * 1000) {
   const handle = setInterval(() => {
@@ -107,14 +108,18 @@ export async function processDSRJob(repos, state, dsrId) {
         }))
       };
 
-      const b64 = Buffer.from(JSON.stringify(exportData)).toString("base64");
-      const dataUri = `data:application/json;base64,${b64}`;
+      const { url: fileUrl, expires_at: fileExpiresAt } = await uploadFile(
+        `dsr/${dsr.attendee_id}/dsr-export-${dsrId}.json`,
+        Buffer.from(JSON.stringify(exportData)),
+        "application/json",
+        { expiresIn: 86400 }
+      );
 
       await repos.dataSubjectRequests.update({
         ...dsr,
         status: "completed",
-        export_file_url: dataUri,
-        export_expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        export_file_url: fileUrl,
+        export_expires_at: fileExpiresAt.toISOString(),
         download_used: false,
         completed_at: completedAt
       });
