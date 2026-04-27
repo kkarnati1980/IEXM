@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { resolve, extname, join } from "node:path";
 
 import { createApp } from "./app.mjs";
+import { createSeedState, applyDemoSampleData } from "./store.mjs";
 
 const __serverDir = resolve(fileURLToPath(import.meta.url), "..");
 // apps/api/src → ../../.. → project root → apps/web
@@ -253,7 +254,9 @@ class RequestTimeoutError extends Error {}
 class UnsupportedMediaTypeError extends Error {}
 class CorsOriginError extends Error {}
 
-const { app, server } = await createHttpServer();
+const demoState = createSeedState();
+applyDemoSampleData(demoState);
+const { app, server } = await createHttpServer({ appOptions: { state: demoState } });
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";
 const isEntrypoint = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
