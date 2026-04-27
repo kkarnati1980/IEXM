@@ -96,6 +96,8 @@
       .section-head h3 { margin: 0; }
       .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 14px; }
       .toolbar > div { flex: 1 1 180px; min-width: 140px; }
+      /* Ensure [hidden] attribute is respected even when CSS sets display on the element */
+      [hidden] { display: none !important; }
       /* Modal */
       .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; z-index: 9000; }
       .modal-panel { background: var(--panel); border-radius: 22px; border: 1px solid var(--border); padding: 28px; max-width: 560px; width: 90%; max-height: 90vh; overflow-y: auto; }
@@ -1208,11 +1210,35 @@
 
       document.getElementById("copy-secret-btn").addEventListener("click", () => {
         const secret = document.getElementById("reveal-client-secret").textContent;
-        navigator.clipboard.writeText(secret).then(() => toast("Secret copied!")).catch(() => {});
+        const btn = document.getElementById("copy-secret-btn");
+        const originalText = btn.textContent;
+
+        function flashCopied() {
+          btn.textContent = "Copied!";
+          btn.disabled = true;
+          setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2000);
+        }
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(secret).then(() => {
+            toast("Secret copied to clipboard!");
+            flashCopied();
+          }).catch(() => {
+            // Clipboard API present but failed (e.g. permissions) — fall back to select
+            document.getElementById("reveal-client-secret").focus?.();
+            window.getSelection()?.selectAllChildren(document.getElementById("reveal-client-secret"));
+            toast("Select the secret above and copy manually.");
+          });
+        } else {
+          // HTTP context — clipboard API unavailable; select text for manual copy
+          window.getSelection()?.selectAllChildren(document.getElementById("reveal-client-secret"));
+          toast("Secret selected — press Ctrl+C / Cmd+C to copy.");
+        }
       });
 
       document.getElementById("reveal-done-btn").addEventListener("click", () => {
         document.getElementById("secret-reveal-modal").hidden = true;
+        loadApiClients();
       });
 
       // H.2 Create modal
