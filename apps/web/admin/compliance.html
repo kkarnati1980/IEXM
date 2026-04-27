@@ -113,11 +113,20 @@
           <span id="compliance-badge"><span class="badge review_required">⚠ Review Required</span></span>
         </div>
         <div class="detail-row"><label>Current Zone</label><span id="current-zone" class="muted">—</span></div>
+        <div class="detail-row"><label>Detected Zone</label><span id="detected-zone" class="muted">—</span></div>
         <div class="detail-row"><label>Last Verified</label><span id="last-verified" class="muted">—</span></div>
 
-        <div class="status warn" style="margin-top:16px;font-size:13px;">
+        <div id="checks-section" hidden style="margin-top:16px;">
+          <h4 style="margin:0 0 10px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;">Resource Checks</h4>
+          <table>
+            <thead><tr><th>Resource</th><th>Region Detected</th><th>Zone</th><th>Compliant</th></tr></thead>
+            <tbody id="checks-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="status warn" style="margin-top:16px;font-size:13px;" id="infra-note">
           Data residency enforcement requires infrastructure-level configuration.
-          This screen reflects configuration only.
+          Set <code>INFRA_BACKEND=aws</code> or <code>gcp</code> in production for real verification.
         </div>
       </div>
 
@@ -187,7 +196,8 @@
           const status = c.compliance_status ?? "review_required";
           document.getElementById("compliance-badge").innerHTML = `<span class="badge ${esc(status)}">${esc(STATUS_ICONS[status] ?? status)}</span>`;
           document.getElementById("current-zone").textContent = c.residency_zone ?? "—";
-          document.getElementById("last-verified").textContent = fmt(c.last_verified_at);
+          document.getElementById("detected-zone").textContent = c.detected_zone ?? "—";
+          document.getElementById("last-verified").textContent = fmt(c.last_compliance_check_at ?? c.last_checked_at ?? c.last_verified_at);
 
           loadHistory();
         } catch (err) {
@@ -225,10 +235,29 @@
           const data = await api(`/admin/tenants/${encodeURIComponent(tenantId)}/compliance/check`, { method: "POST", body: {} });
           const status = data.status ?? "review_required";
           resultEl.className = `status ${status === "compliant" ? "ok" : status === "non_compliant" ? "error" : "warn"}`;
-          resultEl.textContent = `Compliance check result: ${STATUS_ICONS[status] ?? status}`;
+          resultEl.textContent = `Compliance check result: ${STATUS_ICONS[status] ?? status}${data.message ? ` — ${data.message}` : ""}`;
           resultEl.hidden = false;
           document.getElementById("compliance-badge").innerHTML = `<span class="badge ${esc(status)}">${esc(STATUS_ICONS[status] ?? status)}</span>`;
-          document.getElementById("last-verified").textContent = fmt(new Date().toISOString());
+          document.getElementById("detected-zone").textContent = data.detected_zone ?? "—";
+          document.getElementById("last-verified").textContent = fmt(data.last_checked_at);
+
+          // Render per-resource checks table
+          const checks = data.checks ?? [];
+          const checksSection = document.getElementById("checks-section");
+          const checksTbody = document.getElementById("checks-tbody");
+          if (checks.length) {
+            checksTbody.innerHTML = checks.map(c => `
+              <tr>
+                <td style="font-size:13px;text-transform:capitalize;">${esc(c.resource ?? "—")}</td>
+                <td class="muted" style="font-size:13px;">${esc(c.region ?? "—")}</td>
+                <td class="muted">${esc(c.zone ?? "—")}</td>
+                <td>${c.compliant ? "✅" : "❌"}</td>
+              </tr>`).join("");
+            checksSection.hidden = false;
+          } else {
+            checksSection.hidden = true;
+          }
+
           loadHistory();
         } catch (err) {
           const el = document.getElementById("check-status");

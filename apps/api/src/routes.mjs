@@ -61,6 +61,7 @@ import { processFullExportJob } from "./jobs/full-export-worker.mjs";
 import { processDSRJob } from "./jobs/dsr-worker.mjs";
 import { processTenantOffboarding } from "./jobs/offboarding-worker.mjs";
 import { validateDownloadToken, readLocalFile } from "./storage/storage-adapter.mjs";
+import { runComplianceCheck } from "./integrations/infra-compliance.mjs";
 
 export function registerRoutes(router) {
   router.addRoute({
@@ -7714,7 +7715,14 @@ export function registerRoutes(router) {
       const tenant = await repos.tenants.findById(params.tenantId);
       if (!tenant) throw new HttpError(404, "Tenant not found");
       const zone = tenant.data_residency_zone ?? "global";
-      return { data_residency_zone: zone, sensitive_data_categories: tenant.sensitive_data_categories ?? [], compliance_status: zone === "india" ? "review_required" : "compliant", last_checked_at: tenant.compliance_last_checked_at ?? null };
+      return {
+        data_residency_zone: zone,
+        sensitive_data_categories: tenant.sensitive_data_categories ?? [],
+        compliance_status: tenant.last_compliance_status ?? (zone === "india" ? "review_required" : "compliant"),
+        last_checked_at: tenant.last_compliance_check_at ?? tenant.compliance_last_checked_at ?? null,
+        last_compliance_status: tenant.last_compliance_status ?? null,
+        last_compliance_check_at: tenant.last_compliance_check_at ?? null
+      };
     }
   });
 
@@ -7743,8 +7751,23 @@ export function registerRoutes(router) {
     handler: async ({ repos, params }) => {
       const tenant = await repos.tenants.findById(params.tenantId);
       if (!tenant) throw new HttpError(404, "Tenant not found");
-      // TODO: wire to infrastructure tag scan (requires infra team)
-      return { status: "review_required", message: "Infrastructure compliance check requires manual verification. Contact your infrastructure team.", last_checked_at: new Date().toISOString() };
+      const result = await runComplianceCheck(tenant.id, tenant.data_residency_zone ?? "global");
+      const complianceStatus = result.compliant ? "compliant"
+        : result.reason === "CHECK_FAILED" ? "non_compliant"
+        : "review_required";
+      await repos.tenants.update({
+        ...tenant,
+        last_compliance_check_at: result.checked_at.toISOString(),
+        last_compliance_status: complianceStatus
+      });
+      return {
+        status: complianceStatus,
+        configured_zone: tenant.data_residency_zone ?? "global",
+        detected_zone: result.detected_zone ?? null,
+        checks: result.checks ?? [],
+        message: result.reason ?? null,
+        last_checked_at: result.checked_at.toISOString()
+      };
     }
   });
 
