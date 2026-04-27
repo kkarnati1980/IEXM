@@ -3,7 +3,16 @@ import { hashDeviceCredentialToken } from "./device-credentials.mjs";
 
 export function createSeedState() {
   const now = new Date().toISOString();
-  const tenant = { id: "tenant-demo", slug: "demo", name: "Demo Tenant", created_at: now };
+  const tenant = {
+    id: "tenant-demo",
+    slug: "demo",
+    name: "Demo Tenant",
+    created_at: now,
+    data_residency_zone: "global",
+    offboarding_status: "active",
+    offboarding_initiated_at: null,
+    sensitive_data_categories: []
+  };
   const organizerOrg = {
     id: "org-organizer",
     tenant_id: tenant.id,
@@ -37,7 +46,10 @@ export function createSeedState() {
     metrics_definition_version: 1,
     report_snapshot_version: 1,
     starts_at: now,
-    ends_at: null
+    ends_at: null,
+    retention_status: "active",
+    purged_at: null,
+    last_purge_run_at: null
   };
   const hall = { id: "hall-main", tenant_id: tenant.id, event_id: event.id, name: "Main Hall" };
   const eventSecondary = {
@@ -49,7 +61,10 @@ export function createSeedState() {
     metrics_definition_version: 1,
     report_snapshot_version: 1,
     starts_at: now,
-    ends_at: null
+    ends_at: null,
+    retention_status: "active",
+    purged_at: null,
+    last_purge_run_at: null
   };
   const hallSecondary = {
     id: "hall-secondary",
@@ -273,6 +288,8 @@ export function createSeedState() {
     pentestFindings: [],
     apiClients: [],
     nfcReaders: [],
+    privacyAuditLogs: [],
+    tenantOffboardingJobs: [],
     sessionSecret: "pilot-attendee-session-secret",
     metrics: {
       routeHits: {}

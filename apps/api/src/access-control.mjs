@@ -441,7 +441,33 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   "admin-break-glass-get": entry({ permission: "admin.break_glass.view", roles: platform, scope: "tenant", description: "View a single break-glass request", sensitivity: "security" }),
   "admin-break-glass-approve": entry({ permission: "admin.break_glass.approve", roles: platform, scope: "tenant", description: "Approve a break-glass request", sensitivity: "security" }),
   "admin-break-glass-reject": entry({ permission: "admin.break_glass.reject", roles: platform, scope: "tenant", description: "Reject a break-glass request", sensitivity: "security" }),
-  "admin-break-glass-revoke": entry({ permission: "admin.break_glass.revoke", roles: platform, scope: "tenant", description: "Revoke an active break-glass session", sensitivity: "security" })
+  "admin-break-glass-revoke": entry({ permission: "admin.break_glass.revoke", roles: platform, scope: "tenant", description: "Revoke an active break-glass session", sensitivity: "security" }),
+
+  // Phase 15 — Sovereignty Backend Services
+  "platform-access-log": entry({ permission: "organizer.platform_access_log.view", roles: organizer, scope: "event", description: "View internal_platform audit entries for own event (no actor identity)", sensitivity: "security" }),
+  "platform-access-log-export": entry({ permission: "organizer.platform_access_log.export", roles: organizer, scope: "event", description: "Export platform access log as CSV", sensitivity: "security" }),
+  "full-export-create": entry({ permission: "organizer.full_export.create", roles: organizer, scope: "event", description: "Request full event data export", sensitivity: "pii" }),
+  "full-export-status": entry({ permission: "organizer.full_export.status", roles: organizer, scope: "event", description: "Check status of full event export", sensitivity: "pii" }),
+  "full-export-download": entry({ permission: "organizer.full_export.download", roles: organizer, scope: "event", description: "Download completed full event export (single-use)", sensitivity: "pii" }),
+  "full-export-history": entry({ permission: "organizer.full_export.history", roles: organizer, scope: "event", description: "List history of full event export requests", sensitivity: "pii" }),
+  "privacy-dsr-create": publicEntry("attendee.dsr.submit", "Submit a data subject request (export or delete)", "sensitive"),
+  "privacy-dsr-list": publicEntry("attendee.dsr.list", "List own data subject requests", "sensitive"),
+  "privacy-dsr-download": publicEntry("attendee.dsr.download", "Download completed DSR export (single-use)", "pii"),
+  "event-privacy-requests-list": entry({ permission: "organizer.privacy_requests.list", roles: organizer, scope: "event", description: "List DSRs for an event (no PII)", sensitivity: "pii" }),
+  "event-privacy-request-detail": entry({ permission: "organizer.privacy_requests.view", roles: organizer, scope: "event", description: "View a single DSR detail", sensitivity: "pii" }),
+  "event-privacy-request-reject": entry({ permission: "organizer.privacy_requests.reject", roles: organizer, scope: "event", description: "Reject a pending DSR", sensitivity: "pii" }),
+  "tenant-offboard-initiate": entry({ permission: "admin.tenant.offboard.initiate", roles: platform, scope: "tenant", description: "Initiate tenant offboarding (requires second-admin approval)", sensitivity: "security" }),
+  "tenant-offboard-approve": entry({ permission: "admin.tenant.offboard.approve", roles: platform, scope: "tenant", description: "Approve tenant offboarding (different admin required)", sensitivity: "security" }),
+  "tenant-offboard-status": entry({ permission: "admin.tenant.offboard.status", roles: platform, scope: "tenant", description: "Check tenant offboarding job status", sensitivity: "security" }),
+  "admin-tenant-retention": entry({ permission: "admin.tenant.retention.view", roles: platform, scope: "tenant", description: "View retention status for all events in a tenant", sensitivity: "pii" }),
+  "event-retention-status": entry({ permission: "organizer.retention.view", roles: organizer, scope: "event", description: "View retention status for own event", sensitivity: "pii" }),
+  "admin-event-force-purge": entry({ permission: "admin.event.retention.force_purge", roles: platform, scope: "event", description: "Force-purge event data", sensitivity: "security" }),
+  "admin-tenant-compliance-get": entry({ permission: "admin.tenant.compliance.view", roles: platform, scope: "tenant", description: "View tenant data residency and compliance config", sensitivity: "security" }),
+  "admin-tenant-compliance-patch": entry({ permission: "admin.tenant.compliance.update", roles: platform, scope: "tenant", description: "Update tenant data residency zone or sensitive data categories", sensitivity: "security" }),
+  "admin-tenant-compliance-check": entry({ permission: "admin.tenant.compliance.check", roles: platform, scope: "tenant", description: "Run infrastructure compliance check", sensitivity: "security" }),
+  "admin-privacy-audit-log": entry({ permission: "admin.privacy_audit_log.view", roles: platform, scope: "tenant", description: "View privacy audit log entries across all events", sensitivity: "security" }),
+  "event-privacy-audit-log": entry({ permission: "organizer.privacy_audit_log.view", roles: organizer, scope: "event", description: "View privacy audit log for own event (no actor identity)", sensitivity: "security" }),
+  "admin-privacy-audit-log-export": entry({ permission: "admin.privacy_audit_log.export", roles: platform, scope: "tenant", description: "Export full privacy audit log as CSV", sensitivity: "security" })
 });
 
 export function getAccessControlEntry(routeId) {

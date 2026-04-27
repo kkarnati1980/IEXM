@@ -979,7 +979,33 @@ export function createMemoryRepositories(state) {
       async listByEvent(tenantId, eventId) {
         return state.dataSubjectRequests
           .filter((entry) => entry.tenant_id === tenantId && entry.event_id === eventId)
-          .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+          .sort((a, b) => Date.parse(b.submitted_at ?? b.created_at) - Date.parse(a.submitted_at ?? a.created_at));
+      },
+      async listByEventFiltered(tenantId, eventId, filters = {}) {
+        let results = state.dataSubjectRequests.filter(
+          (entry) => entry.tenant_id === tenantId && entry.event_id === eventId
+        );
+        if (filters.request_type) results = results.filter((e) => e.request_type === filters.request_type);
+        if (filters.status) results = results.filter((e) => e.status === filters.status);
+        results = results.sort((a, b) => Date.parse(b.submitted_at ?? b.created_at) - Date.parse(a.submitted_at ?? a.created_at));
+        const page = filters.page ?? 1;
+        const pageSize = filters.page_size ?? 20;
+        return { items: results.slice((page - 1) * pageSize, page * pageSize), total: results.length };
+      },
+      async listByAttendee(tenantId, attendeeId) {
+        return state.dataSubjectRequests
+          .filter((entry) => entry.tenant_id === tenantId && entry.attendee_id === attendeeId)
+          .sort((a, b) => Date.parse(b.submitted_at ?? b.created_at) - Date.parse(a.submitted_at ?? a.created_at));
+      },
+      async findActiveByAttendeeEventType(tenantId, attendeeId, eventId, requestType) {
+        return state.dataSubjectRequests.find(
+          (e) =>
+            e.tenant_id === tenantId &&
+            e.attendee_id === attendeeId &&
+            e.event_id === eventId &&
+            e.request_type === requestType &&
+            ["requested", "processing"].includes(e.status)
+        ) ?? null;
       },
       async findById(tenantId, id) {
         return findById(state.dataSubjectRequests, tenantId, id, "Data-subject request");
@@ -1478,6 +1504,45 @@ export function createMemoryRepositories(state) {
         const index = state.nfcReaders.findIndex((r) => r.id === record.id);
         if (index === -1) throw new HttpError(404, "NFC reader not found");
         state.nfcReaders[index] = record;
+        return record;
+      }
+    },
+    privacyAuditLogs: {
+      async create(record) {
+        state.privacyAuditLogs.push(record);
+        return record;
+      },
+      async listByTenant(tenantId, filters = {}) {
+        let results = state.privacyAuditLogs.filter((e) => e.tenant_id === tenantId);
+        if (filters.event_id) results = results.filter((e) => e.event_id === filters.event_id);
+        if (filters.action) results = results.filter((e) => e.action === filters.action);
+        if (filters.actor_role) results = results.filter((e) => e.actor_role === filters.actor_role);
+        if (filters.from) results = results.filter((e) => e.occurred_at >= filters.from);
+        if (filters.to) results = results.filter((e) => e.occurred_at <= filters.to);
+        results = results.sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at));
+        const page = filters.page ?? 1;
+        const pageSize = filters.page_size ?? 20;
+        const total = results.length;
+        return { entries: results.slice((page - 1) * pageSize, page * pageSize), total, page, page_size: pageSize };
+      }
+    },
+    tenantOffboardingJobs: {
+      async create(record) {
+        state.tenantOffboardingJobs.push(record);
+        return record;
+      },
+      async findById(id) {
+        return state.tenantOffboardingJobs.find((e) => e.id === id) ?? null;
+      },
+      async findActiveByTenant(tenantId) {
+        return state.tenantOffboardingJobs.find(
+          (e) => e.tenant_id === tenantId && !["completed", "failed"].includes(e.status)
+        ) ?? null;
+      },
+      async update(record) {
+        const index = state.tenantOffboardingJobs.findIndex((e) => e.id === record.id);
+        if (index === -1) throw new HttpError(404, "Tenant offboarding job not found");
+        state.tenantOffboardingJobs[index] = record;
         return record;
       }
     },

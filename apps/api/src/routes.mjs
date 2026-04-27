@@ -6177,7 +6177,45 @@ export function registerRoutes(router) {
         }
       });
 
-      console.log(`TODO: fire data_policy.changed webhook and notification for event ${event.id} (Phase 15/17)`);
+      if (changedFields.length > 0) {
+        const changedFieldsDetail = changedFields.map((k) => ({ field: k, old_value: base[k] ?? null, new_value: policyFields[k] }));
+
+        await repos.privacyAuditLogs.create({
+          id: nextId("pal"),
+          tenant_id: principal.tenant_id,
+          event_id: event.id,
+          actor_user_id: principal.user_id,
+          actor_role: principal.role,
+          action: "data_policy.changed",
+          target_type: "event",
+          target_id: event.id,
+          metadata: { changed_fields: changedFieldsDetail, actor_role: principal.role },
+          occurred_at: new Date().toISOString()
+        });
+
+        // Notify organizer admins
+        const allUsers = await repos.users.listByTenant(principal.tenant_id);
+        const eventAdmins = allUsers.filter((u) => u.role === "organizer_admin" && u.status === "active" && u.id !== principal.user_id);
+        const reviewUrl = `${process.env.PLATFORM_BASE_URL ?? ""}/events/${event.id}/data-policy`;
+        for (const admin of eventAdmins) {
+          await dispatchTransactionalEmail({
+            repos,
+            tenantId: principal.tenant_id,
+            recipientEmail: admin.email,
+            messageType: "data_policy_changed",
+            templateVars: {
+              organizer_name: admin.display_name ?? "Organizer",
+              event_name: event.name,
+              changed_fields: changedFieldsDetail,
+              actor_role: principal.role,
+              occurred_at: new Date().toISOString(),
+              review_url: reviewUrl
+            },
+            actorUserId: principal.user_id
+          });
+        }
+      }
+
       return { policy };
     }
   });
@@ -7010,7 +7048,43 @@ export function registerRoutes(router) {
         metadata: { approved_by: principal.user_id, expires_at }
       });
 
-      console.log(`TODO: fire break_glass_organizer_alert notification to organizer admins for this event (Phase 15 SG11)`);
+      // SG11: Notify organizer_admin users of break-glass access
+      const allUsers = await repos.users.listByTenant(principal.tenant_id);
+      const organizerAdmins = allUsers.filter((u) => u.role === "organizer_admin" && u.status === "active");
+      const tenantsList = await repos.tenants.listAll();
+      const tenantRecord = tenantsList.find((t) => t.id === principal.tenant_id);
+      for (const admin of organizerAdmins) {
+        await dispatchTransactionalEmail({
+          repos,
+          tenantId: principal.tenant_id,
+          recipientEmail: admin.email,
+          messageType: "break_glass_organizer_alert",
+          templateVars: {
+            organizer_name: admin.display_name ?? "Organizer",
+            requester_role: "platform_admin",
+            access_scope: request.access_scope,
+            justification: request.justification,
+            event_name: tenantRecord?.name ?? "your event",
+            duration_minutes: request.requested_duration_minutes ?? null,
+            platform_access_log_url: `${process.env.PLATFORM_BASE_URL ?? ""}/events/platform-access-log`
+          },
+          actorUserId: principal.user_id
+        });
+      }
+
+      await repos.privacyAuditLogs.create({
+        id: nextId("pal"),
+        tenant_id: principal.tenant_id,
+        event_id: null,
+        actor_user_id: principal.user_id,
+        actor_role: "platform_admin",
+        action: "break_glass.accessed",
+        target_type: "break_glass_access",
+        target_id: updated.id,
+        metadata: { access_scope: request.access_scope, justification: request.justification },
+        occurred_at: new Date().toISOString()
+      });
+
       return { id: updated.id, status: "active", expires_at };
     }
   });
@@ -7090,6 +7164,552 @@ export function registerRoutes(router) {
       return { id: updated.id, status: "revoked" };
     }
   });
+
+  // ══════════════════════════════════════════════════════════════
+  // PHASE 15 — Sovereignty Backend Services (SG1-SG11)
+  // ══════════════════════════════════════════════════════════════
+
+  async function writePrivacyAudit(repos, { tenantId, eventId = null, actorUserId = null, actorRole, action, targetType = null, targetId = null, metadata = null }) {
+    return repos.privacyAuditLogs.create({
+      id: nextId("pal"),
+      tenant_id: tenantId,
+      event_id: eventId,
+      actor_user_id: actorUserId,
+      actor_role: actorRole,
+      action,
+      target_type: targetType,
+      target_id: targetId,
+      metadata: metadata ?? null,
+      occurred_at: new Date().toISOString()
+    });
+  }
+
+  const SOVEREIGNTY_WEBHOOK_EVENTS = new Set([
+    "data_policy.changed", "break_glass.accessed", "export.downloaded",
+    "retention.purge_completed", "dsr.submitted", "dsr.completed"
+  ]);
+
+  async function dispatchSovereigntyWebhook(repos, tenantId, eventId, eventType, data) {
+    if (!SOVEREIGNTY_WEBHOOK_EVENTS.has(eventType)) return;
+    const subscriptions = repos.webhookSubscriptions?.listByEvent
+      ? (await repos.webhookSubscriptions.listByEvent(tenantId, eventId))
+          .filter((s) => s.status === "active" && Array.isArray(s.event_types) && s.event_types.includes(eventType))
+      : [];
+    const payload = { event_type: eventType, fired_at: new Date().toISOString(), event_id: eventId, data };
+    for (const sub of subscriptions) {
+      fetch(sub.target_url, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-codex-event": eventType },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(5000)
+      }).catch(() => {});
+    }
+  }
+
+  // ── Step 15.1: Platform access log (SG1, SG8) ────────────────
+
+  router.addRoute({
+    id: "platform-access-log",
+    method: "GET",
+    path: "/events/:eventId/platform-access-log",
+    allowedRoles: ["organizer_admin"],
+    handler: async ({ repos, params, principal, query }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const { action_type, from, to, outcome, page: pageStr, page_size: pageSizeStr } = query;
+      const page = Math.max(1, parseInt(pageStr ?? "1", 10) || 1);
+      const pageSize = Math.min(100, Math.max(1, parseInt(pageSizeStr ?? "20", 10) || 20));
+      let logs = (await repos.auditLogs.listByTenant(principal.tenant_id))
+        .filter((e) => e.actor_role_category === "internal_platform" && e.target_id === event.id);
+      if (action_type) logs = logs.filter((e) => e.event_type === action_type);
+      if (from) logs = logs.filter((e) => e.created_at >= from);
+      if (to) logs = logs.filter((e) => e.created_at <= to);
+      if (outcome) {
+        logs = outcome === "success"
+          ? logs.filter((e) => !e.event_type.endsWith(".failed") && !e.event_type.endsWith(".denied"))
+          : logs.filter((e) => e.event_type.endsWith(".failed") || e.event_type.endsWith(".denied"));
+      }
+      const total = logs.length;
+      const items = logs.slice((page - 1) * pageSize, page * pageSize).map((e) => ({
+        id: e.id,
+        occurred_at: e.created_at,
+        actor_role: e.actor_role_category,
+        action_type: e.event_type,
+        target_resource: e.target_type,
+        justification: e.break_glass_access_id ? (e.metadata?.justification ?? null) : null,
+        session_duration_minutes: e.break_glass_access_id ? (e.metadata?.session_duration_minutes ?? null) : null,
+        outcome: e.event_type.endsWith(".failed") || e.event_type.endsWith(".denied") ? "denied" : "success"
+      }));
+      return { items, total, page, page_size: pageSize };
+    },
+    auditEventType: "platform_access_log.viewed"
+  });
+
+  router.addRoute({
+    id: "platform-access-log-export",
+    method: "GET",
+    path: "/events/:eventId/platform-access-log/export",
+    allowedRoles: ["organizer_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const logs = (await repos.auditLogs.listByTenant(principal.tenant_id))
+        .filter((e) => e.actor_role_category === "internal_platform" && e.target_id === event.id);
+      const header = "id,occurred_at,actor_role,action_type,target_resource,outcome";
+      const rows = logs.map((e) =>
+        [e.id, e.created_at, e.actor_role_category, e.event_type, e.target_type,
+          e.event_type.endsWith(".failed") || e.event_type.endsWith(".denied") ? "denied" : "success"
+        ].join(",")
+      );
+      await writePrivacyAudit(repos, {
+        tenantId: principal.tenant_id, eventId: event.id, actorUserId: principal.user_id,
+        actorRole: principal.role, action: "privacy_log_exported", targetType: "event", targetId: event.id
+      });
+      return { csv: [header, ...rows].join("\n"), row_count: rows.length, exported_at: new Date().toISOString() };
+    },
+    auditEventType: "platform_access_log.exported"
+  });
+
+  // ── Step 15.4: Full event data export (SG2) ──────────────────
+
+  const VALID_EXPORT_INCLUDES = ["interactions", "consents", "leads_metadata", "event_config", "platform_access_log", "audit_trail", "attendee_data"];
+  const VALID_EXPORT_FORMATS = ["json", "csv", "zip"];
+
+  router.addRoute({
+    id: "full-export-create",
+    method: "POST",
+    path: "/events/:eventId/full-export",
+    allowedRoles: ["organizer_admin"],
+    statusCode: 201,
+    validate: (body) => body ?? {},
+    handler: async ({ repos, params, principal, body }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const include = body.include ?? VALID_EXPORT_INCLUDES;
+      const format = body.format ?? "json";
+      if (!VALID_EXPORT_FORMATS.includes(format)) throw new HttpError(400, "INVALID_FORMAT", { valid: VALID_EXPORT_FORMATS });
+      const invalid = include.filter((c) => !VALID_EXPORT_INCLUDES.includes(c));
+      if (invalid.length) throw new HttpError(400, "INVALID_INCLUDE_CATEGORIES", { invalid });
+      const allExports = await repos.exportRequests.listByEvent(principal.tenant_id, event.id);
+      const inProgress = allExports.find((e) => e.export_type.startsWith("full_event_export") && e.status === "requested");
+      if (inProgress) throw new HttpError(409, "EXPORT_IN_PROGRESS", { export_id: inProgress.id });
+      const exportRequest = await repos.exportRequests.create({
+        id: nextId("export"), tenant_id: principal.tenant_id, event_id: event.id,
+        requested_by_user_id: principal.user_id, export_type: `full_event_export_${format}`,
+        filters: { include, format }, status: "requested", approval_required: false,
+        download_used: false, created_at: new Date().toISOString()
+      });
+      await writePrivacyAudit(repos, {
+        tenantId: principal.tenant_id, eventId: event.id, actorUserId: principal.user_id,
+        actorRole: principal.role, action: "full_export.requested", targetType: "export_request", targetId: exportRequest.id
+      });
+      console.log(`TODO: trigger full export worker for export ${exportRequest.id} (Phase 16)`);
+      return { export_id: exportRequest.id, status: "requested", message: "Export is being prepared. You will be notified when ready." };
+    },
+    auditEventType: "full_export.created"
+  });
+
+  router.addRoute({
+    id: "full-export-status",
+    method: "GET",
+    path: "/events/:eventId/full-export/status",
+    allowedRoles: ["organizer_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const allExports = await repos.exportRequests.listByEvent(principal.tenant_id, event.id);
+      const latest = allExports
+        .filter((e) => e.export_type.startsWith("full_event_export"))
+        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0] ?? null;
+      if (!latest) return { export_id: null, status: "none", created_at: null, estimated_completion: null, download_available: false };
+      return { export_id: latest.id, status: latest.status, created_at: latest.created_at,
+        estimated_completion: null, download_available: latest.status === "completed" && !latest.download_used };
+    }
+  });
+
+  router.addRoute({
+    id: "full-export-download",
+    method: "GET",
+    path: "/events/:eventId/full-export/download",
+    allowedRoles: ["organizer_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const allExports = await repos.exportRequests.listByEvent(principal.tenant_id, event.id);
+      const latest = allExports
+        .filter((e) => e.export_type.startsWith("full_event_export") && e.status === "completed")
+        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0] ?? null;
+      if (!latest) throw new HttpError(404, "NO_COMPLETED_EXPORT");
+      if (latest.download_used) throw new HttpError(410, "DOWNLOAD_ALREADY_USED", { message: "This download link has already been used. Request a new export." });
+      await repos.exportRequests.update({ ...latest, download_used: true, download_used_at: new Date().toISOString() });
+      await writePrivacyAudit(repos, {
+        tenantId: principal.tenant_id, eventId: event.id, actorUserId: principal.user_id,
+        actorRole: principal.role, action: "full_export.downloaded", targetType: "export_request", targetId: latest.id
+      });
+      await dispatchSovereigntyWebhook(repos, principal.tenant_id, event.id, "export.downloaded", {
+        event_id: event.id, export_type: latest.export_type, export_id: latest.id, actor_role: principal.role, occurred_at: new Date().toISOString()
+      });
+      return { export_id: latest.id, download_url: `${process.env.PLATFORM_BASE_URL ?? "https://placeholder.example.com"}/exports/${latest.id}/file`, expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString() };
+    },
+    auditEventType: "full_export.downloaded"
+  });
+
+  router.addRoute({
+    id: "full-export-history",
+    method: "GET",
+    path: "/events/:eventId/full-export/history",
+    allowedRoles: ["organizer_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const allExports = await repos.exportRequests.listByEvent(principal.tenant_id, event.id);
+      return { items: allExports.filter((e) => e.export_type.startsWith("full_event_export"))
+        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+        .map((e) => ({ export_id: e.id, export_type: e.export_type, status: e.status, created_at: e.created_at, download_used: e.download_used ?? false })) };
+    }
+  });
+
+  // ── Step 15.5: DSR endpoints (SG7) ───────────────────────────
+
+  router.addRoute({
+    id: "privacy-dsr-create",
+    method: "POST",
+    path: "/attendee/privacy/dsr",
+    authRequired: false,
+    statusCode: 201,
+    validate: (body) => body ?? {},
+    handler: async ({ repos, body, state }) => {
+      const { request_type, event_id, attendee_id, session_token } = body;
+      if (!["export", "delete"].includes(request_type)) throw new HttpError(400, "request_type must be export or delete");
+      if (!event_id) throw new HttpError(400, "event_id is required");
+      let resolvedAttendeeId = attendee_id;
+      let tenantId;
+      if (session_token) {
+        const session = verifyAttendeeSessionToken(session_token, state.sessionSecret);
+        tenantId = session.tenant_id;
+        resolvedAttendeeId = session.attendee_id ?? resolvedAttendeeId;
+      }
+      if (!resolvedAttendeeId) throw new HttpError(400, "attendee_id is required");
+      const event = await repos.events.findById(tenantId ?? state.tenants[0]?.id, event_id);
+      tenantId = tenantId ?? event.tenant_id;
+      const existing = await repos.dataSubjectRequests.findActiveByAttendeeEventType(tenantId, resolvedAttendeeId, event_id, request_type);
+      if (existing) throw new HttpError(409, "DSR_ALREADY_IN_PROGRESS", { dsr_id: existing.id });
+      const now = new Date().toISOString();
+      const dsr = await repos.dataSubjectRequests.create({
+        id: nextId("dsr"), tenant_id: tenantId, event_id, attendee_id: resolvedAttendeeId,
+        request_type, status: "requested", submitted_at: now, created_at: now,
+        export_file_url: null, export_expires_at: null, metadata: null
+      });
+      await writePrivacyAudit(repos, {
+        tenantId, eventId: event_id, actorRole: "attendee_action", action: "dsr.submitted",
+        targetType: "data_subject_request", targetId: dsr.id
+      });
+      await dispatchSovereigntyWebhook(repos, tenantId, event_id, "dsr.submitted", { event_id, request_type, occurred_at: now });
+      console.log(`TODO: trigger DSR worker for request ${dsr.id} (Phase 16)`);
+      return { dsr_id: dsr.id, status: "requested" };
+    }
+  });
+
+  router.addRoute({
+    id: "privacy-dsr-list",
+    method: "GET",
+    path: "/attendee/privacy/dsr",
+    authRequired: false,
+    handler: async ({ repos, query, state }) => {
+      const { session_token, attendee_id } = query;
+      let resolvedAttendeeId = attendee_id;
+      let tenantId;
+      if (session_token) {
+        const session = verifyAttendeeSessionToken(session_token, state.sessionSecret);
+        tenantId = session.tenant_id;
+        resolvedAttendeeId = session.attendee_id ?? resolvedAttendeeId;
+      }
+      if (!resolvedAttendeeId) throw new HttpError(400, "attendee_id or session_token is required");
+      tenantId = tenantId ?? state.tenants[0]?.id;
+      const items = await repos.dataSubjectRequests.listByAttendee(tenantId, resolvedAttendeeId);
+      return { items: items.map((d) => ({ id: d.id, request_type: d.request_type, status: d.status, submitted_at: d.submitted_at ?? d.created_at, completed_at: d.completed_at ?? null })) };
+    }
+  });
+
+  router.addRoute({
+    id: "privacy-dsr-download",
+    method: "GET",
+    path: "/attendee/privacy/dsr/:dsrId/download",
+    authRequired: false,
+    handler: async ({ repos, params, query, state }) => {
+      const { session_token } = query;
+      let tenantId;
+      if (session_token) {
+        const session = verifyAttendeeSessionToken(session_token, state.sessionSecret);
+        tenantId = session.tenant_id;
+      }
+      tenantId = tenantId ?? state.tenants[0]?.id;
+      const dsr = await repos.dataSubjectRequests.findById(tenantId, params.dsrId);
+      if (dsr.request_type !== "export") throw new HttpError(400, "DSR_NOT_EXPORT_TYPE");
+      if (dsr.status !== "completed") throw new HttpError(400, "DSR_NOT_COMPLETED");
+      if (dsr.download_used) throw new HttpError(410, "DOWNLOAD_ALREADY_USED", { message: "This download has already been used." });
+      await repos.dataSubjectRequests.update({ ...dsr, download_used: true, download_used_at: new Date().toISOString() });
+      return { dsr_id: dsr.id, download_url: dsr.export_file_url ?? `${process.env.PLATFORM_BASE_URL ?? "https://placeholder.example.com"}/dsr/${dsr.id}/file`, expires_at: dsr.export_expires_at ?? new Date(Date.now() + 15 * 60 * 1000).toISOString() };
+    }
+  });
+
+  router.addRoute({
+    id: "event-privacy-requests-list",
+    method: "GET",
+    path: "/events/:eventId/privacy-requests",
+    allowedRoles: ["organizer_admin"],
+    handler: async ({ repos, params, principal, query }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const filters = {
+        request_type: query.request_type, status: query.status,
+        page: parseInt(query.page ?? "1", 10) || 1,
+        page_size: Math.min(100, parseInt(query.page_size ?? "20", 10) || 20)
+      };
+      const result = await repos.dataSubjectRequests.listByEventFiltered(principal.tenant_id, event.id, filters);
+      return { items: result.items.map((d) => ({ id: d.id, request_type: d.request_type, status: d.status, submitted_at: d.submitted_at ?? d.created_at, completed_at: d.completed_at ?? null })), total: result.total, page: filters.page, page_size: filters.page_size };
+    }
+  });
+
+  router.addRoute({
+    id: "event-privacy-request-detail",
+    method: "GET",
+    path: "/events/:eventId/privacy-requests/:dsrId",
+    allowedRoles: ["organizer_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const dsr = await repos.dataSubjectRequests.findById(principal.tenant_id, params.dsrId);
+      if (dsr.event_id !== event.id) throw new HttpError(403, "DSR not associated with this event");
+      return { id: dsr.id, request_type: dsr.request_type, status: dsr.status, submitted_at: dsr.submitted_at ?? dsr.created_at, completed_at: dsr.completed_at ?? null, rejection_reason: dsr.rejection_reason ?? null, metadata: dsr.metadata ?? null };
+    }
+  });
+
+  router.addRoute({
+    id: "event-privacy-request-reject",
+    method: "POST",
+    path: "/events/:eventId/privacy-requests/:dsrId/reject",
+    allowedRoles: ["organizer_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ repos, params, principal, body }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const dsr = await repos.dataSubjectRequests.findById(principal.tenant_id, params.dsrId);
+      if (dsr.event_id !== event.id) throw new HttpError(403, "DSR not associated with this event");
+      if (dsr.status !== "requested") throw new HttpError(400, "DSR_NOT_REJECTABLE", { current_status: dsr.status });
+      if (!body.rejection_reason || typeof body.rejection_reason !== "string") throw new HttpError(400, "rejection_reason is required");
+      await repos.dataSubjectRequests.update({ ...dsr, status: "rejected", rejection_reason: body.rejection_reason, completed_at: new Date().toISOString() });
+      return { id: dsr.id, status: "rejected" };
+    },
+    auditEventType: "dsr.rejected"
+  });
+
+  // ── Step 15.6: Tenant offboarding (SG6) ──────────────────────
+
+  router.addRoute({
+    id: "tenant-offboard-initiate",
+    method: "POST",
+    path: "/admin/tenants/:tenantId/offboard",
+    allowedRoles: ["platform_admin"],
+    statusCode: 201,
+    validate: (body) => body ?? {},
+    handler: async ({ repos, params, principal, body }) => {
+      const tenant = await repos.tenants.findById(params.tenantId);
+      if (!tenant) throw new HttpError(404, "Tenant not found");
+      const validPaths = ["export_then_delete", "immediate_delete", "grace_period_delete"];
+      if (!body.data_handling_path || !validPaths.includes(body.data_handling_path)) throw new HttpError(400, "INVALID_DATA_HANDLING_PATH", { valid: validPaths });
+      if (body.data_handling_path === "grace_period_delete" && !body.grace_period_days) throw new HttpError(400, "grace_period_days is required for grace_period_delete");
+      if (body.confirm_tenant_slug !== tenant.slug) throw new HttpError(400, "CONFIRMATION_SLUG_MISMATCH", { message: "confirm_tenant_slug must exactly match the tenant slug" });
+      const now = new Date().toISOString();
+      const job = await repos.tenantOffboardingJobs.create({
+        id: nextId("offboard"), tenant_id: tenant.id, initiated_by_user_id: principal.user_id,
+        approved_by_user_id: null, data_handling_path: body.data_handling_path,
+        grace_period_days: body.grace_period_days ?? null, status: "awaiting_approval",
+        export_file_url: null, deletion_certificate_url: null, scheduled_deletion_at: null, completed_at: null, created_at: now
+      });
+      await repos.tenants.update({ ...tenant, offboarding_status: "offboarding_initiated", offboarding_initiated_at: now });
+      await writePrivacyAudit(repos, { tenantId: tenant.id, actorUserId: principal.user_id, actorRole: "platform_admin", action: "tenant.offboarding_initiated", targetType: "tenant", targetId: tenant.id, metadata: { data_handling_path: body.data_handling_path, job_id: job.id } });
+      await writeAuditEvent(repos, { tenantId: tenant.id, actorType: "user", actorId: principal.actor_id, eventType: "tenant.offboarding_initiated", targetType: "tenant", targetId: tenant.id });
+      console.log(`TODO: dispatch offboarding_initiated notification for tenant ${tenant.id} (Phase 17)`);
+      return { job_id: job.id, status: "awaiting_approval" };
+    },
+    auditEventType: "tenant.offboarding_initiated"
+  });
+
+  router.addRoute({
+    id: "tenant-offboard-approve",
+    method: "POST",
+    path: "/admin/tenants/:tenantId/offboard/:jobId/approve",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const job = await repos.tenantOffboardingJobs.findById(params.jobId);
+      if (!job || job.tenant_id !== params.tenantId) throw new HttpError(404, "Offboarding job not found");
+      if (job.initiated_by_user_id === principal.user_id) throw new HttpError(403, "SAME_USER_APPROVAL_FORBIDDEN", { message: "The approver must be a different platform_admin than the initiator" });
+      const newStatus = job.data_handling_path === "immediate_delete" ? "deletion_in_progress" : "export_in_progress";
+      const updated = await repos.tenantOffboardingJobs.update({ ...job, approved_by_user_id: principal.user_id, status: newStatus });
+      console.log(`TODO: trigger offboarding worker for job ${job.id} (Phase 16)`);
+      return { job_id: updated.id, status: updated.status };
+    },
+    auditEventType: "tenant.offboarding_approved"
+  });
+
+  router.addRoute({
+    id: "tenant-offboard-status",
+    method: "GET",
+    path: "/admin/tenants/:tenantId/offboard/status",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, params }) => {
+      const job = await repos.tenantOffboardingJobs.findActiveByTenant(params.tenantId);
+      if (!job) return { status: "none", job_id: null };
+      return { job_id: job.id, status: job.status, data_handling_path: job.data_handling_path, created_at: job.created_at, completed_at: job.completed_at ?? null };
+    }
+  });
+
+  // ── Step 15.7: Retention status (SG3) ────────────────────────
+
+  router.addRoute({
+    id: "admin-tenant-retention",
+    method: "GET",
+    path: "/admin/tenants/:tenantId/retention",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, params }) => {
+      const events = await repos.events.listByTenant(params.tenantId);
+      const policies = await Promise.all(events.map((e) => repos.eventPolicies.findByEventId(params.tenantId, e.id).catch(() => null)));
+      const counts = { active: 0, expiring_soon: 0, expired_pending_purge: 0, purged: 0 };
+      const eventItems = events.map((e, i) => {
+        const policy = policies[i];
+        const retentionDays = policy?.retention_days ?? 30;
+        const status = e.retention_status ?? "active";
+        if (counts[status] !== undefined) counts[status]++;
+        const retentionExpiryAt = e.ends_at ? new Date(Date.parse(e.ends_at) + retentionDays * 86400000).toISOString() : null;
+        return { event_id: e.id, name: e.name, retention_days: retentionDays, event_end_at: e.ends_at ?? null, retention_expiry_at: retentionExpiryAt, retention_status: status, last_purge_run_at: e.last_purge_run_at ?? null };
+      });
+      return { summary: { active_count: counts.active, expiring_soon_count: counts.expiring_soon, expired_pending_purge_count: counts.expired_pending_purge, purged_count: counts.purged }, events: eventItems };
+    }
+  });
+
+  router.addRoute({
+    id: "event-retention-status",
+    method: "GET",
+    path: "/events/:eventId/retention/status",
+    allowedRoles: ["organizer_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const policy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id).catch(() => null);
+      const retentionDays = policy?.retention_days ?? 30;
+      const retentionExpiryAt = event.ends_at ? new Date(Date.parse(event.ends_at) + retentionDays * 86400000).toISOString() : null;
+      return { retention_days: retentionDays, event_end_at: event.ends_at ?? null, retention_expiry_at: retentionExpiryAt, retention_status: event.retention_status ?? "active", purged_at: event.purged_at ?? null };
+    }
+  });
+
+  router.addRoute({
+    id: "admin-event-force-purge",
+    method: "POST",
+    path: "/admin/events/:eventId/retention/force-purge",
+    allowedRoles: ["platform_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ repos, params, principal, body }) => {
+      if (body.confirm !== true) throw new HttpError(400, "confirm must be true to initiate force purge");
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      await repos.events.update({ ...event, retention_status: "purging" });
+      await writePrivacyAudit(repos, { tenantId: principal.tenant_id, eventId: event.id, actorUserId: principal.user_id, actorRole: "platform_admin", action: "retention.purge_executed", targetType: "event", targetId: event.id });
+      console.log(`TODO: execute actual purge for event ${event.id} (Phase 16)`);
+      return { message: "Purge initiated", event_id: event.id, status: "purging" };
+    },
+    auditEventType: "retention.force_purge_initiated"
+  });
+
+  // ── Step 15.8: Data residency configuration (SG10) ───────────
+
+  router.addRoute({
+    id: "admin-tenant-compliance-get",
+    method: "GET",
+    path: "/admin/tenants/:tenantId/compliance",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, params }) => {
+      const tenant = await repos.tenants.findById(params.tenantId);
+      if (!tenant) throw new HttpError(404, "Tenant not found");
+      const zone = tenant.data_residency_zone ?? "global";
+      return { data_residency_zone: zone, sensitive_data_categories: tenant.sensitive_data_categories ?? [], compliance_status: zone === "india" ? "review_required" : "compliant", last_checked_at: tenant.compliance_last_checked_at ?? null };
+    }
+  });
+
+  router.addRoute({
+    id: "admin-tenant-compliance-patch",
+    method: "PATCH",
+    path: "/admin/tenants/:tenantId/compliance",
+    allowedRoles: ["platform_admin"],
+    validate: (body) => body ?? {},
+    handler: async ({ repos, params, body }) => {
+      const tenant = await repos.tenants.findById(params.tenantId);
+      if (!tenant) throw new HttpError(404, "Tenant not found");
+      const VALID_ZONES = ["india", "eu", "us", "global"];
+      if (body.data_residency_zone && !VALID_ZONES.includes(body.data_residency_zone)) throw new HttpError(400, "INVALID_DATA_RESIDENCY_ZONE", { valid: VALID_ZONES });
+      const updated = await repos.tenants.update({ ...tenant, data_residency_zone: body.data_residency_zone ?? tenant.data_residency_zone ?? "global", sensitive_data_categories: body.sensitive_data_categories ?? tenant.sensitive_data_categories ?? [] });
+      const zone = updated.data_residency_zone ?? "global";
+      return { data_residency_zone: updated.data_residency_zone, sensitive_data_categories: updated.sensitive_data_categories ?? [], compliance_status: zone === "india" ? "review_required" : "compliant", last_checked_at: updated.compliance_last_checked_at ?? null };
+    }
+  });
+
+  router.addRoute({
+    id: "admin-tenant-compliance-check",
+    method: "POST",
+    path: "/admin/tenants/:tenantId/compliance/check",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, params }) => {
+      const tenant = await repos.tenants.findById(params.tenantId);
+      if (!tenant) throw new HttpError(404, "Tenant not found");
+      // TODO: wire to infrastructure tag scan (requires infra team)
+      return { status: "review_required", message: "Infrastructure compliance check requires manual verification. Contact your infrastructure team.", last_checked_at: new Date().toISOString() };
+    }
+  });
+
+  // ── Step 15.9: Privacy audit log (SG9) ───────────────────────
+
+  router.addRoute({
+    id: "admin-privacy-audit-log",
+    method: "GET",
+    path: "/admin/privacy-audit-log",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, principal, query }) => {
+      const filters = {
+        action: query.action, actor_role: query.actor_role, from: query.from, to: query.to,
+        page: parseInt(query.page ?? "1", 10) || 1, page_size: Math.min(100, parseInt(query.page_size ?? "20", 10) || 20)
+      };
+      return repos.privacyAuditLogs.listByTenant(principal.tenant_id, filters);
+    }
+  });
+
+  router.addRoute({
+    id: "event-privacy-audit-log",
+    method: "GET",
+    path: "/events/:eventId/privacy-audit-log",
+    allowedRoles: ["organizer_admin"],
+    handler: async ({ repos, params, principal, query }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const filters = { event_id: event.id, action: query.action, from: query.from, to: query.to, page: parseInt(query.page ?? "1", 10) || 1, page_size: Math.min(100, parseInt(query.page_size ?? "20", 10) || 20) };
+      const result = await repos.privacyAuditLogs.listByTenant(principal.tenant_id, filters);
+      return { ...result, entries: result.entries.map(({ actor_user_id: _omit, ...entry }) => entry) };
+    }
+  });
+
+  router.addRoute({
+    id: "admin-privacy-audit-log-export",
+    method: "POST",
+    path: "/admin/privacy-audit-log/export",
+    allowedRoles: ["platform_admin"],
+    handler: async ({ repos, principal }) => {
+      const result = await repos.privacyAuditLogs.listByTenant(principal.tenant_id, { page: 1, page_size: 10000 });
+      const header = "id,tenant_id,event_id,actor_role,action,target_type,target_id,occurred_at";
+      const rows = result.entries.map((e) => [e.id, e.tenant_id, e.event_id ?? "", e.actor_role, e.action, e.target_type ?? "", e.target_id ?? "", e.occurred_at].join(","));
+      const exportId = nextId("palexport");
+      await writePrivacyAudit(repos, { tenantId: principal.tenant_id, actorUserId: principal.user_id, actorRole: "platform_admin", action: "privacy_log_exported", targetType: "privacy_audit_log", targetId: exportId });
+      return { export_id: exportId, message: "Privacy audit log export ready", csv: [header, ...rows].join("\n"), row_count: rows.length };
+    }
+  });
+
 }
 
 async function resolveDeviceCredentialResources({ repos, principal, params }) {
@@ -10998,1183 +11618,4 @@ function capitalize(value) {
     return "";
   }
   return `${value[0].toUpperCase()}${value.slice(1)}`;
-
-  app.get(
-    "/events/:eventId/branding",
-    authenticate(["device", "organizer_admin", "sponsor_admin", "attendee"]),
-    requireTenant,
-    async (req, res) => {
-      const { eventId } = req.params;
-      try {
-        const branding = await db.query(
-          `SELECT b.*
-             FROM branding_assets b
-            WHERE b.tenant_id = $1
-              AND b.event_id  = $2
-              AND b.is_active = TRUE
-            ORDER BY b.published_at DESC
-            LIMIT 1`,
-          [req.tenant_id, eventId]
-        );
-
-        if (!branding.rows.length) {
-          // Return sensible defaults so the kiosk can always render
-          return res.json({
-            event_id:         eventId,
-            primary_color:    "#112233",
-            secondary_color:  "#d86e2d",
-            background_color: "#fffaf2",
-            logo_url:         null,
-            welcome_headline: "Welcome",
-            welcome_body:     "Tap your badge to connect.",
-            thank_you_headline: "Thank you!",
-            thank_you_body:   "Your details have been recorded.",
-            cta_label:        "Connect",
-            is_default:       true,
-          });
-        }
-
-        return res.json({ ...branding.rows[0], is_default: false });
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to load branding config." });
-      }
-    }
-  );
-
-  /** POST /branding/publish
-   *  Organizer publishes (activates) a branding config for an event.
-   *  Body: { event_id, primary_color, secondary_color, background_color,
-   *          logo_url, welcome_headline, welcome_body,
-   *          thank_you_headline, thank_you_body, cta_label } */
-  app.post(
-    "/branding/publish",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const {
-        event_id, primary_color, secondary_color, background_color,
-        logo_url, welcome_headline, welcome_body,
-        thank_you_headline, thank_you_body, cta_label,
-      } = req.body;
-
-      if (!event_id) return res.status(400).json({ error: "event_id is required." });
-
-      try {
-        // Deactivate existing branding for this event
-        await db.query(
-          `UPDATE branding_assets
-              SET is_active = FALSE
-            WHERE tenant_id = $1 AND event_id = $2`,
-          [req.tenant_id, event_id]
-        );
-
-        const result = await db.query(
-          `INSERT INTO branding_assets
-             (tenant_id, event_id, primary_color, secondary_color, background_color,
-              logo_url, welcome_headline, welcome_body,
-              thank_you_headline, thank_you_body, cta_label,
-              is_active, published_at, published_by_user_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,TRUE,NOW(),$12)
-           RETURNING *`,
-          [
-            req.tenant_id, event_id,
-            primary_color || "#112233",
-            secondary_color || "#d86e2d",
-            background_color || "#fffaf2",
-            logo_url || null,
-            welcome_headline || "Welcome",
-            welcome_body || "Tap your badge to connect.",
-            thank_you_headline || "Thank you!",
-            thank_you_body || "Your details have been recorded.",
-            cta_label || "Connect",
-            req.user_id,
-          ]
-        );
-
-        return res.status(201).json(result.rows[0]);
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to publish branding." });
-      }
-    }
-  );
-
-  /** GET /events/:eventId/heatmap
-   *  Returns zone-aggregated interaction heat scores for a given event.
-   *  No raw attendee PII is returned — aggregate only.
-   *  Query params: ?hours=N (optional, last N hours window) */
-  app.get(
-    "/events/:eventId/heatmap",
-    authenticate(["organizer_admin", "sponsor_admin", "attendee"]),
-    requireTenant,
-    async (req, res) => {
-      const { eventId } = req.params;
-      const hours = parseInt(req.query.hours, 10) || null;
-
-      try {
-        const sinceClause = hours
-          ? `AND i.created_at >= NOW() - INTERVAL '${hours} hours'`
-          : "";
-
-        const result = await db.query(
-          `SELECT
-              s.id               AS stall_id,
-              s.name             AS stall_name,
-              s.code             AS stall_code,
-              COUNT(i.id)        AS interactions,
-              COUNT(CASE WHEN i.consent_sponsor = TRUE THEN 1 END) AS sponsor_consented,
-              COUNT(CASE WHEN i.interaction_type = 'click' THEN 1 END) AS sponsor_clicks,
-              ROUND(
-                COUNT(CASE WHEN i.interaction_type = 'click' THEN 1 END)::numeric /
-                NULLIF(COUNT(i.id),0) * 100, 1
-              )                  AS ctr,
-              -- heat score: raw interactions + weighted clicks + weighted opt-ins
-              (
-                COUNT(i.id) +
-                COUNT(CASE WHEN i.interaction_type = 'click' THEN 1 END) * 3 +
-                COUNT(CASE WHEN i.consent_sponsor = TRUE THEN 1 END) * 2
-              )                  AS zone_score,
-              DATE_TRUNC('hour',
-                MAX(CASE WHEN i.interaction_type = 'click' THEN i.created_at END)
-              )                  AS peak_hour
-            FROM stalls s
-            JOIN interactions i ON i.stall_id = s.id ${sinceClause}
-           WHERE s.tenant_id = $1
-             AND s.event_id  = $2
-             AND i.tenant_id = $1
-           GROUP BY s.id, s.name, s.code
-           ORDER BY zone_score DESC`,
-          [req.tenant_id, eventId]
-        );
-
-        // Also supply an hourly trend across ALL zones for the organizer chart (OR-03)
-        const hourlyResult = await db.query(
-          `SELECT
-              DATE_TRUNC('hour', i.created_at) AS hour,
-              COUNT(i.id)                      AS impressions,
-              COUNT(CASE WHEN i.interaction_type = 'click' THEN 1 END)    AS clicks,
-              COUNT(CASE WHEN i.consent_sponsor = TRUE THEN 1 END)         AS opted_in_leads
-            FROM interactions i
-            JOIN stalls s ON s.id = i.stall_id
-           WHERE i.tenant_id = $1
-             AND s.event_id  = $2
-           GROUP BY DATE_TRUNC('hour', i.created_at)
-           ORDER BY hour ASC`,
-          [req.tenant_id, eventId]
-        );
-
-        return res.json({
-          event_id:     eventId,
-          generated_at: new Date().toISOString(),
-          zones:        result.rows,
-          hourly_trend: hourlyResult.rows,
-        });
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to load heatmap." });
-      }
-    }
-  );
-
-  /** GET /organizer/events/:eventId/branding-assets
-   *  Lists all branding asset versions for an event (organizer only). */
-  app.get(
-    "/organizer/events/:eventId/branding-assets",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { eventId } = req.params;
-      try {
-        const result = await db.query(
-          `SELECT * FROM branding_assets
-            WHERE tenant_id = $1 AND event_id = $2
-            ORDER BY published_at DESC`,
-          [req.tenant_id, eventId]
-        );
-        return res.json({ items: result.rows });
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to list branding assets." });
-      }
-    }
-  );
-
-  /* ─────────────────────────────────────────────────────────────
-   * WEBHOOK SUBSCRIPTION ROUTES  (DM-17)
-   * ───────────────────────────────────────────────────────────── */
-
-  /** GET /webhook-subscriptions
-   *  List all webhook subscriptions for the tenant.
-   *  Query params: ?event_id=, ?status=active|inactive */
-  app.get(
-    "/webhook-subscriptions",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { event_id, status } = req.query;
-      try {
-        let whereExtra = "";
-        const binds = [req.tenant_id];
-        if (event_id) { binds.push(event_id); whereExtra += ` AND event_id = $${binds.length}`; }
-        if (status)   { binds.push(status);   whereExtra += ` AND status = $${binds.length}`; }
-
-        const result = await db.query(
-          `SELECT id, event_id, target_url, event_types, status,
-                  created_at, updated_at, created_by_user_id,
-                  failure_count, last_fired_at, last_success_at
-             FROM webhook_subscriptions
-            WHERE tenant_id = $1 ${whereExtra}
-            ORDER BY created_at DESC`,
-          binds
-        );
-        return res.json({ items: result.rows });
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to list webhook subscriptions." });
-      }
-    }
-  );
-
-  /** POST /webhook-subscriptions
-   *  Create a new webhook subscription.
-   *  Body: { event_id, target_url, event_types: string[], secret? } */
-  app.post(
-    "/webhook-subscriptions",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { event_id, target_url, event_types, secret } = req.body;
-      if (!event_id)    return res.status(400).json({ error: "event_id is required." });
-      if (!target_url)  return res.status(400).json({ error: "target_url is required." });
-      if (!Array.isArray(event_types) || !event_types.length)
-        return res.status(400).json({ error: "event_types must be a non-empty array." });
-
-      const validTypes = ["interaction.created", "interaction.synced", "export.ready",
-                          "consent.updated", "event.frozen", "event.unfrozen"];
-      const invalid = event_types.filter(t => !validTypes.includes(t));
-      if (invalid.length)
-        return res.status(400).json({ error: `Unknown event types: ${invalid.join(", ")}` });
-
-      try {
-        const result = await db.query(
-          `INSERT INTO webhook_subscriptions
-             (tenant_id, event_id, target_url, event_types, secret_hash,
-              status, created_by_user_id)
-           VALUES ($1,$2,$3,$4,$5,'active',$6)
-           RETURNING id, event_id, target_url, event_types, status, created_at`,
-          [
-            req.tenant_id, event_id, target_url,
-            JSON.stringify(event_types),
-            secret ? hashSecret(secret) : null,
-            req.user_id,
-          ]
-        );
-        return res.status(201).json(result.rows[0]);
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to create webhook subscription." });
-      }
-    }
-  );
-
-  /** GET /webhook-subscriptions/:id
-   *  Fetch a single webhook subscription. */
-  app.get(
-    "/webhook-subscriptions/:id",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { id } = req.params;
-      try {
-        const result = await db.query(
-          `SELECT id, event_id, target_url, event_types, status,
-                  created_at, updated_at, created_by_user_id,
-                  failure_count, last_fired_at, last_success_at
-             FROM webhook_subscriptions
-            WHERE tenant_id = $1 AND id = $2`,
-          [req.tenant_id, id]
-        );
-        if (!result.rows.length) return res.status(404).json({ error: "Webhook subscription not found." });
-        return res.json(result.rows[0]);
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to fetch webhook subscription." });
-      }
-    }
-  );
-
-  /** PATCH /webhook-subscriptions/:id
-   *  Update target_url, event_types, or status of a webhook subscription.
-   *  Body: { target_url?, event_types?, status?, secret? } */
-  app.patch(
-    "/webhook-subscriptions/:id",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { id } = req.params;
-      const { target_url, event_types, status, secret } = req.body;
-      const allowed_statuses = ["active", "inactive"];
-      if (status && !allowed_statuses.includes(status))
-        return res.status(400).json({ error: `status must be one of: ${allowed_statuses.join(", ")}` });
-
-      try {
-        const existing = await db.query(
-          `SELECT * FROM webhook_subscriptions WHERE tenant_id=$1 AND id=$2`,
-          [req.tenant_id, id]
-        );
-        if (!existing.rows.length) return res.status(404).json({ error: "Webhook subscription not found." });
-
-        const row = existing.rows[0];
-        const result = await db.query(
-          `UPDATE webhook_subscriptions
-              SET target_url   = $3,
-                  event_types  = $4,
-                  status       = $5,
-                  secret_hash  = COALESCE($6, secret_hash),
-                  updated_at   = NOW()
-            WHERE tenant_id=$1 AND id=$2
-            RETURNING id, event_id, target_url, event_types, status, updated_at`,
-          [
-            req.tenant_id, id,
-            target_url  || row.target_url,
-            JSON.stringify(event_types || JSON.parse(row.event_types || "[]")),
-            status      || row.status,
-            secret ? hashSecret(secret) : null,
-          ]
-        );
-        return res.json(result.rows[0]);
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to update webhook subscription." });
-      }
-    }
-  );
-
-  /** DELETE /webhook-subscriptions/:id
-   *  Remove a webhook subscription. */
-  app.delete(
-    "/webhook-subscriptions/:id",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { id } = req.params;
-      try {
-        const result = await db.query(
-          `DELETE FROM webhook_subscriptions WHERE tenant_id=$1 AND id=$2 RETURNING id`,
-          [req.tenant_id, id]
-        );
-        if (!result.rows.length) return res.status(404).json({ error: "Webhook subscription not found." });
-        return res.json({ deleted: true, id: result.rows[0].id });
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to delete webhook subscription." });
-      }
-    }
-  );
-
-  /** GET /webhook-subscriptions/:id/deliveries
-   *  Returns delivery log for a webhook subscription (last 100 attempts). */
-  app.get(
-    "/webhook-subscriptions/:id/deliveries",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { id } = req.params;
-      const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
-      try {
-        // Verify ownership
-        const sub = await db.query(
-          `SELECT id FROM webhook_subscriptions WHERE tenant_id=$1 AND id=$2`,
-          [req.tenant_id, id]
-        );
-        if (!sub.rows.length) return res.status(404).json({ error: "Webhook subscription not found." });
-
-        const result = await db.query(
-          `SELECT id, subscription_id, event_type, payload_event_id,
-                  status, http_status, attempt_number, error_message,
-                  fired_at, responded_at, duration_ms
-             FROM webhook_deliveries
-            WHERE subscription_id = $1
-            ORDER BY fired_at DESC
-            LIMIT $2`,
-          [id, limit]
-        );
-        return res.json({ items: result.rows });
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to load webhook deliveries." });
-      }
-    }
-  );
-
-  /** POST /webhook-subscriptions/:id/test
-   *  Fire a test ping to the webhook endpoint immediately.
-   *  Records the delivery attempt in webhook_deliveries. */
-  app.post(
-    "/webhook-subscriptions/:id/test",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { id } = req.params;
-      try {
-        const sub = await db.query(
-          `SELECT * FROM webhook_subscriptions WHERE tenant_id=$1 AND id=$2`,
-          [req.tenant_id, id]
-        );
-        if (!sub.rows.length) return res.status(404).json({ error: "Webhook subscription not found." });
-        const { target_url } = sub.rows[0];
-
-        const payload = {
-          event_type:  "ping",
-          fired_at:    new Date().toISOString(),
-          subscription_id: id,
-          data:        { message: "Test ping from Codex platform." },
-        };
-
-        let httpStatus = null, errorMessage = null, durationMs = null;
-        const start = Date.now();
-        try {
-          const resp = await fetch(target_url, {
-            method:  "POST",
-            headers: { "content-type": "application/json", "x-codex-event": "ping" },
-            body:    JSON.stringify(payload),
-            signal:  AbortSignal.timeout(10000),
-          });
-          httpStatus = resp.status;
-          durationMs = Date.now() - start;
-          if (!resp.ok) errorMessage = `Remote returned ${resp.status}`;
-        } catch (fetchErr) {
-          durationMs = Date.now() - start;
-          errorMessage = fetchErr.message || "Fetch failed";
-        }
-
-        const delivered = !errorMessage;
-        await db.query(
-          `INSERT INTO webhook_deliveries
-             (subscription_id, event_type, payload_event_id,
-              status, http_status, attempt_number, error_message,
-              fired_at, responded_at, duration_ms)
-           VALUES ($1,'ping',null,$2,$3,1,$4,NOW(),NOW(),$5)`,
-          [id, delivered ? "delivered" : "failed", httpStatus, errorMessage, durationMs]
-        );
-
-        await db.query(
-          `UPDATE webhook_subscriptions
-              SET last_fired_at = NOW(),
-                  failure_count = CASE WHEN $2 THEN failure_count ELSE failure_count+1 END
-            WHERE id = $1`,
-          [id, delivered]
-        );
-
-        return res.json({ delivered, http_status: httpStatus, error_message: errorMessage, duration_ms: durationMs });
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to fire test webhook." });
-      }
-    }
-  );
-
-  /* ─────────────────────────────────────────────────────────────
-   * CRM PUSH ALIAS  (API-12)
-   * POST /integrations/crm/push  →  proxies to crm-sync logic
-   * ───────────────────────────────────────────────────────────── */
-
-  /** POST /integrations/crm/push
-   *  Spec-defined alias for CRM sync. Accepts the same body as
-   *  POST /interactions/:id/crm-sync but allows batch submission:
-   *  Body: { interaction_id?, interaction_ids?: string[],
-   *          crm_target: "salesforce"|"hubspot"|"zoho"|"pilot",
-   *          field_map?: object, dry_run?: boolean }
-   *
-   *  This route acts as a normalized entry-point for any CRM adapter.
-   *  Individual /interactions/:id/crm-sync calls are still supported. */
-  app.post(
-    "/integrations/crm/push",
-    authenticate(["organizer_admin", "sponsor_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { interaction_id, interaction_ids, crm_target, field_map, dry_run } = req.body;
-
-      const ids = interaction_ids || (interaction_id ? [interaction_id] : []);
-      if (!ids.length) return res.status(400).json({ error: "interaction_id or interaction_ids is required." });
-
-      const validTargets = ["salesforce", "hubspot", "zoho", "pilot"];
-      if (!crm_target || !validTargets.includes(crm_target))
-        return res.status(400).json({ error: `crm_target must be one of: ${validTargets.join(", ")}` });
-
-      if (dry_run) {
-        return res.json({
-          dry_run:        true,
-          interaction_ids: ids,
-          crm_target,
-          field_map:      field_map || null,
-          message:        "Dry run — no records were pushed to CRM.",
-        });
-      }
-
-      // Fan out to per-interaction crm-sync
-      const results = [];
-      for (const iid of ids) {
-        try {
-          // Re-use existing crm-sync business logic if exposed as a service function.
-          // If not, fall back to a direct DB lookup + adapter dispatch.
-          const interaction = await db.query(
-            `SELECT * FROM interactions WHERE tenant_id=$1 AND id=$2`,
-            [req.tenant_id, iid]
-          );
-          if (!interaction.rows.length) {
-            results.push({ interaction_id: iid, status: "not_found" });
-            continue;
-          }
-          // Delegate to pilot adapter for now; real adapters swap in by crm_target
-          const syncResult = await dispatchCrmSync({
-            interaction: interaction.rows[0],
-            crm_target,
-            field_map: field_map || null,
-            tenant_id: req.tenant_id,
-          });
-          results.push({ interaction_id: iid, status: "queued", sync_id: syncResult.id });
-        } catch (syncErr) {
-          results.push({ interaction_id: iid, status: "error", error: syncErr.message });
-        }
-      }
-
-      const succeeded = results.filter(r => r.status === "queued").length;
-      const failed    = results.filter(r => r.status === "error" || r.status === "not_found").length;
-
-      return res.status(succeeded > 0 ? 200 : 422).json({
-        crm_target,
-        total:     ids.length,
-        succeeded,
-        failed,
-        results,
-      });
-    }
-  );
-
-  /* ─────────────────────────────────────────────────────────────
-   * LOCAL HELPERS (add near top of routes.mjs if not present)
-   * ───────────────────────────────────────────────────────────── */
-
-  // Minimal HMAC helper for webhook secret hashing.
-  // Replace with your existing crypto util if one exists.
-  function hashSecret(secret) {
-    const crypto = require("node:crypto");
-    return crypto.createHash("sha256").update(secret).digest("hex");
-  }
-
-  // Stub for CRM dispatch — replace with real adapter registry.
-  async function dispatchCrmSync({ interaction, crm_target, field_map, tenant_id }) {
-    // TODO: route to real Salesforce / HubSpot / Zoho adapters
-    // For now records the intent as a crm_sync_jobs row if the table exists,
-    // or returns a synthetic result for the pilot adapter.
-    try {
-      const result = await db.query(
-        `INSERT INTO crm_sync_jobs (tenant_id, interaction_id, crm_target, field_map, status)
-         VALUES ($1,$2,$3,$4,'queued')
-         RETURNING id`,
-        [tenant_id, interaction.id, crm_target, JSON.stringify(field_map||{})]
-      );
-      return result.rows[0];
-    } catch {
-      // Table may not exist yet — return a synthetic queue entry
-      return { id: `${crm_target}-${interaction.id}-${Date.now()}` };
-    }
-  }
-
-/* ──────────────────────────────────────────────────────────────
- * END OF PATCH — paste above closes the registerRoutes() function
- * ────────────────────────────────────────────────────────────── */
-
-
-
-  app.get(
-    "/events/:eventId/branding",
-    authenticate(["device", "organizer_admin", "sponsor_admin", "attendee"]),
-    requireTenant,
-    async (req, res) => {
-      const { eventId } = req.params;
-      try {
-        const branding = await db.query(
-          `SELECT b.*
-             FROM branding_assets b
-            WHERE b.tenant_id = $1
-              AND b.event_id  = $2
-              AND b.is_active = TRUE
-            ORDER BY b.published_at DESC
-            LIMIT 1`,
-          [req.tenant_id, eventId]
-        );
-
-        if (!branding.rows.length) {
-          // Return sensible defaults so the kiosk can always render
-          return res.json({
-            event_id:         eventId,
-            primary_color:    "#112233",
-            secondary_color:  "#d86e2d",
-            background_color: "#fffaf2",
-            logo_url:         null,
-            welcome_headline: "Welcome",
-            welcome_body:     "Tap your badge to connect.",
-            thank_you_headline: "Thank you!",
-            thank_you_body:   "Your details have been recorded.",
-            cta_label:        "Connect",
-            is_default:       true,
-          });
-        }
-
-        return res.json({ ...branding.rows[0], is_default: false });
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to load branding config." });
-      }
-    }
-  );
-
-  /** POST /branding/publish
-   *  Organizer publishes (activates) a branding config for an event.
-   *  Body: { event_id, primary_color, secondary_color, background_color,
-   *          logo_url, welcome_headline, welcome_body,
-   *          thank_you_headline, thank_you_body, cta_label } */
-  app.post(
-    "/branding/publish",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const {
-        event_id, primary_color, secondary_color, background_color,
-        logo_url, welcome_headline, welcome_body,
-        thank_you_headline, thank_you_body, cta_label,
-      } = req.body;
-
-      if (!event_id) return res.status(400).json({ error: "event_id is required." });
-
-      try {
-        // Deactivate existing branding for this event
-        await db.query(
-          `UPDATE branding_assets
-              SET is_active = FALSE
-            WHERE tenant_id = $1 AND event_id = $2`,
-          [req.tenant_id, event_id]
-        );
-
-        const result = await db.query(
-          `INSERT INTO branding_assets
-             (tenant_id, event_id, primary_color, secondary_color, background_color,
-              logo_url, welcome_headline, welcome_body,
-              thank_you_headline, thank_you_body, cta_label,
-              is_active, published_at, published_by_user_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,TRUE,NOW(),$12)
-           RETURNING *`,
-          [
-            req.tenant_id, event_id,
-            primary_color || "#112233",
-            secondary_color || "#d86e2d",
-            background_color || "#fffaf2",
-            logo_url || null,
-            welcome_headline || "Welcome",
-            welcome_body || "Tap your badge to connect.",
-            thank_you_headline || "Thank you!",
-            thank_you_body || "Your details have been recorded.",
-            cta_label || "Connect",
-            req.user_id,
-          ]
-        );
-
-        return res.status(201).json(result.rows[0]);
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to publish branding." });
-      }
-    }
-  );
-
-  /** GET /events/:eventId/heatmap
-   *  Returns zone-aggregated interaction heat scores for a given event.
-   *  No raw attendee PII is returned — aggregate only.
-   *  Query params: ?hours=N (optional, last N hours window) */
-  app.get(
-    "/events/:eventId/heatmap",
-    authenticate(["organizer_admin", "sponsor_admin", "attendee"]),
-    requireTenant,
-    async (req, res) => {
-      const { eventId } = req.params;
-      const hours = parseInt(req.query.hours, 10) || null;
-
-      try {
-        const sinceClause = hours
-          ? `AND i.created_at >= NOW() - INTERVAL '${hours} hours'`
-          : "";
-
-        const result = await db.query(
-          `SELECT
-              s.id               AS stall_id,
-              s.name             AS stall_name,
-              s.code             AS stall_code,
-              COUNT(i.id)        AS interactions,
-              COUNT(CASE WHEN i.consent_sponsor = TRUE THEN 1 END) AS sponsor_consented,
-              COUNT(CASE WHEN i.interaction_type = 'click' THEN 1 END) AS sponsor_clicks,
-              ROUND(
-                COUNT(CASE WHEN i.interaction_type = 'click' THEN 1 END)::numeric /
-                NULLIF(COUNT(i.id),0) * 100, 1
-              )                  AS ctr,
-              -- heat score: raw interactions + weighted clicks + weighted opt-ins
-              (
-                COUNT(i.id) +
-                COUNT(CASE WHEN i.interaction_type = 'click' THEN 1 END) * 3 +
-                COUNT(CASE WHEN i.consent_sponsor = TRUE THEN 1 END) * 2
-              )                  AS zone_score,
-              DATE_TRUNC('hour',
-                MAX(CASE WHEN i.interaction_type = 'click' THEN i.created_at END)
-              )                  AS peak_hour
-            FROM stalls s
-            JOIN interactions i ON i.stall_id = s.id ${sinceClause}
-           WHERE s.tenant_id = $1
-             AND s.event_id  = $2
-             AND i.tenant_id = $1
-           GROUP BY s.id, s.name, s.code
-           ORDER BY zone_score DESC`,
-          [req.tenant_id, eventId]
-        );
-
-        // Also supply an hourly trend across ALL zones for the organizer chart (OR-03)
-        const hourlyResult = await db.query(
-          `SELECT
-              DATE_TRUNC('hour', i.created_at) AS hour,
-              COUNT(i.id)                      AS impressions,
-              COUNT(CASE WHEN i.interaction_type = 'click' THEN 1 END)    AS clicks,
-              COUNT(CASE WHEN i.consent_sponsor = TRUE THEN 1 END)         AS opted_in_leads
-            FROM interactions i
-            JOIN stalls s ON s.id = i.stall_id
-           WHERE i.tenant_id = $1
-             AND s.event_id  = $2
-           GROUP BY DATE_TRUNC('hour', i.created_at)
-           ORDER BY hour ASC`,
-          [req.tenant_id, eventId]
-        );
-
-        return res.json({
-          event_id:     eventId,
-          generated_at: new Date().toISOString(),
-          zones:        result.rows,
-          hourly_trend: hourlyResult.rows,
-        });
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to load heatmap." });
-      }
-    }
-  );
-
-  /** GET /organizer/events/:eventId/branding-assets
-   *  Lists all branding asset versions for an event (organizer only). */
-  app.get(
-    "/organizer/events/:eventId/branding-assets",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { eventId } = req.params;
-      try {
-        const result = await db.query(
-          `SELECT * FROM branding_assets
-            WHERE tenant_id = $1 AND event_id = $2
-            ORDER BY published_at DESC`,
-          [req.tenant_id, eventId]
-        );
-        return res.json({ items: result.rows });
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to list branding assets." });
-      }
-    }
-  );
-
-  /* ─────────────────────────────────────────────────────────────
-   * WEBHOOK SUBSCRIPTION ROUTES  (DM-17)
-   * ───────────────────────────────────────────────────────────── */
-
-  /** GET /webhook-subscriptions
-   *  List all webhook subscriptions for the tenant.
-   *  Query params: ?event_id=, ?status=active|inactive */
-  app.get(
-    "/webhook-subscriptions",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { event_id, status } = req.query;
-      try {
-        let whereExtra = "";
-        const binds = [req.tenant_id];
-        if (event_id) { binds.push(event_id); whereExtra += ` AND event_id = $${binds.length}`; }
-        if (status)   { binds.push(status);   whereExtra += ` AND status = $${binds.length}`; }
-
-        const result = await db.query(
-          `SELECT id, event_id, target_url, event_types, status,
-                  created_at, updated_at, created_by_user_id,
-                  failure_count, last_fired_at, last_success_at
-             FROM webhook_subscriptions
-            WHERE tenant_id = $1 ${whereExtra}
-            ORDER BY created_at DESC`,
-          binds
-        );
-        return res.json({ items: result.rows });
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to list webhook subscriptions." });
-      }
-    }
-  );
-
-  /** POST /webhook-subscriptions
-   *  Create a new webhook subscription.
-   *  Body: { event_id, target_url, event_types: string[], secret? } */
-  app.post(
-    "/webhook-subscriptions",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { event_id, target_url, event_types, secret } = req.body;
-      if (!event_id)    return res.status(400).json({ error: "event_id is required." });
-      if (!target_url)  return res.status(400).json({ error: "target_url is required." });
-      if (!Array.isArray(event_types) || !event_types.length)
-        return res.status(400).json({ error: "event_types must be a non-empty array." });
-
-      const validTypes = ["interaction.created", "interaction.synced", "export.ready",
-                          "consent.updated", "event.frozen", "event.unfrozen"];
-      const invalid = event_types.filter(t => !validTypes.includes(t));
-      if (invalid.length)
-        return res.status(400).json({ error: `Unknown event types: ${invalid.join(", ")}` });
-
-      try {
-        const result = await db.query(
-          `INSERT INTO webhook_subscriptions
-             (tenant_id, event_id, target_url, event_types, secret_hash,
-              status, created_by_user_id)
-           VALUES ($1,$2,$3,$4,$5,'active',$6)
-           RETURNING id, event_id, target_url, event_types, status, created_at`,
-          [
-            req.tenant_id, event_id, target_url,
-            JSON.stringify(event_types),
-            secret ? hashSecret(secret) : null,
-            req.user_id,
-          ]
-        );
-        return res.status(201).json(result.rows[0]);
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to create webhook subscription." });
-      }
-    }
-  );
-
-  /** GET /webhook-subscriptions/:id
-   *  Fetch a single webhook subscription. */
-  app.get(
-    "/webhook-subscriptions/:id",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { id } = req.params;
-      try {
-        const result = await db.query(
-          `SELECT id, event_id, target_url, event_types, status,
-                  created_at, updated_at, created_by_user_id,
-                  failure_count, last_fired_at, last_success_at
-             FROM webhook_subscriptions
-            WHERE tenant_id = $1 AND id = $2`,
-          [req.tenant_id, id]
-        );
-        if (!result.rows.length) return res.status(404).json({ error: "Webhook subscription not found." });
-        return res.json(result.rows[0]);
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to fetch webhook subscription." });
-      }
-    }
-  );
-
-  /** PATCH /webhook-subscriptions/:id
-   *  Update target_url, event_types, or status of a webhook subscription.
-   *  Body: { target_url?, event_types?, status?, secret? } */
-  app.patch(
-    "/webhook-subscriptions/:id",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { id } = req.params;
-      const { target_url, event_types, status, secret } = req.body;
-      const allowed_statuses = ["active", "inactive"];
-      if (status && !allowed_statuses.includes(status))
-        return res.status(400).json({ error: `status must be one of: ${allowed_statuses.join(", ")}` });
-
-      try {
-        const existing = await db.query(
-          `SELECT * FROM webhook_subscriptions WHERE tenant_id=$1 AND id=$2`,
-          [req.tenant_id, id]
-        );
-        if (!existing.rows.length) return res.status(404).json({ error: "Webhook subscription not found." });
-
-        const row = existing.rows[0];
-        const result = await db.query(
-          `UPDATE webhook_subscriptions
-              SET target_url   = $3,
-                  event_types  = $4,
-                  status       = $5,
-                  secret_hash  = COALESCE($6, secret_hash),
-                  updated_at   = NOW()
-            WHERE tenant_id=$1 AND id=$2
-            RETURNING id, event_id, target_url, event_types, status, updated_at`,
-          [
-            req.tenant_id, id,
-            target_url  || row.target_url,
-            JSON.stringify(event_types || JSON.parse(row.event_types || "[]")),
-            status      || row.status,
-            secret ? hashSecret(secret) : null,
-          ]
-        );
-        return res.json(result.rows[0]);
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to update webhook subscription." });
-      }
-    }
-  );
-
-  /** DELETE /webhook-subscriptions/:id
-   *  Remove a webhook subscription. */
-  app.delete(
-    "/webhook-subscriptions/:id",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { id } = req.params;
-      try {
-        const result = await db.query(
-          `DELETE FROM webhook_subscriptions WHERE tenant_id=$1 AND id=$2 RETURNING id`,
-          [req.tenant_id, id]
-        );
-        if (!result.rows.length) return res.status(404).json({ error: "Webhook subscription not found." });
-        return res.json({ deleted: true, id: result.rows[0].id });
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to delete webhook subscription." });
-      }
-    }
-  );
-
-  /** GET /webhook-subscriptions/:id/deliveries
-   *  Returns delivery log for a webhook subscription (last 100 attempts). */
-  app.get(
-    "/webhook-subscriptions/:id/deliveries",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { id } = req.params;
-      const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
-      try {
-        // Verify ownership
-        const sub = await db.query(
-          `SELECT id FROM webhook_subscriptions WHERE tenant_id=$1 AND id=$2`,
-          [req.tenant_id, id]
-        );
-        if (!sub.rows.length) return res.status(404).json({ error: "Webhook subscription not found." });
-
-        const result = await db.query(
-          `SELECT id, subscription_id, event_type, payload_event_id,
-                  status, http_status, attempt_number, error_message,
-                  fired_at, responded_at, duration_ms
-             FROM webhook_deliveries
-            WHERE subscription_id = $1
-            ORDER BY fired_at DESC
-            LIMIT $2`,
-          [id, limit]
-        );
-        return res.json({ items: result.rows });
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to load webhook deliveries." });
-      }
-    }
-  );
-
-  /** POST /webhook-subscriptions/:id/test
-   *  Fire a test ping to the webhook endpoint immediately.
-   *  Records the delivery attempt in webhook_deliveries. */
-  app.post(
-    "/webhook-subscriptions/:id/test",
-    authenticate(["organizer_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { id } = req.params;
-      try {
-        const sub = await db.query(
-          `SELECT * FROM webhook_subscriptions WHERE tenant_id=$1 AND id=$2`,
-          [req.tenant_id, id]
-        );
-        if (!sub.rows.length) return res.status(404).json({ error: "Webhook subscription not found." });
-        const { target_url } = sub.rows[0];
-
-        const payload = {
-          event_type:  "ping",
-          fired_at:    new Date().toISOString(),
-          subscription_id: id,
-          data:        { message: "Test ping from Codex platform." },
-        };
-
-        let httpStatus = null, errorMessage = null, durationMs = null;
-        const start = Date.now();
-        try {
-          const resp = await fetch(target_url, {
-            method:  "POST",
-            headers: { "content-type": "application/json", "x-codex-event": "ping" },
-            body:    JSON.stringify(payload),
-            signal:  AbortSignal.timeout(10000),
-          });
-          httpStatus = resp.status;
-          durationMs = Date.now() - start;
-          if (!resp.ok) errorMessage = `Remote returned ${resp.status}`;
-        } catch (fetchErr) {
-          durationMs = Date.now() - start;
-          errorMessage = fetchErr.message || "Fetch failed";
-        }
-
-        const delivered = !errorMessage;
-        await db.query(
-          `INSERT INTO webhook_deliveries
-             (subscription_id, event_type, payload_event_id,
-              status, http_status, attempt_number, error_message,
-              fired_at, responded_at, duration_ms)
-           VALUES ($1,'ping',null,$2,$3,1,$4,NOW(),NOW(),$5)`,
-          [id, delivered ? "delivered" : "failed", httpStatus, errorMessage, durationMs]
-        );
-
-        await db.query(
-          `UPDATE webhook_subscriptions
-              SET last_fired_at = NOW(),
-                  failure_count = CASE WHEN $2 THEN failure_count ELSE failure_count+1 END
-            WHERE id = $1`,
-          [id, delivered]
-        );
-
-        return res.json({ delivered, http_status: httpStatus, error_message: errorMessage, duration_ms: durationMs });
-      } catch (err) {
-        req.log?.error(err);
-        return res.status(500).json({ error: "Failed to fire test webhook." });
-      }
-    }
-  );
-
-  /* ─────────────────────────────────────────────────────────────
-   * CRM PUSH ALIAS  (API-12)
-   * POST /integrations/crm/push  →  proxies to crm-sync logic
-   * ───────────────────────────────────────────────────────────── */
-
-  /** POST /integrations/crm/push
-   *  Spec-defined alias for CRM sync. Accepts the same body as
-   *  POST /interactions/:id/crm-sync but allows batch submission:
-   *  Body: { interaction_id?, interaction_ids?: string[],
-   *          crm_target: "salesforce"|"hubspot"|"zoho"|"pilot",
-   *          field_map?: object, dry_run?: boolean }
-   *
-   *  This route acts as a normalized entry-point for any CRM adapter.
-   *  Individual /interactions/:id/crm-sync calls are still supported. */
-  app.post(
-    "/integrations/crm/push",
-    authenticate(["organizer_admin", "sponsor_admin"]),
-    requireTenant,
-    async (req, res) => {
-      const { interaction_id, interaction_ids, crm_target, field_map, dry_run } = req.body;
-
-      const ids = interaction_ids || (interaction_id ? [interaction_id] : []);
-      if (!ids.length) return res.status(400).json({ error: "interaction_id or interaction_ids is required." });
-
-      const validTargets = ["salesforce", "hubspot", "zoho", "pilot"];
-      if (!crm_target || !validTargets.includes(crm_target))
-        return res.status(400).json({ error: `crm_target must be one of: ${validTargets.join(", ")}` });
-
-      if (dry_run) {
-        return res.json({
-          dry_run:        true,
-          interaction_ids: ids,
-          crm_target,
-          field_map:      field_map || null,
-          message:        "Dry run — no records were pushed to CRM.",
-        });
-      }
-
-      // Fan out to per-interaction crm-sync
-      const results = [];
-      for (const iid of ids) {
-        try {
-          // Re-use existing crm-sync business logic if exposed as a service function.
-          // If not, fall back to a direct DB lookup + adapter dispatch.
-          const interaction = await db.query(
-            `SELECT * FROM interactions WHERE tenant_id=$1 AND id=$2`,
-            [req.tenant_id, iid]
-          );
-          if (!interaction.rows.length) {
-            results.push({ interaction_id: iid, status: "not_found" });
-            continue;
-          }
-          // Delegate to pilot adapter for now; real adapters swap in by crm_target
-          const syncResult = await dispatchCrmSync({
-            interaction: interaction.rows[0],
-            crm_target,
-            field_map: field_map || null,
-            tenant_id: req.tenant_id,
-          });
-          results.push({ interaction_id: iid, status: "queued", sync_id: syncResult.id });
-        } catch (syncErr) {
-          results.push({ interaction_id: iid, status: "error", error: syncErr.message });
-        }
-      }
-
-      const succeeded = results.filter(r => r.status === "queued").length;
-      const failed    = results.filter(r => r.status === "error" || r.status === "not_found").length;
-
-      return res.status(succeeded > 0 ? 200 : 422).json({
-        crm_target,
-        total:     ids.length,
-        succeeded,
-        failed,
-        results,
-      });
-    }
-  );
-
-  /* ─────────────────────────────────────────────────────────────
-   * LOCAL HELPERS (add near top of routes.mjs if not present)
-   * ───────────────────────────────────────────────────────────── */
-
-  // Minimal HMAC helper for webhook secret hashing.
-  // Replace with your existing crypto util if one exists.
-  function hashSecret(secret) {
-    const crypto = require("node:crypto");
-    return crypto.createHash("sha256").update(secret).digest("hex");
-  }
-
-  // Stub for CRM dispatch — replace with real adapter registry.
-  async function dispatchCrmSync({ interaction, crm_target, field_map, tenant_id }) {
-    // TODO: route to real Salesforce / HubSpot / Zoho adapters
-    // For now records the intent as a crm_sync_jobs row if the table exists,
-    // or returns a synthetic result for the pilot adapter.
-    try {
-      const result = await db.query(
-        `INSERT INTO crm_sync_jobs (tenant_id, interaction_id, crm_target, field_map, status)
-         VALUES ($1,$2,$3,$4,'queued')
-         RETURNING id`,
-        [tenant_id, interaction.id, crm_target, JSON.stringify(field_map||{})]
-      );
-      return result.rows[0];
-    } catch {
-      // Table may not exist yet — return a synthetic queue entry
-      return { id: `${crm_target}-${interaction.id}-${Date.now()}` };
-    }
-  }
-
-/* ──────────────────────────────────────────────────────────────
- * END OF PATCH — paste above closes the registerRoutes() function
- * ────────────────────────────────────────────────────────────── */
-
 }

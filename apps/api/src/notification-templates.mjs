@@ -5,6 +5,8 @@ export function renderTemplate(messageType, vars = {}) {
     case "account_activated": return renderAccountActivated(vars);
     case "password_reset": return renderPasswordReset(vars);
     case "break_glass_pending_approval": return renderBreakGlassPendingApproval(vars);
+    case "break_glass_organizer_alert": return renderBreakGlassOrganizerAlert(vars);
+    case "data_policy_changed": return renderDataPolicyChanged(vars);
     default: throw new Error(`Unknown notification template: ${messageType}`);
   }
 }
@@ -80,6 +82,73 @@ function renderBreakGlassPendingApproval({ requester_name = "A platform admin", 
       `Justification: ${justification}`,
       ``,
       `Log in to the platform admin console to review and approve or deny this request.`
+    ].join("\n")
+  };
+}
+
+function renderBreakGlassOrganizerAlert({
+  organizer_name = "there",
+  requester_role = "platform operator",
+  access_scope = "",
+  justification = "",
+  event_name = "your event",
+  duration_minutes = null,
+  platform_access_log_url = "",
+  platform_name = "Codex"
+}) {
+  const occurred_at = new Date().toISOString();
+  const durationLine = duration_minutes
+    ? `Duration: ${duration_minutes} minute(s)`
+    : "Duration: not specified";
+  return {
+    subject: `Platform operator accessed your event data — ${event_name}`,
+    body: [
+      `Hi ${organizer_name},`,
+      ``,
+      `A ${platform_name} platform operator (role: ${requester_role}) accessed data for "${event_name}" using break-glass emergency access.`,
+      ``,
+      `Time: ${occurred_at}`,
+      `Access type: ${access_scope}`,
+      `Justification: ${justification}`,
+      durationLine,
+      ``,
+      `You can review the full access log here:`,
+      platform_access_log_url,
+      ``,
+      `If you have questions about this access, contact your ${platform_name} account manager.`
+    ].join("\n")
+  };
+}
+
+function renderDataPolicyChanged({
+  organizer_name = "there",
+  event_name = "your event",
+  changed_fields = [],
+  actor_role = "platform_admin",
+  occurred_at = new Date().toISOString(),
+  review_url = "",
+  platform_name = "Codex"
+}) {
+  const fieldLines = changed_fields.map(
+    (f) => `  - ${f.field}: ${f.old_value} → ${f.new_value}`
+  );
+  const warning = actor_role === "platform_admin"
+    ? `\nIMPORTANT: This change was made by a platform administrator, not your team.\n`
+    : "";
+  return {
+    subject: `Data policy updated on ${event_name}`,
+    body: [
+      `Hi ${organizer_name},`,
+      ``,
+      `The data policy for "${event_name}" was updated by a ${actor_role} on ${occurred_at}.`,
+      warning,
+      `Changed fields:`,
+      ...fieldLines,
+      ``,
+      `Review the current policy here:`,
+      review_url,
+      ``,
+      `If you did not expect this change, contact ${platform_name} support immediately.`
     ].join("\n")
   };
 }
