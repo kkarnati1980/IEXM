@@ -35,7 +35,7 @@ export async function runEmailDeliveryBatchOnce(repos, state, env = process.env)
 }
 
 async function processSend(repos, notification, env) {
-  const { recipient_email, subject, body } = notification.system_payload;
+  const { recipient_email, subject, body, html, text } = notification.system_payload;
   const now = new Date().toISOString();
   const attempts = Number(notification.attempts_count ?? 0) + 1;
 
@@ -51,9 +51,12 @@ async function processSend(repos, notification, env) {
       },
       body: JSON.stringify({
         personalizations: [{ to: [{ email: recipient_email }] }],
-        from: { email: env.EMAIL_FROM },
+        from: { email: env.EMAIL_FROM, name: env.EMAIL_FROM_NAME ?? "Codex Platform" },
         subject,
-        content: [{ type: "text/html", value: body }]
+        content: [
+          { type: "text/plain", value: text ?? body ?? "" },
+          { type: "text/html", value: html ?? body ?? "" }
+        ]
       })
     });
     if (res.status === 202) {

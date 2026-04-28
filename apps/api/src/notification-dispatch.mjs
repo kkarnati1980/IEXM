@@ -11,7 +11,7 @@ export async function dispatchTransactionalEmail({
   actorUserId = null
 }) {
   const now = new Date().toISOString();
-  const { subject, body } = renderTemplate(messageType, templateVars);
+  const { subject, html, text, body } = renderTemplate(messageType, templateVars);
   const recipientHash = createHash("sha256")
     .update(`email:${String(recipientEmail).trim().toLowerCase()}`)
     .digest("hex");
@@ -26,7 +26,7 @@ export async function dispatchTransactionalEmail({
     status: "queued",
     provider: null,
     recipient_hash: recipientHash,
-    system_payload: { recipient_email: recipientEmail, subject, body },
+    system_payload: { recipient_email: recipientEmail, subject, html, text, body },
     consent_checked_at: null,
     sending_started_at: null,
     last_attempt_at: null,

@@ -1,4 +1,89 @@
+const FOOTER_TEXT = [
+  "",
+  "--",
+  "Codex Platform · This is a transactional notification.",
+  "You received this email because you have an account on Codex Platform.",
+  "Questions? Contact support@codex.io"
+].join("\n");
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// Converts plain-text body to a simple HTML email.
+function buildHtml(body) {
+  const URL_RE = /^(https?:\/\/\S+)$/;
+  const lines = body.split("\n");
+
+  const blocks = [];
+  let current = [];
+  for (const line of lines) {
+    if (line.trim() === "") {
+      if (current.length > 0) { blocks.push(current); current = []; }
+    } else {
+      current.push(line);
+    }
+  }
+  if (current.length > 0) blocks.push(current);
+
+  const innerHtml = blocks.map((group) => {
+    const content = group.map((line) => {
+      if (URL_RE.test(line.trim())) {
+        const url = esc(line.trim());
+        return `<a href="${url}" style="color:#4f46e5;word-break:break-all;">${url}</a>`;
+      }
+      return esc(line);
+    }).join("<br>\n");
+    return `<p style="margin:0 0 16px;line-height:1.6;">${content}</p>`;
+  }).join("\n");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;max-width:600px;width:100%;">
+        <tr>
+          <td style="background:#1e293b;padding:20px 32px;">
+            <span style="font-size:18px;font-weight:700;color:#f8fafc;letter-spacing:-0.3px;">Codex Platform</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:32px 32px 24px;">
+            ${innerHtml}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:20px 32px 24px;background:#f8fafc;border-top:1px solid #e2e8f0;">
+            <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.5;">
+              <strong style="color:#64748b;">Codex Platform</strong><br>
+              This is a transactional notification. You received this email because you have an
+              account on Codex Platform. If you believe you received this in error, please contact
+              <a href="mailto:support@codex.io" style="color:#4f46e5;">support@codex.io</a>.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
 export function renderTemplate(messageType, vars = {}) {
+  const { subject, body } = renderBody(messageType, vars);
+  const text = body + FOOTER_TEXT;
+  return { subject, html: buildHtml(body), text, body: text };
+}
+
+function renderBody(messageType, vars = {}) {
   switch (messageType) {
     case "user_invitation": return renderUserInvitation(vars);
     case "invite_expiry_reminder": return renderInviteExpiryReminder(vars);
