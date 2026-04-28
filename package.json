@@ -11,7 +11,8 @@
     "packages/*"
   ],
   "scripts": {
-    "api:dev": "node apps/api/src/server.mjs",
+    "start:postgres": "cd apps/api && node src/server.mjs",
+    "api:dev": "DOTENV_CONFIG_PATH=apps/api/.env node apps/api/src/server.mjs",
     "api:iot:sync-taps": "node apps/api/src/scripts/sync-iot-taps.mjs",
     "api:iot:sync-heartbeats": "node apps/api/src/scripts/sync-iot-heartbeats.mjs",
     "api:iot:sync-incidents": "node apps/api/src/scripts/sync-iot-incidents.mjs",

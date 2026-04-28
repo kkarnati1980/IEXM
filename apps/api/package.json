@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "node src/server.mjs",
     "dev": "node src/server.mjs",
     "iot:mock": "node src/iot/mock-server.mjs",
     "iot:sync-taps": "node src/scripts/sync-iot-taps.mjs",
@@ -18,6 +19,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1038.0",
-    "@aws-sdk/s3-request-presigner": "^3.1038.0"
+    "@aws-sdk/s3-request-presigner": "^3.1038.0",
+    "dotenv": "^17.4.2"
   }
 }
