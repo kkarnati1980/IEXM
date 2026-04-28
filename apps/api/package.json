@@ -15,5 +15,9 @@
     "migrate": "node src/scripts/migrate.mjs",
     "seed": "node src/scripts/seed-demo.mjs",
     "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1038.0",
+    "@aws-sdk/s3-request-presigner": "^3.1038.0"
   }
 }
