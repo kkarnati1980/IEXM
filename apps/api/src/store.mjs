@@ -223,7 +223,7 @@ export function createSeedState() {
       { id: "ura-demo-organizer", tenant_id: tenant.id, user_id: demoOrganizer.id, role: "organizer_admin", event_id: IE_EVENT_ID,   stall_ids: [],          sponsor_package_id: null,         assigned_by_user_id: demoAdmin.id,     created_at: now },
       { id: "ura-demo-vendor",    tenant_id: tenant.id, user_id: demoVendor.id,    role: "vendor_manager",  event_id: IE_EVENT_ID,   stall_ids: [IE_STALL_A1], sponsor_package_id: null,       assigned_by_user_id: demoOrganizer.id, created_at: now },
       { id: "ura-demo-sponsor",   tenant_id: tenant.id, user_id: demoSponsor.id,   role: "sponsor_user",    event_id: IE_EVENT_ID,   stall_ids: [],          sponsor_package_id: IE_PKG_GOLD,  assigned_by_user_id: demoOrganizer.id, created_at: now },
-      { id: "ura-demo-ops",       tenant_id: tenant.id, user_id: demoOps.id,       role: "ops_user",        event_id: null,          stall_ids: [],          sponsor_package_id: null,         assigned_by_user_id: demoAdmin.id,     created_at: now }
+      { id: "ura-demo-ops",       tenant_id: tenant.id, user_id: demoOps.id,       role: "ops_user",        event_id: IE_EVENT_ID,   stall_ids: [],          sponsor_package_id: null,         assigned_by_user_id: demoAdmin.id,     created_at: now }
     ],
     userAccessScopes: [
       {
@@ -258,7 +258,7 @@ export function createSeedState() {
       { id: "scope-demo-organizer", tenant_id: tenant.id, user_id: demoOrganizer.id, event_id: IE_EVENT_ID,  stall_id: null,       sponsor_organization_id: null,          created_at: now },
       { id: "scope-demo-vendor-a1", tenant_id: tenant.id, user_id: demoVendor.id,    event_id: IE_EVENT_ID,  stall_id: IE_STALL_A1, sponsor_organization_id: null,         created_at: now },
       { id: "scope-demo-sponsor",   tenant_id: tenant.id, user_id: demoSponsor.id,   event_id: IE_EVENT_ID,  stall_id: null,       sponsor_organization_id: sponsorOrg.id, created_at: now },
-      { id: "scope-demo-ops",       tenant_id: tenant.id, user_id: demoOps.id,       event_id: null,         stall_id: null,       sponsor_organization_id: null,          created_at: now }
+      { id: "scope-demo-ops",       tenant_id: tenant.id, user_id: demoOps.id,       event_id: IE_EVENT_ID,  stall_id: null,       sponsor_organization_id: null,          created_at: now }
     ],
     eventPolicies: [policy, secondaryPolicy],
     deviceCredentials: [

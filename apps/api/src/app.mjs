@@ -26,7 +26,10 @@ export async function createApp(options = {}) {
   const securityMode = resolveSecurityMode(options);
   const sessionSecret = resolveSessionSecret(options, state, securityMode);
   state.sessionSecret = sessionSecret;
-  const backend = options.backend ?? process.env.REPOSITORY_BACKEND ?? "memory";
+  const backend =
+    options.backend ??
+    process.env.REPOSITORY_BACKEND ??
+    (process.env.USE_POSTGRES === "true" ? "postgres" : "memory");
   const databaseSsl = options.databaseSsl ?? process.env.DATABASE_SSL === "true";
   const databaseSslRejectUnauthorized = resolveDatabaseSslRejectUnauthorized(options, securityMode);
   const db =

@@ -22,6 +22,8 @@ const MIME_TYPES = {
 
 async function tryServeStaticFile(req, res) {
   if (req.method !== "GET") return false;
+  // API calls carry Authorization header — skip static serving, let the JSON API handle them
+  if (req.headers.authorization) return false;
 
   let urlPath = req.url.split("?")[0];
   if (urlPath === "/") urlPath = "/index.html";
@@ -51,7 +53,7 @@ async function tryServeStaticFile(req, res) {
   return false;
 }
 
-const ALLOWED_METHODS = ["GET", "POST", "PATCH", "DELETE", "OPTIONS"];
+const ALLOWED_METHODS = ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"];
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? null;
 
 export async function createHttpServer(options = {}) {
@@ -256,10 +258,10 @@ class CorsOriginError extends Error {}
 
 const demoState = createSeedState();
 applyDemoSampleData(demoState);
-const { app, server } = await createHttpServer({ appOptions: { state: demoState } });
+const isEntrypoint = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+const { app, server } = await createHttpServer({ appOptions: { state: demoState, enableJobs: isEntrypoint } });
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "0.0.0.0";
-const isEntrypoint = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 
 if (isEntrypoint) {
   server.listen(port, host, () => {

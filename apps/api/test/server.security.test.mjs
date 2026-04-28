@@ -109,7 +109,7 @@ test("http handler supports CORS preflight for allowed origins", async () => {
 
   assert.equal(response.statusCode, 204);
   assert.equal(response.headers["access-control-allow-origin"], "https://console.example.com");
-  assert.match(response.headers["access-control-allow-methods"], /GET,POST,PATCH,DELETE,OPTIONS/);
+  assert.match(response.headers["access-control-allow-methods"], /GET,POST,PATCH,PUT,DELETE,OPTIONS/);
 });
 
 test("http handler blocks disallowed CORS origins when an allowlist is configured", async () => {
