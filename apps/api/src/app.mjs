@@ -17,6 +17,7 @@ import { startBreakGlassExpiryJob } from "./jobs/break-glass-expiry.mjs";
 import { startRetentionPurgeJob, startRetentionExpiryCountdownJob } from "./jobs/retention-purge.mjs";
 import { startFullExportWorker } from "./jobs/full-export-worker.mjs";
 import { startDSRWorker } from "./jobs/dsr-worker.mjs";
+import { startEmailDeliveryWorker } from "./jobs/email-delivery-worker.mjs";
 
 export async function createApp(options = {}) {
   const router = createRouter();
@@ -80,6 +81,7 @@ export async function createApp(options = {}) {
     startRetentionExpiryCountdownJob(repos, state);
     startFullExportWorker(repos, state);
     startDSRWorker(repos, state);
+    startEmailDeliveryWorker(repos, state);
   }
 
   return {

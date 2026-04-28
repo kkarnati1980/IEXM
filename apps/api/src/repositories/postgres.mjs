@@ -1459,20 +1459,20 @@ export function createPostgresRepositories(db, securityContext = null) {
               status, provider, recipient_hash, consent_checked_at, sending_started_at,
               last_attempt_at, next_attempt_at, attempts_count, provider_message_id, final_error,
               retry_exhausted_at, retry_exhausted_reason, created_by_user_id, approved_by_user_id,
-              created_at, updated_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+              created_at, updated_at, system_payload
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
             RETURNING *`,
             [
               record.id,
               record.tenant_id,
-              record.event_id,
+              record.event_id ?? null,
               record.interaction_id,
               record.channel,
               record.message_type,
               record.status,
               record.provider ?? null,
-              record.recipient_hash,
-              record.consent_checked_at,
+              record.recipient_hash ?? null,
+              record.consent_checked_at ?? null,
               record.sending_started_at ?? null,
               record.last_attempt_at ?? null,
               record.next_attempt_at ?? null,
@@ -1484,7 +1484,8 @@ export function createPostgresRepositories(db, securityContext = null) {
               record.created_by_user_id,
               record.approved_by_user_id,
               record.created_at,
-              record.updated_at
+              record.updated_at,
+              record.system_payload ? JSON.stringify(record.system_payload) : null
             ]
           ),
           "Notification"
@@ -1576,7 +1577,8 @@ export function createPostgresRepositories(db, securityContext = null) {
                  created_by_user_id = $18,
                  approved_by_user_id = $19,
                  created_at = $20,
-                 updated_at = $21
+                 updated_at = $21,
+                 system_payload = $22
              WHERE tenant_id = $1 AND id = $2
              RETURNING *`,
             [
@@ -1587,8 +1589,8 @@ export function createPostgresRepositories(db, securityContext = null) {
               record.message_type,
               record.status,
               record.provider ?? null,
-              record.recipient_hash,
-              record.consent_checked_at,
+              record.recipient_hash ?? null,
+              record.consent_checked_at ?? null,
               record.sending_started_at ?? null,
               record.last_attempt_at ?? null,
               record.next_attempt_at ?? null,
@@ -1600,7 +1602,8 @@ export function createPostgresRepositories(db, securityContext = null) {
               record.created_by_user_id ?? null,
               record.approved_by_user_id ?? null,
               record.created_at,
-              record.updated_at
+              record.updated_at,
+              record.system_payload ? JSON.stringify(record.system_payload) : null
             ]
           ),
           "Notification"
