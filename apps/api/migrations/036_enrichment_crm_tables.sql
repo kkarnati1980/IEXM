@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS enrichment_results (
   tenant_id        TEXT         NOT NULL,
   interaction_id   TEXT         NOT NULL,
   provider         TEXT         NOT NULL,
-  company_id       TEXT         NULL REFERENCES companies(id) ON DELETE SET NULL,
+  company_id       TEXT         NULL,  -- FK to companies omitted: companies table not yet created
   title            TEXT         NULL,
   summary          TEXT         NULL,
   confidence_score NUMERIC(4,3) NULL CHECK (confidence_score BETWEEN 0 AND 1),

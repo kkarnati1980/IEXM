@@ -101,7 +101,12 @@ CREATE INDEX IF NOT EXISTS idx_dsr_status
   WHERE status IN ('requested','processing');
 
 COMMENT ON TABLE  data_subject_requests IS 'GDPR/privacy data subject right workflows. Spec §AT-01 and Privacy appendix.';
-COMMENT ON COLUMN data_subject_requests.download_url IS 'Signed, expiring download URL generated when export status = completed.';
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name='data_subject_requests' AND column_name='download_url') THEN
+    COMMENT ON COLUMN data_subject_requests.download_url IS 'Signed, expiring download URL generated when export status = completed.';
+  END IF;
+END $$;
 
 
 -- ── consent_events ────────────────────────────────────────────────────────────
@@ -155,12 +160,13 @@ END $$;
 -- ── Extend consents table with locale / user_agent if missing ────────────────
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-     WHERE table_name='consents' AND column_name='locale'
-  ) THEN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='consents' AND column_name='locale') THEN
     ALTER TABLE consents ADD COLUMN locale TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='consents' AND column_name='user_agent') THEN
     ALTER TABLE consents ADD COLUMN user_agent TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='consents' AND column_name='revoked_at') THEN
     ALTER TABLE consents ADD COLUMN revoked_at TIMESTAMPTZ;
   END IF;
 END $$;
