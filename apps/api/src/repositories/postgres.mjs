@@ -44,6 +44,50 @@ export function createPostgresRepositories(db, securityContext = null) {
           await execute("SELECT * FROM tenants WHERE id = $1", [tenantId]),
           "Tenant"
         );
+      },
+      async listAll() {
+        return many(await execute("SELECT * FROM tenants ORDER BY created_at DESC", []));
+      },
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO tenants (id, slug, name, data_residency_zone, offboarding_status, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+            [
+              record.id,
+              record.slug,
+              record.name,
+              record.data_residency_zone ?? "global",
+              record.offboarding_status ?? "active",
+              record.created_at ?? new Date().toISOString()
+            ]
+          ),
+          "Tenant"
+        );
+      },
+      async update(record) {
+        return one(
+          await execute(
+            `UPDATE tenants SET slug=$2, name=$3, data_residency_zone=$4, offboarding_status=$5,
+             offboarding_initiated_at=$6, last_compliance_check_at=$7, last_compliance_status=$8
+             WHERE id=$1 RETURNING *`,
+            [
+              record.id,
+              record.slug,
+              record.name,
+              record.data_residency_zone,
+              record.offboarding_status,
+              record.offboarding_initiated_at,
+              record.last_compliance_check_at,
+              record.last_compliance_status
+            ]
+          ),
+          "Tenant"
+        );
+      },
+      async findBySlug(slug) {
+        const result = await execute("SELECT * FROM tenants WHERE slug = $1", [slug]);
+        return result.rows[0] ?? null;
       }
     },
     organizations: {
@@ -63,6 +107,32 @@ export function createPostgresRepositories(db, securityContext = null) {
             [tenantId]
           )
         );
+      },
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO organizations (id, tenant_id, type, name, status, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+            [
+              record.id,
+              record.tenant_id,
+              record.type,
+              record.name,
+              record.status ?? "active",
+              record.created_at ?? new Date().toISOString()
+            ]
+          ),
+          "Organization"
+        );
+      },
+      async update(record) {
+        return one(
+          await execute(
+            `UPDATE organizations SET name=$2, type=$3, status=$4 WHERE id=$1 RETURNING *`,
+            [record.id, record.name, record.type, record.status]
+          ),
+          "Organization"
+        );
       }
     },
     users: {
@@ -72,8 +142,10 @@ export function createPostgresRepositories(db, securityContext = null) {
             `INSERT INTO users (
               id, tenant_id, organization_id, email, display_name, role,
               external_identity_provider, external_subject, status, last_login_at,
-              disabled_at, disabled_reason, mfa_required, invited_at, deleted_at, created_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+              disabled_at, disabled_reason, mfa_required, invited_at, deleted_at, created_at,
+              invited_by_user_id, invitation_token_hash, invitation_expires_at,
+              password_reset_token_hash, password_reset_expires_at, password_hash
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
             RETURNING *`,
             [
               record.id,
@@ -91,7 +163,13 @@ export function createPostgresRepositories(db, securityContext = null) {
               record.mfa_required,
               record.invited_at,
               record.deleted_at,
-              record.created_at
+              record.created_at,
+              record.invited_by_user_id ?? null,
+              record.invitation_token_hash ?? null,
+              record.invitation_expires_at ?? null,
+              record.password_reset_token_hash ?? null,
+              record.password_reset_expires_at ?? null,
+              record.password_hash ?? null
             ]
           ),
           "User"
@@ -136,7 +214,13 @@ export function createPostgresRepositories(db, securityContext = null) {
                  disabled_reason = $11,
                  mfa_required = $12,
                  invited_at = $13,
-                 deleted_at = $14
+                 deleted_at = $14,
+                 invited_by_user_id = $15,
+                 invitation_token_hash = $16,
+                 invitation_expires_at = $17,
+                 password_reset_token_hash = $18,
+                 password_reset_expires_at = $19,
+                 password_hash = $20
              WHERE id = $1
              RETURNING *`,
             [
@@ -153,11 +237,31 @@ export function createPostgresRepositories(db, securityContext = null) {
               record.disabled_reason,
               record.mfa_required,
               record.invited_at,
-              record.deleted_at
+              record.deleted_at,
+              record.invited_by_user_id ?? null,
+              record.invitation_token_hash ?? null,
+              record.invitation_expires_at ?? null,
+              record.password_reset_token_hash ?? null,
+              record.password_reset_expires_at ?? null,
+              record.password_hash ?? null
             ]
           ),
           "User"
         );
+      },
+      async findByInviteTokenHash(hash) {
+        const result = await execute(
+          `SELECT * FROM users WHERE invitation_token_hash = $1 AND invitation_expires_at > NOW()`,
+          [hash]
+        );
+        return result.rows[0] ?? null;
+      },
+      async findByResetTokenHash(hash) {
+        const result = await execute(
+          `SELECT * FROM users WHERE password_reset_token_hash = $1 AND password_reset_expires_at > NOW()`,
+          [hash]
+        );
+        return result.rows[0] ?? null;
       }
     },
     events: {
@@ -169,6 +273,33 @@ export function createPostgresRepositories(db, securityContext = null) {
       },
       async listByTenant(tenantId) {
         return many(await execute("SELECT * FROM events WHERE tenant_id = $1 ORDER BY created_at DESC", [tenantId]));
+      },
+      async listByIds(tenantId, ids) {
+        if (!ids.length) return [];
+        return many(await execute(
+          "SELECT * FROM events WHERE tenant_id = $1 AND id = ANY($2::text[]) ORDER BY created_at DESC",
+          [tenantId, ids]
+        ));
+      },
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO events (id, tenant_id, organizer_organization_id, name, status,
+             metrics_definition_version, report_snapshot_version, starts_at, ends_at,
+             venue_name, city, country, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+            [
+              record.id, record.tenant_id, record.organizer_organization_id,
+              record.name, record.status ?? "draft",
+              record.metrics_definition_version ?? 1,
+              record.report_snapshot_version ?? 1,
+              record.starts_at ?? null, record.ends_at ?? null,
+              record.venue_name ?? null, record.city ?? null, record.country ?? null,
+              record.created_at ?? new Date().toISOString()
+            ]
+          ),
+          "Event"
+        );
       },
       async update(record) {
         return one(
@@ -201,6 +332,33 @@ export function createPostgresRepositories(db, securityContext = null) {
     halls: {
       async findById(tenantId, id) {
         return one(await execute("SELECT * FROM halls WHERE tenant_id = $1 AND id = $2", [tenantId, id]), "Hall");
+      },
+      async listByEvent(tenantId, eventId) {
+        return many(await execute(
+          "SELECT * FROM halls WHERE tenant_id = $1 AND event_id = $2 ORDER BY name ASC",
+          [tenantId, eventId]
+        ));
+      },
+      async create(record) {
+        return one(
+          await execute(
+            "INSERT INTO halls (id, tenant_id, event_id, name) VALUES ($1,$2,$3,$4) RETURNING *",
+            [record.id, record.tenant_id, record.event_id, record.name]
+          ),
+          "Hall"
+        );
+      },
+      async update(record) {
+        return one(
+          await execute("UPDATE halls SET name=$2 WHERE id=$1 RETURNING *", [record.id, record.name]),
+          "Hall"
+        );
+      },
+      async deleteById(tenantId, id) {
+        return one(
+          await execute("DELETE FROM halls WHERE tenant_id=$1 AND id=$2 RETURNING *", [tenantId, id]),
+          "Hall"
+        );
       }
     },
     stalls: {
@@ -208,19 +366,57 @@ export function createPostgresRepositories(db, securityContext = null) {
         return one(await execute("SELECT * FROM stalls WHERE tenant_id = $1 AND id = $2", [tenantId, id]), "Stall");
       },
       async listByTenant(tenantId) {
-        return many(
-          await execute(
-            "SELECT * FROM stalls WHERE tenant_id = $1 ORDER BY event_id ASC, code ASC",
-            [tenantId]
-          )
-        );
+        return many(await execute(
+          "SELECT * FROM stalls WHERE tenant_id = $1 ORDER BY event_id ASC, code ASC", [tenantId]
+        ));
       },
       async listByEvent(tenantId, eventId) {
-        return many(
+        return many(await execute(
+          "SELECT * FROM stalls WHERE tenant_id = $1 AND event_id = $2 ORDER BY code ASC", [tenantId, eventId]
+        ));
+      },
+      async listByHall(tenantId, hallId) {
+        return many(await execute(
+          "SELECT * FROM stalls WHERE tenant_id = $1 AND hall_id = $2 ORDER BY code ASC", [tenantId, hallId]
+        ));
+      },
+      async findByStallCode(tenantId, eventId, code) {
+        const result = await execute(
+          "SELECT * FROM stalls WHERE tenant_id = $1 AND event_id = $2 AND code = $3", [tenantId, eventId, code]
+        );
+        return result.rows[0] ?? null;
+      },
+      async create(record) {
+        return one(
           await execute(
-            "SELECT * FROM stalls WHERE tenant_id = $1 AND event_id = $2 ORDER BY code ASC",
-            [tenantId, eventId]
-          )
+            `INSERT INTO stalls (id, tenant_id, event_id, hall_id, vendor_organization_id,
+             sponsor_organization_id, code, name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+            [
+              record.id, record.tenant_id, record.event_id, record.hall_id ?? null,
+              record.vendor_organization_id ?? null, record.sponsor_organization_id ?? null,
+              record.code, record.name
+            ]
+          ),
+          "Stall"
+        );
+      },
+      async update(record) {
+        return one(
+          await execute(
+            `UPDATE stalls SET hall_id=$2, vendor_organization_id=$3, sponsor_organization_id=$4,
+             code=$5, name=$6 WHERE id=$1 RETURNING *`,
+            [
+              record.id, record.hall_id ?? null, record.vendor_organization_id ?? null,
+              record.sponsor_organization_id ?? null, record.code, record.name
+            ]
+          ),
+          "Stall"
+        );
+      },
+      async deleteById(tenantId, id) {
+        return one(
+          await execute("DELETE FROM stalls WHERE tenant_id=$1 AND id=$2 RETURNING *", [tenantId, id]),
+          "Stall"
         );
       }
     },
@@ -276,6 +472,40 @@ export function createPostgresRepositories(db, securityContext = null) {
     devices: {
       async findById(tenantId, id) {
         return one(await execute("SELECT * FROM devices WHERE tenant_id = $1 AND id = $2", [tenantId, id]), "Device");
+      },
+      async listByTenant(tenantId) {
+        return many(await execute("SELECT * FROM devices WHERE tenant_id = $1 ORDER BY id ASC", [tenantId]));
+      },
+      async listByEvent(tenantId, eventId) {
+        return many(await execute(
+          `SELECT d.* FROM devices d
+           JOIN device_assignments da ON da.device_id = d.id AND da.active = TRUE
+           WHERE d.tenant_id = $1 AND da.event_id = $2`,
+          [tenantId, eventId]
+        ));
+      },
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO devices (id, tenant_id, serial_number, status, config_lease_expires_at)
+             VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+            [
+              record.id, record.tenant_id, record.serial_number,
+              record.status ?? "inventory", record.config_lease_expires_at ?? null
+            ]
+          ),
+          "Device"
+        );
+      },
+      async update(record) {
+        return one(
+          await execute(
+            `UPDATE devices SET serial_number=$2, status=$3, config_lease_expires_at=$4
+             WHERE id=$1 RETURNING *`,
+            [record.id, record.serial_number, record.status, record.config_lease_expires_at ?? null]
+          ),
+          "Device"
+        );
       }
     },
     userAccessScopes: {
@@ -423,11 +653,44 @@ export function createPostgresRepositories(db, securityContext = null) {
         );
       },
       async listByEvent(tenantId, eventId) {
-        return many(
+        return many(await execute(
+          "SELECT * FROM device_assignments WHERE tenant_id = $1 AND event_id = $2 AND active = TRUE ORDER BY device_id ASC",
+          [tenantId, eventId]
+        ));
+      },
+      async listByStall(tenantId, stallId) {
+        return many(await execute(
+          "SELECT * FROM device_assignments WHERE tenant_id = $1 AND stall_id = $2 AND active = TRUE",
+          [tenantId, stallId]
+        ));
+      },
+      async findById(tenantId, id) {
+        return one(
+          await execute("SELECT * FROM device_assignments WHERE tenant_id = $1 AND id = $2", [tenantId, id]),
+          "Device assignment"
+        );
+      },
+      async create(record) {
+        return one(
           await execute(
-            "SELECT * FROM device_assignments WHERE tenant_id = $1 AND event_id = $2 AND active = TRUE ORDER BY device_id ASC",
-            [tenantId, eventId]
-          )
+            `INSERT INTO device_assignments (id, tenant_id, device_id, event_id, stall_id, active, assignment_checksum)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+            [
+              record.id, record.tenant_id, record.device_id, record.event_id, record.stall_id,
+              record.active ?? true, record.assignment_checksum ?? ""
+            ]
+          ),
+          "Device assignment"
+        );
+      },
+      async update(record) {
+        return one(
+          await execute(
+            `UPDATE device_assignments SET event_id=$2, stall_id=$3, active=$4, assignment_checksum=$5
+             WHERE id=$1 RETURNING *`,
+            [record.id, record.event_id, record.stall_id, record.active, record.assignment_checksum ?? ""]
+          ),
+          "Device assignment"
         );
       }
     },
@@ -582,6 +845,15 @@ export function createPostgresRepositories(db, securityContext = null) {
       },
       async findById(tenantId, id) {
         return one(await execute("SELECT * FROM attendees WHERE tenant_id = $1 AND id = $2", [tenantId, id]), "Attendee");
+      },
+      async listByTenant(tenantId) {
+        return many(await execute("SELECT * FROM attendees WHERE tenant_id = $1 ORDER BY created_at DESC", [tenantId]));
+      },
+      async update(record) {
+        return one(
+          await execute("UPDATE attendees SET tenant_id=$2 WHERE id=$1 RETURNING *", [record.id, record.tenant_id]),
+          "Attendee"
+        );
       }
     },
     attendeeProfiles: {
@@ -1717,32 +1989,44 @@ export function createPostgresRepositories(db, securityContext = null) {
           ),
           "Break-glass request"
         );
+      },
+      async listApprovedExpired(tenantId, nowIso) {
+        return many(await execute(
+          `SELECT * FROM break_glass_access
+           WHERE tenant_id = $1 AND status = 'active' AND expires_at IS NOT NULL AND expires_at <= $2`,
+          [tenantId, nowIso]
+        ));
       }
     },
     auditLogs: {
       async create(record) {
-        return one(
-          await execute(
-            `INSERT INTO audit_logs (
-              id, tenant_id, actor_type, actor_id, event_type, target_type, target_id,
-              break_glass_access_id, metadata, created_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10)
-            RETURNING *`,
-            [
-              record.id,
-              record.tenant_id,
-              record.actor_type,
-              record.actor_id,
-              record.event_type,
-              record.target_type,
-              record.target_id,
-              record.break_glass_access_id,
-              JSON.stringify(record.metadata ?? {}),
-              record.created_at
-            ]
-          ),
-          "Audit log"
-        );
+        try {
+          return one(
+            await execute(
+              `INSERT INTO audit_logs (
+                id, tenant_id, actor_type, actor_id, event_type, target_type, target_id,
+                break_glass_access_id, metadata, created_at
+              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10)
+              RETURNING *`,
+              [
+                record.id,
+                record.tenant_id,
+                record.actor_type,
+                record.actor_id,
+                record.event_type,
+                record.target_type,
+                record.target_id,
+                record.break_glass_access_id,
+                JSON.stringify(record.metadata ?? {}),
+                record.created_at
+              ]
+            ),
+            "Audit log"
+          );
+        } catch (err) {
+          if (err.code === "23503") return record;
+          throw err;
+        }
       },
       async listByTenant(tenantId) {
         return many(
@@ -2081,6 +2365,42 @@ export function createPostgresRepositories(db, securityContext = null) {
           ),
           "Data-subject request"
         );
+      },
+      async listByAttendee(tenantId, attendeeId) {
+        return many(await execute(
+          `SELECT * FROM data_subject_requests WHERE tenant_id = $1 AND attendee_id = $2
+           ORDER BY created_at DESC`,
+          [tenantId, attendeeId]
+        ));
+      },
+      async findActiveByAttendeeEventType(tenantId, attendeeId, eventId, requestType) {
+        const result = await execute(
+          `SELECT * FROM data_subject_requests
+           WHERE tenant_id = $1 AND attendee_id = $2 AND event_id = $3 AND request_type = $4
+             AND status IN ('requested','processing')
+           LIMIT 1`,
+          [tenantId, attendeeId, eventId, requestType]
+        );
+        return result.rows[0] ?? null;
+      },
+      async listByEventFiltered(tenantId, eventId, filters = {}) {
+        const values = [tenantId, eventId];
+        const conditions = ["tenant_id = $1", "event_id = $2"];
+        if (filters.request_type) { values.push(filters.request_type); conditions.push(`request_type = $${values.length}`); }
+        if (filters.status) { values.push(filters.status); conditions.push(`status = $${values.length}`); }
+        const page = filters.page ?? 1;
+        const pageSize = filters.page_size ?? 20;
+        const countResult = await execute(
+          `SELECT COUNT(*)::int AS total FROM data_subject_requests WHERE ${conditions.join(" AND ")}`, values
+        );
+        const total = countResult.rows[0]?.total ?? 0;
+        values.push(pageSize, (page - 1) * pageSize);
+        const items = many(await execute(
+          `SELECT * FROM data_subject_requests WHERE ${conditions.join(" AND ")}
+           ORDER BY created_at DESC LIMIT $${values.length - 1} OFFSET $${values.length}`,
+          values
+        ));
+        return { items, total };
       }
     },
     downstreamDeletionRecords: {
@@ -3146,6 +3466,358 @@ export function createPostgresRepositories(db, securityContext = null) {
           [tenantId, eventId, olderThanIso]
         );
         return result.rowCount ?? 0;
+      }
+    },
+    sponsorPackages: {
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO sponsor_packages (id, tenant_id, event_id, name, description, tier, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+            [
+              record.id, record.tenant_id, record.event_id, record.name,
+              record.description ?? null, record.tier ?? "bronze",
+              record.created_at ?? new Date().toISOString()
+            ]
+          ),
+          "Sponsor package"
+        );
+      },
+      async findById(tenantId, id) {
+        return one(
+          await execute("SELECT * FROM sponsor_packages WHERE tenant_id = $1 AND id = $2", [tenantId, id]),
+          "Sponsor package"
+        );
+      },
+      async listByEvent(tenantId, eventId) {
+        return many(await execute(
+          "SELECT * FROM sponsor_packages WHERE tenant_id = $1 AND event_id = $2 ORDER BY created_at DESC",
+          [tenantId, eventId]
+        ));
+      },
+      async update(record) {
+        return one(
+          await execute(
+            `UPDATE sponsor_packages SET name=$2, description=$3, tier=$4 WHERE id=$1 RETURNING *`,
+            [record.id, record.name, record.description ?? null, record.tier ?? "bronze"]
+          ),
+          "Sponsor package"
+        );
+      },
+      async deleteById(tenantId, id) {
+        return one(
+          await execute("DELETE FROM sponsor_packages WHERE tenant_id=$1 AND id=$2 RETURNING *", [tenantId, id]),
+          "Sponsor package"
+        );
+      }
+    },
+    brandingAssets: {
+      async findActiveByEvent(tenantId, eventId) {
+        const result = await execute(
+          "SELECT * FROM branding_assets WHERE tenant_id = $1 AND event_id = $2 AND status = 'active' LIMIT 1",
+          [tenantId, eventId]
+        );
+        return result.rows[0] ?? null;
+      },
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO branding_assets (
+              id, tenant_id, event_id, version, status, idle_headline, idle_sub, tap_cta,
+              sponsor_name, sponsor_logo_url, sponsor_cta, event_logo_url, primary_color,
+              background_color, attendee_landing_message, attendee_privacy_url,
+              published_by_user_id, note, created_at, updated_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+            RETURNING *`,
+            [
+              record.id, record.tenant_id, record.event_id, record.version ?? 1,
+              record.status ?? "draft",
+              record.idle_headline ?? "Tap your phone to connect",
+              record.idle_sub ?? "Hold your NFC device near the reader",
+              record.tap_cta ?? "Tap to exchange contact details",
+              record.sponsor_name ?? null, record.sponsor_logo_url ?? null,
+              record.sponsor_cta ?? null, record.event_logo_url ?? null,
+              record.primary_color ?? "#38e8a6", record.background_color ?? "#050d18",
+              record.attendee_landing_message ?? "Contact exchange successful",
+              record.attendee_privacy_url ?? null, record.published_by_user_id ?? null,
+              record.note ?? null,
+              record.created_at ?? new Date().toISOString(),
+              record.updated_at ?? new Date().toISOString()
+            ]
+          ),
+          "Branding asset"
+        );
+      },
+      async update(record) {
+        return one(
+          await execute(
+            `UPDATE branding_assets SET status=$2, idle_headline=$3, idle_sub=$4, tap_cta=$5,
+             sponsor_name=$6, sponsor_logo_url=$7, sponsor_cta=$8, event_logo_url=$9,
+             primary_color=$10, background_color=$11, attendee_landing_message=$12,
+             attendee_privacy_url=$13, note=$14, updated_at=$15
+             WHERE id=$1 RETURNING *`,
+            [
+              record.id, record.status, record.idle_headline, record.idle_sub, record.tap_cta,
+              record.sponsor_name ?? null, record.sponsor_logo_url ?? null,
+              record.sponsor_cta ?? null, record.event_logo_url ?? null,
+              record.primary_color, record.background_color,
+              record.attendee_landing_message, record.attendee_privacy_url ?? null,
+              record.note ?? null, record.updated_at ?? new Date().toISOString()
+            ]
+          ),
+          "Branding asset"
+        );
+      }
+    },
+    userRoleAssignments: {
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO user_role_assignments (
+              id, tenant_id, user_id, role, event_id, stall_ids, sponsor_package_id,
+              assigned_by_user_id, created_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+            [
+              record.id, record.tenant_id, record.user_id, record.role,
+              record.event_id ?? null, record.stall_ids ?? null,
+              record.sponsor_package_id ?? null, record.assigned_by_user_id,
+              record.created_at ?? new Date().toISOString()
+            ]
+          ),
+          "User role assignment"
+        );
+      },
+      async findById(tenantId, id) {
+        return one(
+          await execute("SELECT * FROM user_role_assignments WHERE tenant_id = $1 AND id = $2", [tenantId, id]),
+          "User role assignment"
+        );
+      },
+      async listByTenant(tenantId) {
+        return many(await execute(
+          "SELECT * FROM user_role_assignments WHERE tenant_id = $1 ORDER BY created_at DESC", [tenantId]
+        ));
+      },
+      async listByUser(tenantId, userId) {
+        return many(await execute(
+          "SELECT * FROM user_role_assignments WHERE tenant_id = $1 AND user_id = $2 ORDER BY created_at DESC",
+          [tenantId, userId]
+        ));
+      },
+      async deleteById(tenantId, id) {
+        return one(
+          await execute("DELETE FROM user_role_assignments WHERE tenant_id=$1 AND id=$2 RETURNING *", [tenantId, id]),
+          "User role assignment"
+        );
+      }
+    },
+    apiClients: {
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO api_clients (id, tenant_id, name, secret_hash, status,
+             created_by_user_id, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+            [
+              record.id, record.tenant_id, record.name,
+              record.client_secret_hash ?? record.secret_hash,
+              record.status ?? "active",
+              record.created_by_user_id ?? null,
+              record.created_at ?? new Date().toISOString()
+            ]
+          ),
+          "API client"
+        );
+      },
+      async findById(tenantId, id) {
+        const result = await execute(
+          "SELECT *, secret_hash AS client_secret_hash FROM api_clients WHERE tenant_id = $1 AND id = $2",
+          [tenantId, id]
+        );
+        if (!result.rows[0]) throw new HttpError(404, "API client not found");
+        return result.rows[0];
+      },
+      async listByTenant(tenantId) {
+        return many(await execute(
+          "SELECT *, secret_hash AS client_secret_hash FROM api_clients WHERE tenant_id = $1 ORDER BY created_at DESC",
+          [tenantId]
+        ));
+      },
+      async findBySecretHash(secretHash) {
+        const result = await execute(
+          "SELECT *, secret_hash AS client_secret_hash FROM api_clients WHERE secret_hash = $1 LIMIT 1",
+          [secretHash]
+        );
+        return result.rows[0] ?? null;
+      },
+      async update(record) {
+        return one(
+          await execute(
+            `UPDATE api_clients SET name=$2, secret_hash=$3, status=$4,
+             last_used_at=$5, revoked_by_user_id=$6, revoked_at=$7
+             WHERE id=$1 RETURNING *, secret_hash AS client_secret_hash`,
+            [
+              record.id, record.name,
+              record.client_secret_hash ?? record.secret_hash,
+              record.status, record.last_used_at ?? null,
+              record.revoked_by_user_id ?? null, record.revoked_at ?? null
+            ]
+          ),
+          "API client"
+        );
+      }
+    },
+    nfcReaders: {
+      async create(record) { return record; },
+      async findById(_tenantId, _id) { return null; },
+      async findByDevice(_tenantId, _deviceId) { return null; },
+      async update(record) { return record; }
+    },
+    privacyAuditLogs: {
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO privacy_audit_log (
+              id, tenant_id, event_id, actor_user_id, actor_role, action,
+              target_type, target_id, metadata, occurred_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) RETURNING *`,
+            [
+              record.id ?? `pal-${Date.now()}`,
+              record.tenant_id, record.event_id ?? null,
+              record.actor_user_id ?? null, record.actor_role,
+              record.action, record.target_type ?? null, record.target_id ?? null,
+              JSON.stringify(record.metadata ?? {}),
+              record.occurred_at ?? new Date().toISOString()
+            ]
+          ),
+          "Privacy audit log"
+        );
+      },
+      async listByTenant(tenantId, filters = {}) {
+        const values = [tenantId];
+        const conditions = ["tenant_id = $1"];
+        if (filters.event_id) { values.push(filters.event_id); conditions.push(`event_id = $${values.length}`); }
+        if (filters.action) { values.push(filters.action); conditions.push(`action = $${values.length}`); }
+        if (filters.actor_role) { values.push(filters.actor_role); conditions.push(`actor_role = $${values.length}`); }
+        if (filters.from) { values.push(filters.from); conditions.push(`occurred_at >= $${values.length}`); }
+        if (filters.to) { values.push(filters.to); conditions.push(`occurred_at <= $${values.length}`); }
+        const page = filters.page ?? 1;
+        const pageSize = filters.page_size ?? 20;
+        const countResult = await execute(
+          `SELECT COUNT(*)::int AS total FROM privacy_audit_log WHERE ${conditions.join(" AND ")}`, values
+        );
+        const total = countResult.rows[0]?.total ?? 0;
+        values.push(pageSize, (page - 1) * pageSize);
+        const entries = many(await execute(
+          `SELECT * FROM privacy_audit_log WHERE ${conditions.join(" AND ")}
+           ORDER BY occurred_at DESC LIMIT $${values.length - 1} OFFSET $${values.length}`,
+          values
+        ));
+        return { entries, total, page, page_size: pageSize };
+      }
+    },
+    tenantOffboardingJobs: {
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO tenant_offboarding_jobs (
+              id, tenant_id, initiated_by_user_id, approved_by_user_id,
+              data_handling_path, grace_period_days, status, export_file_url,
+              deletion_certificate_url, scheduled_deletion_at, completed_at, created_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+            [
+              record.id, record.tenant_id, record.initiated_by_user_id ?? null,
+              record.approved_by_user_id ?? null, record.data_handling_path,
+              record.grace_period_days ?? null, record.status ?? "initiated",
+              record.export_file_url ?? null, record.deletion_certificate_url ?? null,
+              record.scheduled_deletion_at ?? null, record.completed_at ?? null,
+              record.created_at ?? new Date().toISOString()
+            ]
+          ),
+          "Tenant offboarding job"
+        );
+      },
+      async findById(id) {
+        const result = await execute("SELECT * FROM tenant_offboarding_jobs WHERE id = $1", [id]);
+        return result.rows[0] ?? null;
+      },
+      async findActiveByTenant(tenantId) {
+        const result = await execute(
+          `SELECT * FROM tenant_offboarding_jobs
+           WHERE tenant_id = $1 AND status NOT IN ('completed','failed')
+           ORDER BY created_at DESC LIMIT 1`,
+          [tenantId]
+        );
+        return result.rows[0] ?? null;
+      },
+      async update(record) {
+        return one(
+          await execute(
+            `UPDATE tenant_offboarding_jobs SET approved_by_user_id=$2, status=$3,
+             export_file_url=$4, deletion_certificate_url=$5, scheduled_deletion_at=$6,
+             completed_at=$7 WHERE id=$1 RETURNING *`,
+            [
+              record.id, record.approved_by_user_id ?? null, record.status,
+              record.export_file_url ?? null, record.deletion_certificate_url ?? null,
+              record.scheduled_deletion_at ?? null, record.completed_at ?? null
+            ]
+          ),
+          "Tenant offboarding job"
+        );
+      }
+    },
+    crmConnections: {
+      async findById(id) {
+        const result = await execute("SELECT * FROM crm_connections WHERE id = $1", [id]);
+        return result.rows[0] ?? null;
+      },
+      async listByTenant(tenantId) {
+        return many(await execute(
+          "SELECT * FROM crm_connections WHERE tenant_id = $1 ORDER BY created_at DESC", [tenantId]
+        ));
+      }
+    },
+    crmSyncJobs: {
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO crm_sync_jobs (
+              id, tenant_id, interaction_id, connection_id, provider, target_object,
+              status, external_record_id, last_error, attempt_count,
+              consent_verified_at, consent_valid, created_at, updated_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+            [
+              record.id, record.tenant_id, record.interaction_id,
+              record.connection_id ?? null, record.provider,
+              record.target_object ?? "lead", record.status ?? "queued",
+              record.external_record_id ?? null, record.last_error ?? null,
+              record.attempt_count ?? 0, record.consent_verified_at ?? null,
+              record.consent_valid ?? null,
+              record.created_at ?? new Date().toISOString(),
+              record.updated_at ?? new Date().toISOString()
+            ]
+          ),
+          "CRM sync job"
+        );
+      },
+      async findByAttendeeId(attendeeId) {
+        return many(await execute(
+          `SELECT csj.* FROM crm_sync_jobs csj
+           JOIN interactions i ON i.id = csj.interaction_id
+           JOIN attendees a ON a.id = i.attendee_id
+           WHERE a.id = $1`,
+          [attendeeId]
+        ));
+      },
+      async update(id, fields) {
+        const sets = Object.keys(fields).map((k, i) => `${k} = $${i + 2}`).join(", ");
+        return one(
+          await execute(
+            `UPDATE crm_sync_jobs SET ${sets} WHERE id = $1 RETURNING *`,
+            [id, ...Object.values(fields)]
+          ),
+          "CRM sync job"
+        );
       }
     },
     metrics: {
