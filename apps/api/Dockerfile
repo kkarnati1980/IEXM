@@ -11,7 +11,7 @@ RUN npm install
 # Copy source (root .dockerignore excludes node_modules, .env, storage, etc.)
 COPY . .
 
-EXPOSE 3000
+EXPOSE ${PORT:-3000}
 ENV NODE_ENV=production
 ENV USE_POSTGRES=true
 
