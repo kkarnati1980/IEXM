@@ -78,9 +78,9 @@ function buildHtml(body) {
 }
 
 export function renderTemplate(messageType, vars = {}) {
-  const { subject, body } = renderBody(messageType, vars);
+  const { subject, body, html: htmlOverride } = renderBody(messageType, vars);
   const text = body + FOOTER_TEXT;
-  return { subject, html: buildHtml(body), text, body: text };
+  return { subject, html: htmlOverride ?? buildHtml(body), text, body: text };
 }
 
 function renderBody(messageType, vars = {}) {
@@ -106,33 +106,43 @@ function renderBody(messageType, vars = {}) {
 }
 
 function renderUserInvitation({ display_name = "there", invite_url = "", platform_name = "Codex" }) {
-  return {
-    subject: `You've been invited to ${platform_name}`,
-    body: [
-      `Hi ${display_name},`,
-      ``,
-      `You've been invited to join ${platform_name}. Click the link below to set up your account:`,
-      ``,
-      invite_url,
-      ``,
-      `This invitation expires in 7 days. If you did not expect this invitation, you can safely ignore this email.`
-    ].join("\n")
-  };
+  const body = [
+    `Hi ${display_name},`,
+    ``,
+    `You've been invited to join ${platform_name}. Accept your invitation here:`,
+    ``,
+    invite_url,
+    ``,
+    `This invitation expires in 7 days. If you did not expect this invitation, you can safely ignore this email.`
+  ].join("\n");
+  const html = `<p>Hi ${esc(display_name)},</p>
+<p>You've been invited to join <strong>${esc(platform_name)}</strong>. Click the button below to set up your account:</p>
+<p>
+  <a href="${esc(invite_url)}" style="display:inline-block;padding:12px 24px;background:#f3c97d;color:#101117;text-decoration:none;border-radius:6px;font-weight:bold;">Accept Invitation</a>
+</p>
+<p style="margin-top:12px;font-size:12px;color:#666;">Or copy this link: <a href="${esc(invite_url)}">${esc(invite_url)}</a></p>
+<p style="font-size:12px;color:#666;">This invitation expires in 7 days. If you did not expect this invitation, you can safely ignore this email.</p>`;
+  return { subject: `You've been invited to ${platform_name}`, body, html };
 }
 
 function renderInviteExpiryReminder({ display_name = "there", invite_url = "", platform_name = "Codex" }) {
-  return {
-    subject: `Your invitation to ${platform_name} is expiring soon`,
-    body: [
-      `Hi ${display_name},`,
-      ``,
-      `Your invitation to join ${platform_name} is expiring soon. Accept it before it expires:`,
-      ``,
-      invite_url,
-      ``,
-      `If you did not expect this invitation, you can safely ignore this email.`
-    ].join("\n")
-  };
+  const body = [
+    `Hi ${display_name},`,
+    ``,
+    `Your invitation to join ${platform_name} is expiring soon. Accept it here:`,
+    ``,
+    invite_url,
+    ``,
+    `If you did not expect this invitation, you can safely ignore this email.`
+  ].join("\n");
+  const html = `<p>Hi ${esc(display_name)},</p>
+<p>Your invitation to join <strong>${esc(platform_name)}</strong> is expiring soon.</p>
+<p>
+  <a href="${esc(invite_url)}" style="display:inline-block;padding:12px 24px;background:#f3c97d;color:#101117;text-decoration:none;border-radius:6px;font-weight:bold;">Accept Invitation</a>
+</p>
+<p style="margin-top:12px;font-size:12px;color:#666;">Or copy this link: <a href="${esc(invite_url)}">${esc(invite_url)}</a></p>
+<p style="font-size:12px;color:#666;">If you did not expect this invitation, you can safely ignore this email.</p>`;
+  return { subject: `Your invitation to ${platform_name} is expiring soon`, body, html };
 }
 
 function renderAccountActivated({ display_name = "there", login_url = "", platform_name = "Codex" }) {

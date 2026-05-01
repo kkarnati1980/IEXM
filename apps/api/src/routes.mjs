@@ -5247,7 +5247,7 @@ export function registerRoutes(router) {
       const inviteToken = await generateInviteToken(userId, principal.tenant_id, repos, secret);
       const createdUser = await repos.users.findById(principal.tenant_id, userId);
 
-      const inviteUrl = `${process.env.PLATFORM_BASE_URL ?? ""}/accept-invite?token=${inviteToken}`;
+      const inviteUrl = `${process.env.PLATFORM_BASE_URL ?? ""}/set-password?token=${inviteToken}`;
       await dispatchTransactionalEmail({
         repos,
         tenantId: principal.tenant_id,
@@ -5403,7 +5403,7 @@ export function registerRoutes(router) {
       const inviteToken = await generateInviteToken(user.id, principal.tenant_id, repos, secret);
       const refreshed = await repos.users.findById(principal.tenant_id, user.id);
 
-      const inviteUrl = `${process.env.PLATFORM_BASE_URL ?? ""}/accept-invite?token=${inviteToken}`;
+      const inviteUrl = `${process.env.PLATFORM_BASE_URL ?? ""}/set-password?token=${inviteToken}`;
       await dispatchTransactionalEmail({
         repos,
         tenantId: principal.tenant_id,

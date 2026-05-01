@@ -27,23 +27,27 @@ async function appAs(role) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 test("renderTemplate: user_invitation has subject and body with invite_url", () => {
-  const { subject, body } = renderTemplate("user_invitation", {
+  const { subject, text, html } = renderTemplate("user_invitation", {
     display_name: "Alice",
     invite_url: "https://example.com/accept?token=abc123"
   });
   assert.ok(typeof subject === "string" && subject.length > 0);
-  assert.ok(body.includes("Alice"));
-  assert.ok(body.includes("https://example.com/accept?token=abc123"));
+  assert.ok(text.includes("Alice"));
+  assert.ok(text.includes("https://example.com/accept?token=abc123"));
+  assert.ok(html.includes("https://example.com/accept?token=abc123"));
+  assert.ok(html.includes("Accept Invitation"));
 });
 
 test("renderTemplate: invite_expiry_reminder has subject and body with invite_url", () => {
-  const { subject, body } = renderTemplate("invite_expiry_reminder", {
+  const { subject, text, html } = renderTemplate("invite_expiry_reminder", {
     display_name: "Bob",
     invite_url: "https://example.com/accept?token=xyz"
   });
   assert.ok(typeof subject === "string" && subject.length > 0);
-  assert.ok(body.includes("Bob"));
-  assert.ok(body.includes("https://example.com/accept?token=xyz"));
+  assert.ok(text.includes("Bob"));
+  assert.ok(text.includes("https://example.com/accept?token=xyz"));
+  assert.ok(html.includes("https://example.com/accept?token=xyz"));
+  assert.ok(html.includes("Accept Invitation"));
 });
 
 test("renderTemplate: account_activated has subject and body with login_url", () => {
