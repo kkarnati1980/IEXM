@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="../shared.css">
+    <title>System Status — Platform Admin</title>
+    <style>
+      :root {
+        --bg: #101117;
+        --panel: #1a1c25;
+        --panel-2: #14161d;
+        --border: rgba(255,255,255,0.08);
+        --text: #f4f1ea;
+        --muted: #b2ac9f;
+        --accent: #f3c97d;
+        --accent-2: #9fd3c7;
+        --good: #9fd3c7;
+        --warn: #f3c97d;
+        --bad: #ff9f9f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(243,201,125,0.16), transparent 28%),
+          linear-gradient(160deg, var(--bg), #090a0e 66%);
+        min-height: 100vh;
+      }
+      .shell { max-width: 1440px; margin: 0 auto; padding: 18px 24px 0; }
+      .shell-bar {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 16px; flex-wrap: wrap; margin-bottom: 18px;
+      }
+      .shell-title { display: grid; gap: 4px; }
+      .shell-title strong { font-size: 1.1rem; }
+      .shell-nav { display: flex; gap: 10px; flex-wrap: wrap; }
+      .shell-nav a {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 10px 13px; border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.04);
+        color: var(--text); text-decoration: none; font-size: 14px;
+      }
+      .shell-nav a.active { background: rgba(243,201,125,0.18); color: var(--accent); }
+      .eyebrow {
+        display: inline-block; margin-bottom: 8px; padding: 5px 10px;
+        border-radius: 999px; font-size: 12px; letter-spacing: 0.08em;
+        text-transform: uppercase;
+        background: rgba(243,201,125,0.14); color: var(--accent);
+      }
+      main { max-width: 1440px; margin: 0 auto; padding: 0 24px 48px; display: grid; gap: 18px; }
+      .card {
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 20px; padding: 20px;
+        box-shadow: 0 16px 48px rgba(0,0,0,0.24);
+      }
+      .section-head { display: flex; align-items: end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+      .section-head h2 { margin: 0; font-size: 1.2rem; }
+      .section-head p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+      .check-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+      .check-card {
+        border-radius: 16px; border: 1px solid var(--border);
+        background: var(--panel-2); padding: 16px;
+        display: grid; gap: 8px;
+      }
+      .check-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+      .check-value { font-size: 1.5rem; font-weight: 600; }
+      .check-note { font-size: 12px; color: var(--muted); }
+      .status-dot {
+        display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+        margin-right: 6px; vertical-align: middle;
+      }
+      .dot-good { background: var(--good); box-shadow: 0 0 6px rgba(159,211,199,0.6); }
+      .dot-warn { background: var(--warn); }
+      .dot-bad  { background: var(--bad); }
+      .dot-idle { background: var(--muted); }
+      .overall-banner {
+        border-radius: 18px; padding: 20px 24px;
+        display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+        border: 1px solid var(--border);
+      }
+      .overall-banner.ok     { background: rgba(159,211,199,0.08); border-color: rgba(159,211,199,0.25); }
+      .overall-banner.warn   { background: rgba(243,201,125,0.08); border-color: rgba(243,201,125,0.25); }
+      .overall-banner.error  { background: rgba(255,159,159,0.08); border-color: rgba(255,159,159,0.25); }
+      .overall-banner.loading { background: rgba(255,255,255,0.04); }
+      .banner-status { font-size: 1.8rem; font-weight: 700; }
+      .banner-meta { color: var(--muted); font-size: 13px; }
+      .refresh-note { font-size: 12px; color: var(--muted); margin-left: auto; }
+      .detail-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      .detail-table th {
+        text-align: left; padding: 10px 8px;
+        border-bottom: 1px solid var(--border);
+        font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted);
+      }
+      .detail-table td { padding: 12px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+      .tag {
+        display: inline-flex; align-items: center; border-radius: 999px;
+        padding: 4px 10px; font-size: 12px; border: 1px solid var(--border);
+      }
+      .tag.good { color: var(--good); background: rgba(159,211,199,0.1); border-color: rgba(159,211,199,0.25); }
+      .tag.warn { color: var(--warn); background: rgba(243,201,125,0.1); border-color: rgba(243,201,125,0.25); }
+      .tag.bad  { color: var(--bad);  background: rgba(255,159,159,0.1); border-color: rgba(255,159,159,0.25); }
+      .tag.muted { color: var(--muted); background: rgba(255,255,255,0.04); }
+      .uptime-bar-wrap { width: 100%; height: 6px; background: rgba(255,255,255,0.06); border-radius: 4px; margin-top: 6px; overflow: hidden; }
+      .uptime-bar { height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--good), rgba(159,211,199,0.5)); transition: width 0.5s; }
+      @media(max-width: 768px) { .check-grid { grid-template-columns: 1fr 1fr; } }
+      @media(max-width: 480px) { .check-grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <span class="eyebrow">Platform Admin</span>
+          <strong>System Status</strong>
+          <span style="font-size:13px;color:var(--muted)">API health and infrastructure overview.</span>
+        </div>
+        <nav class="shell-nav">
+          <a href="../admin.html">IAM Admin</a>
+          <a href="tenants.html">Tenants</a>
+          <a href="status.html" class="active">System Status</a>
+          <a href="../account.html">My Account</a>
+        </nav>
+      </div>
+    </div>
+
+    <main>
+
+      <!-- OVERALL BANNER -->
+      <div id="overall-banner" class="overall-banner loading">
+        <div>
+          <div class="check-label">Overall Status</div>
+          <div class="banner-status" id="banner-status">Checking…</div>
+          <div class="banner-meta" id="banner-meta">Fetching health data…</div>
+        </div>
+        <div class="refresh-note" id="refresh-note">Auto-refreshes every 30 s</div>
+      </div>
+
+      <!-- CHECK CARDS -->
+      <div class="card">
+        <div class="section-head">
+          <div><div class="eyebrow">Health Checks</div><h2>Component status</h2></div>
+          <button onclick="refresh()" style="background:rgba(255,255,255,0.06);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:8px 14px;cursor:pointer;font-size:13px;">↻ Refresh now</button>
+        </div>
+        <div class="check-grid">
+          <div class="check-card">
+            <div class="check-label">API</div>
+            <div class="check-value" id="check-api"><span class="status-dot dot-idle"></span>—</div>
+            <div class="check-note" id="check-api-note">Waiting…</div>
+          </div>
+          <div class="check-card">
+            <div class="check-label">Database</div>
+            <div class="check-value" id="check-db"><span class="status-dot dot-idle"></span>—</div>
+            <div class="check-note" id="check-db-note">Waiting…</div>
+          </div>
+          <div class="check-card">
+            <div class="check-label">Email Worker</div>
+            <div class="check-value" id="check-email"><span class="status-dot dot-idle"></span>—</div>
+            <div class="check-note" id="check-email-note">Waiting…</div>
+          </div>
+          <div class="check-card">
+            <div class="check-label">Storage</div>
+            <div class="check-value" id="check-storage"><span class="status-dot dot-idle"></span>—</div>
+            <div class="check-note" id="check-storage-note">Waiting…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RUNTIME INFO -->
+      <div class="card">
+        <div class="section-head">
+          <div><div class="eyebrow">Runtime</div><h2>API details</h2></div>
+        </div>
+        <table class="detail-table">
+          <thead><tr><th>Property</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td style="color:var(--muted)">Status</td><td id="rt-status">—</td></tr>
+            <tr><td style="color:var(--muted)">Version</td><td id="rt-version">—</td></tr>
+            <tr><td style="color:var(--muted)">Environment</td><td id="rt-env">—</td></tr>
+            <tr><td style="color:var(--muted)">Backend</td><td id="rt-backend">—</td></tr>
+            <tr><td style="color:var(--muted)">Uptime</td>
+              <td>
+                <span id="rt-uptime">—</span>
+                <div class="uptime-bar-wrap" style="max-width:280px;margin-top:6px;"><div class="uptime-bar" id="uptime-bar" style="width:0%"></div></div>
+              </td>
+            </tr>
+            <tr><td style="color:var(--muted)">Last checked</td><td id="rt-ts">—</td></tr>
+            <tr><td style="color:var(--muted)">Health URL</td>
+              <td><a id="rt-url" style="color:var(--accent-2);text-decoration:none;" href="#" target="_blank">—</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RAW RESPONSE -->
+      <div class="card">
+        <div class="section-head">
+          <div><div class="eyebrow">Raw</div><h2>Last health response</h2><p>Full JSON from <code style="font-size:12px;color:var(--accent-2)">GET /health</code></p></div>
+        </div>
+        <pre id="raw-json" style="margin:0;padding:14px;background:var(--panel-2);border-radius:12px;border:1px solid var(--border);font-size:13px;color:var(--accent-2);overflow-x:auto;white-space:pre-wrap;word-break:break-word;">Waiting for first health check…</pre>
+      </div>
+
+    </main>
+
+    <script>
+      const params  = new URLSearchParams(window.location.search);
+      const apiBase = params.get("apiBase") || (location.protocol === "file:" ? "http://127.0.0.1:3000" : location.origin);
+      const healthUrl = apiBase + "/health";
+
+      document.getElementById("rt-url").href = healthUrl;
+      document.getElementById("rt-url").textContent = healthUrl;
+
+      let lastData = null;
+
+      async function refresh() {
+        try {
+          const start = Date.now();
+          const resp  = await fetch(healthUrl, { cache: "no-store" });
+          const ms    = Date.now() - start;
+          const data  = await resp.json();
+          lastData    = data;
+          render(data, ms, resp.ok);
+        } catch (err) {
+          renderError(err.message);
+        }
+      }
+
+      function render(data, ms, ok) {
+        const allGood = ok && data.checks?.database && data.checks?.email_worker && data.checks?.storage;
+        const degraded = ok && !allGood;
+
+        // Banner
+        const banner = document.getElementById("overall-banner");
+        banner.className = "overall-banner " + (allGood ? "ok" : degraded ? "warn" : "error");
+        document.getElementById("banner-status").textContent = allGood ? "All Systems Operational" : degraded ? "Degraded" : "Outage";
+        document.getElementById("banner-meta").textContent = `Responded in ${ms} ms · ${new Date().toLocaleTimeString()}`;
+
+        // Check cards
+        setCheck("check-api",     "check-api-note",     ok,                     `${ms} ms response`,         "API unreachable");
+        setCheck("check-db",      "check-db-note",      data.checks?.database,  "SELECT 1 passed",           "Query failed");
+        setCheck("check-email",   "check-email-note",   data.checks?.email_worker, "Worker running",         "Worker stopped");
+        setCheck("check-storage", "check-storage-note", data.checks?.storage,   "Storage accessible",        "Storage error");
+
+        // Runtime table
+        document.getElementById("rt-status").innerHTML  = statusTag(data.status);
+        document.getElementById("rt-version").textContent = data.version ?? "—";
+        document.getElementById("rt-env").textContent   = data.environment ?? "—";
+        document.getElementById("rt-backend").textContent = data.backend ?? "—";
+        const uptimeSec = data.uptime_seconds ?? 0;
+        document.getElementById("rt-uptime").textContent = fmtUptime(uptimeSec);
+        const uptimePct = Math.min(100, Math.max(2, (uptimeSec / (24 * 3600)) * 100));
+        document.getElementById("uptime-bar").style.width = uptimePct + "%";
+        document.getElementById("rt-ts").textContent = data.timestamp ? new Date(data.timestamp).toLocaleString() : new Date().toLocaleString();
+
+        // Raw JSON
+        document.getElementById("raw-json").textContent = JSON.stringify(data, null, 2);
+      }
+
+      function renderError(msg) {
+        const banner = document.getElementById("overall-banner");
+        banner.className = "overall-banner error";
+        document.getElementById("banner-status").textContent = "Unreachable";
+        document.getElementById("banner-meta").textContent = msg;
+        ["check-api","check-db","check-email","check-storage"].forEach(id => {
+          document.getElementById(id).innerHTML = `<span class="status-dot dot-bad"></span>Error`;
+        });
+        document.getElementById("raw-json").textContent = "Error: " + msg;
+      }
+
+      function setCheck(cardId, noteId, ok, okNote, failNote) {
+        const el   = document.getElementById(cardId);
+        const note = document.getElementById(noteId);
+        const cls  = ok ? "dot-good" : "dot-bad";
+        el.innerHTML   = `<span class="status-dot ${cls}"></span>${ok ? "OK" : "Down"}`;
+        note.textContent = ok ? okNote : failNote;
+      }
+
+      function statusTag(status) {
+        if (status === "ok") return `<span class="tag good">ok</span>`;
+        if (status === "degraded") return `<span class="tag warn">degraded</span>`;
+        return `<span class="tag bad">${esc(status ?? "unknown")}</span>`;
+      }
+
+      function fmtUptime(sec) {
+        if (sec < 60)   return `${sec}s`;
+        if (sec < 3600) return `${Math.floor(sec/60)}m ${sec%60}s`;
+        const h = Math.floor(sec/3600); const m = Math.floor((sec%3600)/60);
+        return `${h}h ${m}m`;
+      }
+
+      function esc(v) { return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
+
+      // Initial load + auto-refresh every 30 s
+      refresh();
+      setInterval(refresh, 30_000);
+    </script>
+  </body>
+</html>

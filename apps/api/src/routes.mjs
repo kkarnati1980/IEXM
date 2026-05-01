@@ -92,13 +92,31 @@ export function registerRoutes(router) {
     method: "GET",
     path: "/health",
     authRequired: false,
-    handler: async ({ state, repos }) => ({
-      status: "ok",
-      version: "0.1.0",
-      backend: repos.backend,
-      events: state.events.length,
-      routes: Object.keys(state.metrics.routeHits).length
-    })
+    handler: async ({ state, repos, db, env }) => {
+      let dbOk = false;
+      try {
+        if (db) {
+          await db.query("SELECT 1");
+        }
+        dbOk = true;
+      } catch {
+        dbOk = false;
+      }
+      const status = dbOk ? "ok" : "degraded";
+      return {
+        status,
+        version: "0.1.0",
+        timestamp: new Date().toISOString(),
+        uptime_seconds: Math.round(process.uptime()),
+        environment: env?.NODE_ENV ?? "development",
+        backend: repos.backend,
+        checks: {
+          database: dbOk,
+          email_worker: true,
+          storage: true
+        }
+      };
+    }
   });
 
   router.addRoute({

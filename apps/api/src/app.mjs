@@ -213,6 +213,18 @@ async function dispatch({
     return jsonResponse(route.statusCode ?? 200, ctx.response, ctx.defaultResponseHeaders);
   } catch (error) {
     const normalized = normalizeError(error);
+    if (normalized.statusCode >= 500) {
+      const isProduction = ctx.env?.NODE_ENV === "production";
+      console.error("[error]", JSON.stringify({
+        timestamp: new Date().toISOString(),
+        request_id: ctx.requestId,
+        method: ctx.method,
+        path: ctx.route?.path ?? "unknown",
+        status: normalized.statusCode,
+        error: normalized.message,
+        ...(isProduction ? {} : { stack: error.stack })
+      }));
+    }
     await attemptAuditFailure(ctx, normalized);
     return jsonResponse(normalized.statusCode, {
       error: normalized.message,

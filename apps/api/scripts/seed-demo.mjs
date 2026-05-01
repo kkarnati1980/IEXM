@@ -57,12 +57,17 @@ const ORG_PLATFORM  = "org-platform";
 const EVENT_DEMO     = "event-demo";
 const EVENT_SECONDARY = "event-other";
 const EVENT_IE       = "event-indiaexpo";
+const EVENT_MT       = "event-manutech";
+const EVENT_RX       = "event-retailx";
 
 // Hall IDs
 const HALL_MAIN      = "hall-main";
 const HALL_SECONDARY = "hall-secondary";
 const HALL_A         = "hall-a";
 const HALL_B         = "hall-b";
+const HALL_MT_A      = "hall-mt-a";
+const HALL_MT_B      = "hall-mt-b";
+const HALL_RX_A      = "hall-rx-a";
 
 // Stall IDs
 const STALL_A1       = "stall-a1";
@@ -77,11 +82,34 @@ const STALL_IE_B2    = "stall-ie-b2";
 // Device
 const DEVICE_01      = "device-01";
 
+// Stall IDs — ManuTech India 2026
+const STALL_MT_M1 = "stall-mt-m1";
+const STALL_MT_M2 = "stall-mt-m2";
+const STALL_MT_M3 = "stall-mt-m3";
+const STALL_MT_M4 = "stall-mt-m4";
+const STALL_MT_M5 = "stall-mt-m5";
+const STALL_MT_M6 = "stall-mt-m6";
+const STALL_MT_M7 = "stall-mt-m7";
+
+// Stall IDs — RetailX South 2026
+const STALL_RX_R1 = "stall-rx-r1";
+const STALL_RX_R2 = "stall-rx-r2";
+const STALL_RX_R3 = "stall-rx-r3";
+
 // Sponsor packages (IndiaExpo)
 const PKG_GOLD_IE     = "pkg-gold-ie";
 const PKG_SILVER_IE   = "pkg-silver-ie";
 const PKG_BRONZE_IE   = "pkg-bronze-ie";
 const PKG_PLATINUM_IE = "pkg-platinum-ie";
+
+// Sponsor packages (ManuTech)
+const PKG_MT_DIAMOND  = "pkg-mt-diamond";
+const PKG_MT_PLATINUM = "pkg-mt-platinum";
+const PKG_MT_GOLD     = "pkg-mt-gold";
+
+// Sponsor packages (RetailX)
+const PKG_RX_GOLD   = "pkg-rx-gold";
+const PKG_RX_SILVER = "pkg-rx-silver";
 
 // Demo users
 const USER_ADMIN     = "demo-admin";
@@ -475,6 +503,278 @@ async function seedConsentEvents() {
   console.log("✓ consent events (5)");
 }
 
+// ── B.1  New events ───────────────────────────────────────────────────────────
+async function seedNewEvents() {
+  const events = [
+    [EVENT_MT, TENANT_ID, ORG_ORGANIZER, "ManuTech India 2026",  "published",
+     "2026-06-15T00:00:00+05:30", "2026-06-17T23:59:59+05:30"],
+    [EVENT_RX, TENANT_ID, ORG_ORGANIZER, "RetailX South 2026",   "draft",
+     "2026-07-20T00:00:00+05:30", "2026-07-21T23:59:59+05:30"],
+  ];
+  for (const [id, tid, oid, name, status, starts, ends] of events) {
+    await run(
+      `INSERT INTO events (id, tenant_id, organizer_organization_id, name, status, starts_at, ends_at, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`,
+      [id, tid, oid, name, status, starts, ends, NOW]
+    );
+  }
+  console.log("✓ new events (2)");
+}
+
+async function seedNewHalls() {
+  const halls = [
+    [HALL_MT_A, TENANT_ID, EVENT_MT, "Hall A — Precision Manufacturing"],
+    [HALL_MT_B, TENANT_ID, EVENT_MT, "Hall B — Industrial Automation"],
+    [HALL_RX_A, TENANT_ID, EVENT_RX, "Hall A — Retail Innovation"],
+  ];
+  for (const [id, tid, eid, name] of halls) {
+    await run(
+      `INSERT INTO halls (id, tenant_id, event_id, name)
+       VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`,
+      [id, tid, eid, name]
+    );
+  }
+  console.log("✓ new halls (3)");
+}
+
+async function seedNewStalls() {
+  const stalls = [
+    // ManuTech — Hall A (M1–M4)
+    [STALL_MT_M1, TENANT_ID, EVENT_MT, HALL_MT_A, ORG_VENDOR, ORG_SPONSOR, "M1", "CNC Innovations M1"],
+    [STALL_MT_M2, TENANT_ID, EVENT_MT, HALL_MT_A, ORG_VENDOR, ORG_SPONSOR, "M2", "Robotics Hub M2"],
+    [STALL_MT_M3, TENANT_ID, EVENT_MT, HALL_MT_A, ORG_VENDOR, ORG_SPONSOR, "M3", "Smart Factory M3"],
+    [STALL_MT_M4, TENANT_ID, EVENT_MT, HALL_MT_A, ORG_VENDOR, ORG_SPONSOR, "M4", "IoT Manufacturing M4"],
+    // ManuTech — Hall B (M5–M7)
+    [STALL_MT_M5, TENANT_ID, EVENT_MT, HALL_MT_B, ORG_VENDOR, ORG_SPONSOR, "M5", "Automation Zone M5"],
+    [STALL_MT_M6, TENANT_ID, EVENT_MT, HALL_MT_B, ORG_VENDOR, ORG_SPONSOR, "M6", "Process Control M6"],
+    [STALL_MT_M7, TENANT_ID, EVENT_MT, HALL_MT_B, ORG_VENDOR, ORG_SPONSOR, "M7", "Heavy Equipment M7"],
+    // RetailX — Hall A (R1–R3)
+    [STALL_RX_R1, TENANT_ID, EVENT_RX, HALL_RX_A, ORG_VENDOR, ORG_SPONSOR, "R1", "Omnichannel Showcase R1"],
+    [STALL_RX_R2, TENANT_ID, EVENT_RX, HALL_RX_A, ORG_VENDOR, ORG_SPONSOR, "R2", "Supply Chain R2"],
+    [STALL_RX_R3, TENANT_ID, EVENT_RX, HALL_RX_A, ORG_VENDOR, ORG_SPONSOR, "R3", "POS & Payments R3"],
+  ];
+  for (const [id, tid, eid, hid, vorg, sorg, code, name] of stalls) {
+    await run(
+      `INSERT INTO stalls (id, tenant_id, event_id, hall_id, vendor_organization_id, sponsor_organization_id, code, name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`,
+      [id, tid, eid, hid, vorg, sorg, code, name]
+    );
+  }
+  console.log("✓ new stalls (10)");
+}
+
+async function seedNewSponsorPackages() {
+  const packages = [
+    [PKG_MT_DIAMOND,  TENANT_ID, EVENT_MT, "Diamond",  "custom",
+     "Full event exclusivity — keynote slot, 4 premium stalls, full data export"],
+    [PKG_MT_PLATINUM, TENANT_ID, EVENT_MT, "Platinum", "custom",
+     "3 stalls, branding on all materials, lead export with CRM push"],
+    [PKG_MT_GOLD,     TENANT_ID, EVENT_MT, "Gold",     "gold",
+     "2 stalls, event programme branding, filtered lead export"],
+    [PKG_RX_GOLD,   TENANT_ID, EVENT_RX, "Gold",   "gold",
+     "2 stalls, lead export enabled, post-event follow-up kit"],
+    [PKG_RX_SILVER, TENANT_ID, EVENT_RX, "Silver", "silver",
+     "1 stall, name listing, consent-only attendee data"],
+  ];
+  for (const [id, tid, eid, name, tier, description] of packages) {
+    await run(
+      `INSERT INTO sponsor_packages (id, tenant_id, event_id, name, tier, description, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, tier = EXCLUDED.tier, description = EXCLUDED.description`,
+      [id, tid, eid, name, tier, description, NOW]
+    );
+  }
+  console.log("✓ new sponsor packages (5)");
+}
+
+async function seedNewEventPolicies() {
+  // ManuTech: all features enabled, 90 days retention
+  // RetailX: vendor_exports=true, sponsor_pii=false, 60 days retention
+  const policies = [
+    [EVENT_MT, TENANT_ID, true,  true,  false, true,  90, true],
+    [EVENT_RX, TENANT_ID, true,  false, true,  false, 60, false],
+  ];
+  for (const [eid, tid, ve, sp, ra, crm, rd, cig] of policies) {
+    await run(
+      `INSERT INTO event_data_policies
+         (event_id, tenant_id, vendor_exports_enabled, sponsor_pii_enabled,
+          require_export_approval, allow_crm_push, retention_days,
+          allow_cross_event_identity_graph, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT (event_id) DO UPDATE SET
+         vendor_exports_enabled           = EXCLUDED.vendor_exports_enabled,
+         sponsor_pii_enabled              = EXCLUDED.sponsor_pii_enabled,
+         require_export_approval          = EXCLUDED.require_export_approval,
+         allow_crm_push                   = EXCLUDED.allow_crm_push,
+         retention_days                   = EXCLUDED.retention_days,
+         allow_cross_event_identity_graph = EXCLUDED.allow_cross_event_identity_graph,
+         updated_at                       = now()`,
+      [eid, tid, ve, sp, ra, crm, rd, cig, NOW, NOW]
+    );
+  }
+  console.log("✓ new event data policies (2)");
+}
+
+// ── B.2  More IndiaExpo attendees ─────────────────────────────────────────────
+async function seedMoreAttendees() {
+  // 15 new attendees: indices 006–020
+  const attendeeData = [
+    // id, full_name, company, email, phone, stall_id, consent_status, vendor, sponsor, classification, ts
+    ["att-ie-006", "Rahul Sharma",    "Sharma Tech Solutions",   "rahul@sharmatech.in",     "+91-9800000006",
+     STALL_IE_A1, "vendor_and_sponsor", true,  true,  "warm", "2026-04-28T09:00:00+05:30"],
+    ["att-ie-007", "Priya Patel",     "Patel Exports Pvt Ltd",   "priya@patelexports.in",   "+91-9800000007",
+     STALL_IE_A2, "vendor_and_sponsor", true,  true,  "hot",  "2026-04-28T09:25:00+05:30"],
+    ["att-ie-008", "Amit Singh",      "Singh Manufacturing",     "amit@singhmfg.com",       "+91-9800000008",
+     STALL_IE_A3, "vendor_and_sponsor", true,  true,  "cold", "2026-04-28T09:50:00+05:30"],
+    ["att-ie-009", "Deepa Nair",      "Nair Associates",         "deepa@nairassoc.in",      "+91-9800000009",
+     STALL_IE_A1, "vendor_and_sponsor", true,  true,  "hot",  "2026-04-28T10:15:00+05:30"],
+    ["att-ie-010", "Vikram Reddy",    "Reddy Ventures",          "vikram@reddyventures.in",  null,
+     STALL_IE_A2, "vendor_and_sponsor", true,  true,  "warm", "2026-04-28T10:40:00+05:30"],
+    ["att-ie-011", "Ananya Iyer",     "Iyer Global Pvt Ltd",     "ananya@iyerglobal.in",    "+91-9800000011",
+     STALL_IE_A3, "vendor_and_sponsor", true,  true,  "cold", "2026-04-28T11:00:00+05:30"],
+    ["att-ie-012", "Suresh Kumar",    "Kumar Industrial Corp",   "suresh@kumarind.in",      "+91-9800000012",
+     STALL_IE_A1, "vendor_and_sponsor", true,  true,  "warm", "2026-04-28T11:30:00+05:30"],
+    ["att-ie-013", "Kavitha Menon",   "Menon & Sons",            "kavitha@menonsons.in",    "+91-9800000013",
+     STALL_IE_A2, "vendor_and_sponsor", true,  true,  "hot",  "2026-04-28T12:00:00+05:30"],
+    ["att-ie-014", "Rajesh Gupta",    "Gupta Trade House",       "rajesh@guptatrade.in",    "+91-9800000014",
+     STALL_IE_A3, "vendor_only",        true,  false, "cold", "2026-04-28T12:35:00+05:30"],
+    ["att-ie-015", "Sneha Joshi",     "Joshi Retail Ltd",        "sneha@joshiretail.in",    "+91-9800000015",
+     STALL_IE_A1, "vendor_only",        true,  false, "warm", "2026-04-28T13:10:00+05:30"],
+    ["att-ie-016", "Arjun Mehta",     "Mehta Capital",           "arjun@mehtacapital.in",    null,
+     STALL_IE_A2, "vendor_only",        true,  false, "cold", "2026-04-28T13:45:00+05:30"],
+    ["att-ie-017", "Divya Krishnan",  "Krishnan Textiles",       "divya@krishnantex.in",    "+91-9800000017",
+     STALL_IE_A3, "vendor_only",        true,  false, "warm", "2026-04-28T14:20:00+05:30"],
+    ["att-ie-018", "Mohammed Ali",    "Ali Trading Co",          "moh@alitrading.in",       "+91-9800000018",
+     STALL_IE_A1, "pending",            false, true,  "cold", "2026-04-28T14:55:00+05:30"],
+    ["att-ie-019", "Lakshmi Rao",     "Rao Agritech",            "lakshmi@raoagri.in",      "+91-9800000019",
+     STALL_IE_A2, "pending",            false, true,  "warm", "2026-04-28T15:30:00+05:30"],
+    ["att-ie-020", "Karthik Sundaram","Sundaram Logistics",      "karthik@sundaramlog.in",  "+91-9800000020",
+     STALL_IE_A3, "declined",           false, false, "cold", "2026-04-28T16:10:00+05:30"],
+  ];
+
+  for (const [aid, , , , , , , , , , ,] of attendeeData) {
+    await run(
+      `INSERT INTO attendees (id, tenant_id, created_at) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+      [aid, TENANT_ID, NOW]
+    );
+  }
+
+  for (const [aid, name, company, email, phone] of attendeeData) {
+    await run(
+      `INSERT INTO attendee_profiles (attendee_id, full_name, company_name, email, phone, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+      [aid, name, company, email, phone, NOW]
+    );
+  }
+
+  const TAP_TYPE = ["card_uid", "phone_ndef", "card_uid", "phone_ndef", "card_uid",
+                    "card_uid", "phone_ndef", "card_uid", "card_uid", "phone_ndef",
+                    "card_uid", "phone_ndef", "card_uid", "card_uid", "phone_ndef"];
+
+  for (let i = 0; i < attendeeData.length; i++) {
+    const [aid, , , , , sid, , , , , ts] = attendeeData[i];
+    const idx = String(i + 6).padStart(3, "0");
+    const tapId = `tap-ie-${idx}`;
+    const intId = `int-ie-${idx}`;
+    const [, , , , , , consent_status, vendor, sponsor, cls] = attendeeData[i];
+
+    await run(
+      `INSERT INTO tap_events
+         (id, tenant_id, event_id, stall_id, device_id, local_event_id, tap_type, occurred_at, created_at, cloud_received_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING`,
+      [tapId, TENANT_ID, EVENT_IE, sid, DEVICE_01, `local-ie-${idx}`, TAP_TYPE[i], ts, NOW, NOW]
+    );
+
+    await run(
+      `INSERT INTO interactions
+         (id, tenant_id, event_id, stall_id, tap_event_id, attendee_id,
+          status, consent_status, classification, sponsor_click_count, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING`,
+      [intId, TENANT_ID, EVENT_IE, sid, tapId, aid,
+       "active", consent_status, cls, Math.floor(Math.random() * 4), ts, NOW]
+    );
+
+    await run(
+      `INSERT INTO consents
+         (interaction_id, tenant_id, attendee_id, vendor_release_allowed, sponsor_release_allowed, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+      [intId, TENANT_ID, aid, vendor, sponsor, NOW]
+    );
+
+    await run(
+      `INSERT INTO consent_events
+         (id, interaction_id, tenant_id, action, vendor_release_allowed, sponsor_release_allowed,
+          locale, ip_address, user_agent, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING`,
+      [`ce-ie-${idx}`, intId, TENANT_ID, "capture", vendor, sponsor,
+       "en-IN", `203.0.113.${i + 20}`, "Mozilla/5.0 Kiosk", ts]
+    );
+  }
+  console.log("✓ more IndiaExpo attendees (15) + tap events + interactions + consents");
+}
+
+// ── B.3  Lead scores + notes for original 5 attendees ─────────────────────────
+async function seedLeadScores() {
+  const scores = [
+    // [interaction_id, new_classification, score_label, reason_and_note]
+    ["int-ie-001", "hot",  "hot",  "Very interested in enterprise plan, follow up Monday"],
+    ["int-ie-002", "hot",  "hot",  "Requested product demo, send calendar invite"],
+    ["int-ie-003", "warm", "warm", "Exploring options, not ready to buy yet"],
+    ["int-ie-004", "cold", "cold", "Student researcher, not a buyer"],
+    ["int-ie-005", "hot",  "hot",  "Hot lead - CTO, wants pricing immediately"],
+  ];
+
+  for (const [iid, cls, score, reason] of scores) {
+    // Update interaction classification
+    await run(
+      `UPDATE interactions SET classification = $1, updated_at = $2 WHERE id = $3`,
+      [cls, NOW, iid]
+    );
+    // Insert lead score record
+    await run(
+      `INSERT INTO lead_scores (id, tenant_id, interaction_id, scored_by_user_id, score, reason, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
+      [`ls-${iid}`, TENANT_ID, iid, USER_VENDOR, score, reason, NOW]
+    );
+    // Insert vendor note
+    await run(
+      `INSERT INTO interaction_notes (id, interaction_id, tenant_id, author_user_id, note, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+      [`note-${iid}`, iid, TENANT_ID, USER_VENDOR, reason, NOW]
+    );
+  }
+  console.log("✓ lead scores + notes (5)");
+}
+
+// ── B.4  Organizer assignments for new events ──────────────────────────────────
+async function seedNewOrganizerAssignments() {
+  const uras = [
+    ["ura-demo-org-mt", TENANT_ID, USER_ORGANIZER, "organizer_admin", EVENT_MT],
+    ["ura-demo-org-rx", TENANT_ID, USER_ORGANIZER, "organizer_admin", EVENT_RX],
+  ];
+  for (const [id, tid, uid, role, eid] of uras) {
+    await run(
+      `INSERT INTO user_role_assignments
+         (id, tenant_id, user_id, role, event_id, stall_ids, sponsor_package_id, assigned_by_user_id, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING`,
+      [id, tid, uid, role, eid, [], null, USER_ADMIN, NOW]
+    );
+  }
+  const scopes = [
+    ["scope-demo-org-mt", TENANT_ID, USER_ORGANIZER, EVENT_MT],
+    ["scope-demo-org-rx", TENANT_ID, USER_ORGANIZER, EVENT_RX],
+  ];
+  for (const [id, tid, uid, eid] of scopes) {
+    await run(
+      `INSERT INTO user_access_scopes
+         (id, tenant_id, user_id, event_id, stall_id, sponsor_organization_id, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
+      [id, tid, uid, eid, null, null, NOW]
+    );
+  }
+  console.log("✓ organizer assignments for ManuTech + RetailX (4)");
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   console.log("Seeding demo data into Railway PostgreSQL…\n");
@@ -497,6 +797,18 @@ async function main() {
     await seedInteractions();
     await seedConsents();
     await seedConsentEvents();
+    // B.1 — new events
+    await seedNewEvents();
+    await seedNewHalls();
+    await seedNewStalls();
+    await seedNewSponsorPackages();
+    await seedNewEventPolicies();
+    // B.2 — more IndiaExpo attendees
+    await seedMoreAttendees();
+    // B.3 — lead scores + notes
+    await seedLeadScores();
+    // B.4 — organizer assignments
+    await seedNewOrganizerAssignments();
     console.log("\nSeed complete. Login: admin@test.com / TestPass123!");
   } catch (err) {
     console.error("\nSeed failed:", err.message);
