@@ -62,6 +62,7 @@ const EVENT_IE       = "event-indiaexpo";
 const HALL_MAIN      = "hall-main";
 const HALL_SECONDARY = "hall-secondary";
 const HALL_A         = "hall-a";
+const HALL_B         = "hall-b";
 
 // Stall IDs
 const STALL_A1       = "stall-a1";
@@ -70,12 +71,17 @@ const STALL_B1       = "stall-b1";
 const STALL_IE_A1    = "stall-ie-a1";
 const STALL_IE_A2    = "stall-ie-a2";
 const STALL_IE_A3    = "stall-ie-a3";
+const STALL_IE_B1    = "stall-ie-b1";
+const STALL_IE_B2    = "stall-ie-b2";
 
 // Device
 const DEVICE_01      = "device-01";
 
-// Sponsor package
-const PKG_GOLD_IE    = "pkg-gold-ie";
+// Sponsor packages (IndiaExpo)
+const PKG_GOLD_IE     = "pkg-gold-ie";
+const PKG_SILVER_IE   = "pkg-silver-ie";
+const PKG_BRONZE_IE   = "pkg-bronze-ie";
+const PKG_PLATINUM_IE = "pkg-platinum-ie";
 
 // Demo users
 const USER_ADMIN     = "demo-admin";
@@ -180,61 +186,93 @@ async function seedHalls() {
   const halls = [
     [HALL_MAIN,      TENANT_ID, EVENT_DEMO,      "Main Hall"],
     [HALL_SECONDARY, TENANT_ID, EVENT_SECONDARY, "Secondary Hall"],
-    [HALL_A,         TENANT_ID, EVENT_IE,        "Hall A"],
+    [HALL_A,         TENANT_ID, EVENT_IE,        "Hall A — Technology"],
+    [HALL_B,         TENANT_ID, EVENT_IE,        "Hall B — Manufacturing"],
   ];
   for (const [id, tid, eid, name] of halls) {
     await run(
-      `INSERT INTO halls (id, tenant_id, event_id, name) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+      `INSERT INTO halls (id, tenant_id, event_id, name) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`,
       [id, tid, eid, name]
     );
   }
-  console.log("✓ halls (3)");
+  console.log("✓ halls (4)");
 }
 
 // ── 6. Stalls ─────────────────────────────────────────────────────────────────
 async function seedStalls() {
   const stalls = [
+    // event-demo
     [STALL_A1,    TENANT_ID, EVENT_DEMO,      HALL_MAIN,      ORG_VENDOR, ORG_SPONSOR, "A1", "Northfield Estates"],
     [STALL_A2,    TENANT_ID, EVENT_DEMO,      HALL_MAIN,      ORG_VENDOR, ORG_SPONSOR, "A2", "Northfield Annex"],
     [STALL_B1,    TENANT_ID, EVENT_SECONDARY, HALL_SECONDARY, ORG_VENDOR, ORG_SPONSOR, "B1", "Northfield Secondary"],
+    // event-indiaexpo — Hall A (Technology)
     [STALL_IE_A1, TENANT_ID, EVENT_IE,        HALL_A,         ORG_VENDOR, ORG_SPONSOR, "A1", "Tech Pavilion A1"],
     [STALL_IE_A2, TENANT_ID, EVENT_IE,        HALL_A,         ORG_VENDOR, ORG_SPONSOR, "A2", "Innovation Hub A2"],
     [STALL_IE_A3, TENANT_ID, EVENT_IE,        HALL_A,         ORG_VENDOR, ORG_SPONSOR, "A3", "Startup Zone A3"],
+    // event-indiaexpo — Hall B (Manufacturing)
+    [STALL_IE_B1, TENANT_ID, EVENT_IE,        HALL_B,         ORG_VENDOR, ORG_SPONSOR, "B1", "Precision Engineering B1"],
+    [STALL_IE_B2, TENANT_ID, EVENT_IE,        HALL_B,         ORG_VENDOR, ORG_SPONSOR, "B2", "Heavy Machinery B2"],
   ];
   for (const [id, tid, eid, hid, vorg, sorg, code, name] of stalls) {
     await run(
       `INSERT INTO stalls (id, tenant_id, event_id, hall_id, vendor_organization_id, sponsor_organization_id, code, name)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`,
       [id, tid, eid, hid, vorg, sorg, code, name]
     );
   }
-  console.log("✓ stalls (6)");
+  console.log("✓ stalls (8)");
 }
 
 // ── 7. Sponsor packages ───────────────────────────────────────────────────────
 async function seedSponsorPackages() {
-  await run(
-    `INSERT INTO sponsor_packages (id, tenant_id, event_id, name, tier, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
-    [PKG_GOLD_IE, TENANT_ID, EVENT_IE, "Gold", "gold", NOW]
-  );
-  console.log("✓ sponsor packages (1)");
+  const packages = [
+    [PKG_PLATINUM_IE, TENANT_ID, EVENT_IE, "Platinum", "custom",
+     "Full event exclusivity — logo on all materials, keynote slot, 6 premium stalls, data export enabled"],
+    [PKG_GOLD_IE,     TENANT_ID, EVENT_IE, "Gold",     "gold",
+     "3 stalls, logo on event badge, access to full lead export, post-event CRM push"],
+    [PKG_SILVER_IE,   TENANT_ID, EVENT_IE, "Silver",   "silver",
+     "2 stalls, logo in event programme, filtered lead export (consent only)"],
+    [PKG_BRONZE_IE,   TENANT_ID, EVENT_IE, "Bronze",   "bronze",
+     "1 stall, name listing in event catalogue, no data export"],
+  ];
+  for (const [id, tid, eid, name, tier, description] of packages) {
+    await run(
+      `INSERT INTO sponsor_packages (id, tenant_id, event_id, name, tier, description, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, tier = EXCLUDED.tier, description = EXCLUDED.description`,
+      [id, tid, eid, name, tier, description, NOW]
+    );
+  }
+  console.log("✓ sponsor packages (4)");
 }
 
 // ── 8. Event data policies ────────────────────────────────────────────────────
 async function seedEventPolicies() {
+  // Columns: event_id, tenant_id, vendor_exports_enabled, sponsor_pii_enabled,
+  //          require_export_approval, allow_crm_push, retention_days,
+  //          allow_cross_event_identity_graph, created_at, updated_at
   const policies = [
     [EVENT_DEMO,      TENANT_ID, true,  false, true,  true,  30,  false],
     [EVENT_SECONDARY, TENANT_ID, true,  false, true,  false, 30,  false],
-    [EVENT_IE,        TENANT_ID, true,  true,  false, true,  90,  false],
+    [EVENT_IE,        TENANT_ID, true,  true,  false, true,  90,  true],
   ];
   for (const [eid, tid, ve, sp, ra, crm, rd, cig] of policies) {
     await run(
       `INSERT INTO event_data_policies
          (event_id, tenant_id, vendor_exports_enabled, sponsor_pii_enabled,
-          require_export_approval, allow_crm_push, retention_days, allow_cross_event_identity_graph)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`,
-      [eid, tid, ve, sp, ra, crm, rd, cig]
+          require_export_approval, allow_crm_push, retention_days,
+          allow_cross_event_identity_graph, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT (event_id) DO UPDATE SET
+         vendor_exports_enabled           = EXCLUDED.vendor_exports_enabled,
+         sponsor_pii_enabled              = EXCLUDED.sponsor_pii_enabled,
+         require_export_approval          = EXCLUDED.require_export_approval,
+         allow_crm_push                   = EXCLUDED.allow_crm_push,
+         retention_days                   = EXCLUDED.retention_days,
+         allow_cross_event_identity_graph = EXCLUDED.allow_cross_event_identity_graph,
+         updated_at                       = now()`,
+      [eid, tid, ve, sp, ra, crm, rd, cig, NOW, NOW]
     );
   }
   console.log("✓ event data policies (3)");
