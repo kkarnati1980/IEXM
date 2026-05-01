@@ -3,4 +3,9 @@ node_modules
 .local
 .backups
 *.log
-
+apps/api/storage
+apps/api/.env
+.env
+coverage
+deploy
+docs
