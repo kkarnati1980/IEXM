@@ -1,8 +1,21 @@
 // Email delivery worker — polls notifications for queued transactional emails
-// and sends them via SendGrid. Never crashes; all errors are caught and logged.
+// and sends them via SMTP (nodemailer). Never crashes; all errors are caught and logged.
 
-const SENDGRID_URL = "https://api.sendgrid.com/v3/mail/send";
+import nodemailer from "nodemailer";
+
 const MAX_ATTEMPTS = 3;
+
+function createTransporter(env) {
+  return nodemailer.createTransport({
+    host: env.SMTP_HOST,
+    port: Number(env.SMTP_PORT) || 587,
+    secure: env.SMTP_PORT === "465",
+    auth: {
+      user: env.SMTP_USER,
+      pass: env.SMTP_PASS
+    }
+  });
+}
 
 export function startEmailDeliveryWorker(repos, state, intervalMs = 30_000) {
   const handle = setInterval(() => {
@@ -14,7 +27,7 @@ export function startEmailDeliveryWorker(repos, state, intervalMs = 30_000) {
   return handle;
 }
 
-export async function runEmailDeliveryBatchOnce(repos, state, env = process.env) {
+export async function runEmailDeliveryBatchOnce(repos, state, env = process.env, createTransportFn = createTransporter) {
   for (const tenant of state.tenants) {
     let queued;
     try {
@@ -26,7 +39,7 @@ export async function runEmailDeliveryBatchOnce(repos, state, env = process.env)
     const transactional = queued.filter((n) => n.system_payload?.recipient_email);
     for (const notification of transactional) {
       try {
-        await processSend(repos, notification, env);
+        await processSend(repos, notification, env, createTransportFn);
       } catch (err) {
         console.error(`[email-delivery] Failed to process ${notification.id}:`, err.message);
       }
@@ -34,7 +47,7 @@ export async function runEmailDeliveryBatchOnce(repos, state, env = process.env)
   }
 }
 
-async function processSend(repos, notification, env) {
+async function processSend(repos, notification, env, createTransportFn) {
   const { recipient_email, subject, body, html, text } = notification.system_payload;
   const now = new Date().toISOString();
   const attempts = Number(notification.attempts_count ?? 0) + 1;
@@ -43,37 +56,27 @@ async function processSend(repos, notification, env) {
   let errorMessage = null;
 
   try {
-    const res = await fetch(SENDGRID_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.SENDGRID_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        personalizations: [{ to: [{ email: recipient_email }] }],
-        from: { email: env.EMAIL_FROM, name: env.EMAIL_FROM_NAME ?? "Codex Platform" },
-        subject,
-        content: [
-          { type: "text/plain", value: text ?? body ?? "" },
-          { type: "text/html", value: html ?? body ?? "" }
-        ]
-      })
+    const transporter = createTransportFn(env);
+    const fromName = env.SMTP_FROM_NAME ?? "Codex Platform";
+    const fromAddr = env.SMTP_FROM;
+    await transporter.sendMail({
+      from: `${fromName} <${fromAddr}>`,
+      to: recipient_email,
+      subject,
+      text: text ?? body ?? "",
+      html: html ?? body ?? ""
     });
-    if (res.status === 202) {
-      success = true;
-    } else {
-      errorMessage = `SendGrid returned HTTP ${res.status}`;
-    }
+    success = true;
   } catch (err) {
     errorMessage = err.message;
-    console.error(`[email-delivery] fetch error for ${notification.id}:`, err.message);
+    console.error(`[email-delivery] SMTP error for ${notification.id}:`, err.message);
   }
 
   if (success) {
     await repos.notifications.update({
       ...notification,
       status: "sent",
-      provider: "sendgrid",
+      provider: "smtp",
       attempts_count: attempts,
       last_attempt_at: now,
       final_error: null,
