@@ -4905,7 +4905,7 @@ export function registerRoutes(router) {
         messageType: "account_activated",
         templateVars: {
           display_name: updatedUser.display_name,
-          login_url: process.env.PLATFORM_BASE_URL ?? ""
+          login_url: process.env.BASE_URL || process.env.PLATFORM_BASE_URL || "http://localhost:3000"
         },
         actorUserId: updatedUser.id
       });
@@ -4945,7 +4945,7 @@ export function registerRoutes(router) {
       const user = await repos.users.findByEmail(email);
       if (user) {
         const plaintext = await generateResetToken(user.id, user.tenant_id, repos, state.sessionSecret);
-        const resetUrl = `${process.env.PLATFORM_BASE_URL ?? ""}/reset-password?token=${plaintext}`;
+        const resetUrl = `${process.env.BASE_URL || process.env.PLATFORM_BASE_URL || "http://localhost:3000"}/reset-password?token=${plaintext}`;
         await dispatchTransactionalEmail({
           repos,
           tenantId: user.tenant_id,
@@ -5250,7 +5250,7 @@ export function registerRoutes(router) {
       const inviteToken = await generateInviteToken(userId, principal.tenant_id, repos, secret);
       const createdUser = await repos.users.findById(principal.tenant_id, userId);
 
-      const inviteUrl = `${process.env.PLATFORM_BASE_URL ?? ""}/set-password?token=${inviteToken}`;
+      const inviteUrl = `${process.env.BASE_URL || process.env.PLATFORM_BASE_URL || "http://localhost:3000"}/set-password?token=${inviteToken}`;
       await dispatchTransactionalEmail({
         repos,
         tenantId: principal.tenant_id,
@@ -5406,7 +5406,7 @@ export function registerRoutes(router) {
       const inviteToken = await generateInviteToken(user.id, principal.tenant_id, repos, secret);
       const refreshed = await repos.users.findById(principal.tenant_id, user.id);
 
-      const inviteUrl = `${process.env.PLATFORM_BASE_URL ?? ""}/set-password?token=${inviteToken}`;
+      const inviteUrl = `${process.env.BASE_URL || process.env.PLATFORM_BASE_URL || "http://localhost:3000"}/set-password?token=${inviteToken}`;
       await dispatchTransactionalEmail({
         repos,
         tenantId: principal.tenant_id,
@@ -6228,7 +6228,7 @@ export function registerRoutes(router) {
         // Notify organizer admins
         const allUsers = await repos.users.listByTenant(principal.tenant_id);
         const eventAdmins = allUsers.filter((u) => u.role === "organizer_admin" && u.status === "active" && u.id !== principal.user_id);
-        const reviewUrl = `${process.env.PLATFORM_BASE_URL ?? ""}/events/${event.id}/data-policy`;
+        const reviewUrl = `${process.env.BASE_URL || process.env.PLATFORM_BASE_URL || "http://localhost:3000"}/events/${event.id}/data-policy`;
         for (const admin of eventAdmins) {
           await dispatchTransactionalEmail({
             repos,
@@ -7134,7 +7134,7 @@ export function registerRoutes(router) {
             justification: request.justification,
             event_name: tenantRecord?.name ?? "your event",
             duration_minutes: request.requested_duration_minutes ?? null,
-            platform_access_log_url: `${process.env.PLATFORM_BASE_URL ?? ""}/events/platform-access-log`
+            platform_access_log_url: `${process.env.BASE_URL || process.env.PLATFORM_BASE_URL || "http://localhost:3000"}/events/platform-access-log`
           },
           actorUserId: principal.user_id
         });
@@ -7421,7 +7421,7 @@ export function registerRoutes(router) {
       await dispatchSovereigntyWebhook(repos, principal.tenant_id, event.id, "export.downloaded", {
         event_id: event.id, export_type: latest.export_type, export_id: latest.id, actor_role: principal.role, occurred_at: new Date().toISOString()
       });
-      const downloadUrl = latest.export_file_url ?? `${process.env.PLATFORM_BASE_URL ?? "http://localhost:3000"}/exports/${latest.id}/file`;
+      const downloadUrl = latest.export_file_url ?? `${process.env.BASE_URL || process.env.PLATFORM_BASE_URL || "http://localhost:3000"}/exports/${latest.id}/file`;
       return { export_id: latest.id, download_url: downloadUrl, expires_at: latest.export_expires_at ?? new Date(Date.now() + 15 * 60 * 1000).toISOString() };
     },
     auditEventType: "full_export.downloaded"
@@ -7526,7 +7526,7 @@ export function registerRoutes(router) {
       if (dsr.status !== "completed") throw new HttpError(400, "DSR_NOT_COMPLETED");
       if (dsr.download_used) throw new HttpError(410, "DOWNLOAD_ALREADY_USED", { message: "This download has already been used." });
       await repos.dataSubjectRequests.update({ ...dsr, download_used: true, download_used_at: new Date().toISOString() });
-      return { dsr_id: dsr.id, download_url: dsr.export_file_url ?? `${process.env.PLATFORM_BASE_URL ?? "https://placeholder.example.com"}/dsr/${dsr.id}/file`, expires_at: dsr.export_expires_at ?? new Date(Date.now() + 15 * 60 * 1000).toISOString() };
+      return { dsr_id: dsr.id, download_url: dsr.export_file_url ?? `${process.env.BASE_URL || process.env.PLATFORM_BASE_URL || "http://localhost:3000"}/dsr/${dsr.id}/file`, expires_at: dsr.export_expires_at ?? new Date(Date.now() + 15 * 60 * 1000).toISOString() };
     }
   });
 
