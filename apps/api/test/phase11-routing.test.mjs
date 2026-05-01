@@ -144,13 +144,13 @@ test("resolveRedirectTarget: organizer_admin with 1 event → /organizer/events"
   assert.equal(result.redirect_to, "/organizer/events");
 });
 
-test("resolveRedirectTarget: vendor_manager → /vendor/inbox", async () => {
+test("resolveRedirectTarget: vendor_manager → /vendor", async () => {
   const { resolveRedirectTarget } = await import("../src/auth/redirect-resolver.mjs");
   const state = createSeedState();
   const app = await createApp({ state });
   const user = state.users.find((u) => u.role === "vendor_manager");
   const result = await resolveRedirectTarget(user.id, user.tenant_id, app.repos);
-  assert.equal(result.redirect_to, "/vendor/inbox");
+  assert.equal(result.redirect_to, "/vendor");
 });
 
 test("resolveRedirectTarget: no role assignments → /onboarding/no-role", async () => {

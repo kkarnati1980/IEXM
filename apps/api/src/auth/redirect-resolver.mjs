@@ -1,8 +1,8 @@
 const ROLE_ROUTE = {
   platform_admin: "/admin/tenants",
   organizer_admin: "/organizer/events",
-  vendor_manager: "/vendor/inbox",
-  sponsor_user: "/sponsor/overview",
+  vendor_manager: "/vendor",
+  sponsor_user: "/sponsor",
   ops_user: "/ops/fleet"
 };
 

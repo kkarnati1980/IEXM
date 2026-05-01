@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ops Fleet</title>
+    <style>
+      :root{
+        --ink:#112233;--muted:#5f6f7f;--panel:rgba(255,255,255,0.88);
+        --line:rgba(17,34,51,0.12);--accent:#2d7dd8;--accent-soft:rgba(45,125,216,0.10);
+        --good:#0f8d63;--warn:#b46c14;--danger:#c03a3a;
+      }
+      *{box-sizing:border-box;}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--ink);background:radial-gradient(circle at top left,rgba(45,125,216,.12),transparent 26%),linear-gradient(180deg,#f0f4ff,#e8eef9 60%,#dde6f5);}
+      .shell{max-width:1400px;margin:0 auto;padding:20px 24px 0;}
+      .shell-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px;}
+      .shell-title{display:grid;gap:4px;}
+      .shell-title strong{font-size:1.15rem;}
+      .shell-nav{display:flex;gap:10px;flex-wrap:wrap;}
+      .shell-nav a{text-decoration:none;color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:9px 14px;background:rgba(255,255,255,.72);font-size:14px;}
+      .shell-nav a.active{border-color:rgba(45,125,216,.35);background:var(--accent-soft);color:var(--accent);}
+      main{max-width:1400px;margin:0 auto;padding:0 24px 40px;display:grid;grid-template-columns:1fr 360px;gap:18px;min-height:100vh;}
+      .column{display:grid;gap:18px;align-content:start;}
+      .card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:18px;box-shadow:0 16px 48px rgba(17,34,51,.06);backdrop-filter:blur(14px);}
+      .eyebrow{display:inline-block;margin-bottom:10px;padding:5px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent);text-transform:uppercase;letter-spacing:.08em;font-size:11px;}
+      .muted{color:var(--muted);}
+      .status{margin-bottom:14px;padding:11px 14px;border-radius:12px;font-size:13px;}
+      .status.ok{background:rgba(15,141,99,.1);color:var(--good);}
+      .status.error{background:rgba(192,58,58,.1);color:var(--danger);}
+      .status.warn{background:rgba(180,108,20,.1);color:var(--warn);}
+      .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:end;}
+      .toolbar>div{min-width:160px;flex:1 1 160px;}
+      input,select,button{font:inherit;}
+      input,select{width:100%;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,.8);color:var(--ink);padding:10px 12px;}
+      button{border:0;border-radius:10px;padding:10px 14px;cursor:pointer;font-size:14px;}
+      button.primary{background:var(--accent);color:white;}
+      button.secondary{background:rgba(17,34,51,.08);color:var(--ink);}
+      button.sm{padding:7px 10px;font-size:12px;}
+      button:disabled{opacity:.4;cursor:default;}
+      .section-head{display:flex;align-items:end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+      .section-head h2{margin:0;font-size:1.2rem;}
+      .section-head p{margin:3px 0 0;color:var(--muted);font-size:13px;}
+      .metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:10px;}
+      .metric{border-radius:16px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.65));padding:14px 12px;position:relative;overflow:hidden;}
+      .metric::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:linear-gradient(90deg,rgba(45,125,216,.8),rgba(45,125,216,.3));}
+      .metric span{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);}
+      .metric strong{display:block;font-size:1.6rem;margin-top:4px;}
+      table{width:100%;border-collapse:collapse;font-size:14px;}
+      th{text-align:left;padding:10px 8px;border-bottom:2px solid var(--line);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);}
+      td{padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:middle;}
+      tbody tr{cursor:pointer;transition:background .1s;}
+      tbody tr:hover{background:rgba(45,125,216,.05);}
+      tbody tr.active{background:rgba(45,125,216,.09);}
+      .tag{display:inline-flex;align-items:center;border-radius:999px;padding:4px 10px;font-size:12px;border:1px solid var(--line);white-space:nowrap;}
+      .tag.good{color:var(--good);background:rgba(15,141,99,.08);border-color:rgba(15,141,99,.2);}
+      .tag.warn{color:var(--warn);background:rgba(180,108,20,.08);border-color:rgba(180,108,20,.2);}
+      .tag.danger{color:var(--danger);background:rgba(192,58,58,.08);border-color:rgba(192,58,58,.2);}
+      .tag.muted{color:var(--muted);background:rgba(17,34,51,.05);}
+      .list{display:grid;gap:8px;}
+      .item{border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.65);padding:12px;}
+      .detail-section{display:grid;gap:6px;margin-bottom:16px;}
+      .detail-section h4{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);}
+      .detail-field{display:flex;gap:10px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.6);border:1px solid var(--line);}
+      .detail-field label{min-width:90px;font-size:12px;color:var(--muted);}
+      .detail-field span{font-size:13px;}
+      .filter-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
+      .filter-bar select,.filter-bar input{min-width:130px;flex:1 1 130px;padding:9px 10px;font-size:13px;}
+      @media(max-width:1100px){main{grid-template-columns:1fr;}}
+      @media(max-width:640px){.metric-grid{grid-template-columns:repeat(2,1fr);}}
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell-bar">
+        <div class="shell-title">
+          <span class="eyebrow">Ops View</span>
+          <strong id="page-title">Device fleet</strong>
+          <span class="muted" id="page-subtitle">IoT device status and event assignments.</span>
+        </div>
+        <nav class="shell-nav">
+          <a href="../index.html">Launchpad</a>
+          <a href="../organizer.html">Organizer Ops</a>
+          <a href="./fleet.html" class="active">Fleet</a>
+        </nav>
+      </div>
+    </div>
+
+    <main>
+      <section class="column">
+
+        <!-- CONFIG BAR -->
+        <article class="card">
+          <div id="message" class="status" hidden></div>
+          <div class="toolbar">
+            <div><label class="muted" style="font-size:12px;display:block;margin-bottom:4px;">Event ID</label><input id="event-id" value="event-demo" type="text"></div>
+            <div><label class="muted" style="font-size:12px;display:block;margin-bottom:4px;">Auth token</label><input id="auth-token" value="ops-token" type="text"></div>
+            <div style="align-self:end;flex:0 0 auto;"><button class="primary" onclick="loadAll()">Load fleet</button></div>
+          </div>
+        </article>
+
+        <!-- METRICS -->
+        <article class="card">
+          <div class="section-head"><div><div class="eyebrow">Fleet Summary</div><h2>Device status</h2></div></div>
+          <div class="metric-grid">
+            <div class="metric"><span>Total devices</span><strong id="m-total">—</strong></div>
+            <div class="metric"><span>Online</span><strong id="m-online">—</strong></div>
+            <div class="metric"><span>Offline</span><strong id="m-offline">—</strong></div>
+            <div class="metric"><span>Assigned</span><strong id="m-assigned">—</strong></div>
+          </div>
+        </article>
+
+        <!-- DEVICE TABLE -->
+        <article class="card">
+          <div class="section-head">
+            <div><div class="eyebrow">Fleet — OP-01</div><h2>All devices</h2><p>IoT kiosk devices and their current assignments. Click a row to inspect.</p></div>
+            <div style="display:flex;gap:8px;">
+              <button class="secondary sm" onclick="loadAll()">↻ Refresh</button>
+            </div>
+          </div>
+          <div class="filter-bar">
+            <select id="filter-status" onchange="applyFilters()">
+              <option value="">All statuses</option>
+              <option value="online">Online</option>
+              <option value="offline">Offline</option>
+              <option value="error">Error</option>
+            </select>
+            <input id="filter-search" placeholder="Search device ID or label…" oninput="applyFilters()" type="text">
+          </div>
+          <div style="overflow-x:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Device ID</th>
+                  <th>Label</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Assignment</th>
+                  <th>Last seen</th>
+                </tr>
+              </thead>
+              <tbody id="device-rows">
+                <tr><td colspan="6" class="muted" style="text-align:center;padding:24px;">Load fleet to populate devices.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+      </section>
+
+      <aside class="column">
+
+        <!-- DEVICE DETAIL -->
+        <article class="card" id="detail-card">
+          <div class="section-head"><div><div class="eyebrow">Device Detail</div><h2 id="detail-name">Select a device</h2></div></div>
+
+          <div class="detail-section" id="detail-profile">
+            <h4>Identity</h4>
+            <div class="detail-field"><label>Device ID</label><span id="dp-id">—</span></div>
+            <div class="detail-field"><label>Label</label><span id="dp-label">—</span></div>
+            <div class="detail-field"><label>Type</label><span id="dp-type">—</span></div>
+            <div class="detail-field"><label>Status</label><span id="dp-status">—</span></div>
+            <div class="detail-field"><label>Last seen</label><span id="dp-last-seen">—</span></div>
+          </div>
+
+          <div class="detail-section">
+            <h4>Assignment</h4>
+            <div id="assignment-detail" class="list"><div class="item muted">Select a device.</div></div>
+          </div>
+
+          <div class="detail-section">
+            <h4>Recent activity</h4>
+            <div id="activity-detail" class="list"><div class="item muted">Select a device.</div></div>
+          </div>
+        </article>
+
+        <!-- IoT RUNS -->
+        <article class="card">
+          <div class="section-head"><div><div class="eyebrow">IoT Runs</div><h2>Latest sync runs</h2><p>Most recent IoT orchestrator run results.</p></div></div>
+          <div id="iot-runs" class="list"><div class="item muted">Load fleet to see run history.</div></div>
+        </article>
+
+      </aside>
+    </main>
+
+    <script type="module">
+      const params  = new URLSearchParams(window.location.search);
+      const apiBase = params.get("apiBase") || (location.protocol === "file:" ? "http://127.0.0.1:3000" : location.origin);
+      const $       = id => document.getElementById(id);
+
+      $("event-id").value   = params.get("eventId") || "event-demo";
+      $("auth-token").value = params.get("auth")    || "ops-token";
+
+      let ALL_DEVICES = [];
+      let FILTERED    = [];
+      let SELECTED    = null;
+
+      window.loadAll      = loadAll;
+      window.applyFilters = applyFilters;
+
+      async function loadAll() {
+        try {
+          const eid = $("event-id").value.trim();
+          const devices = await api(`/devices?event_id=${enc(eid)}`).catch(() => ({ items: [] }));
+          ALL_DEVICES = devices.items || devices.devices || [];
+          renderMetrics();
+          applyFilters();
+          loadIotRuns(eid);
+          syncUrl();
+          showMsg("Fleet loaded.", "ok");
+        } catch(e) { showMsg(e.message, "error"); }
+      }
+
+      function renderMetrics() {
+        const total    = ALL_DEVICES.length;
+        const online   = ALL_DEVICES.filter(d => d.status === "online").length;
+        const offline  = ALL_DEVICES.filter(d => d.status === "offline" || d.status === "error").length;
+        const assigned = ALL_DEVICES.filter(d => d.assignment_id || d.stall_id || d.zone_id).length;
+        $("m-total").textContent    = total;
+        $("m-online").textContent   = online;
+        $("m-offline").textContent  = offline;
+        $("m-assigned").textContent = assigned;
+        $("page-subtitle").textContent = `${total} devices — ${online} online · ${offline} offline`;
+      }
+
+      function applyFilters() {
+        const status = $("filter-status").value;
+        const search = $("filter-search").value.toLowerCase();
+        FILTERED = ALL_DEVICES.filter(d => {
+          if (status && d.status !== status) return false;
+          if (search) {
+            const id    = (d.id    || "").toLowerCase();
+            const label = (d.label || d.name || "").toLowerCase();
+            if (!id.includes(search) && !label.includes(search)) return false;
+          }
+          return true;
+        });
+        renderTable();
+      }
+
+      function renderTable() {
+        const tbody = $("device-rows");
+        tbody.innerHTML = "";
+        if (!FILTERED.length) {
+          tbody.innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center;padding:20px;">No devices match current filters.</td></tr>`;
+          return;
+        }
+        for (const d of FILTERED) {
+          const status     = d.status || "unknown";
+          const statusCls  = status === "online" ? "good" : status === "error" ? "danger" : "muted";
+          const assignment = d.stall_id || d.zone_id || d.assignment_id || "—";
+          const lastSeen   = d.last_seen_at || d.last_heartbeat_at || d.updated_at;
+          const tr = document.createElement("tr");
+          tr.className = SELECTED?.id === d.id ? "active" : "";
+          tr.innerHTML = `
+            <td class="muted" style="white-space:nowrap;font-size:12px;">${esc(d.id)}</td>
+            <td>${esc(d.label || d.name || "—")}</td>
+            <td class="muted">${esc(humanize(d.device_type || d.type || "kiosk"))}</td>
+            <td><span class="tag ${statusCls}">${esc(status)}</span></td>
+            <td class="muted">${esc(assignment)}</td>
+            <td class="muted" style="white-space:nowrap;">${fmtTime(lastSeen)}</td>`;
+          tr.addEventListener("click", () => selectDevice(d));
+          tbody.appendChild(tr);
+        }
+      }
+
+      function selectDevice(d) {
+        SELECTED = d;
+        renderTable();
+        $("detail-name").textContent = d.label || d.name || d.id;
+        $("dp-id").textContent       = d.id;
+        $("dp-label").textContent    = d.label || d.name || "—";
+        $("dp-type").textContent     = humanize(d.device_type || d.type || "kiosk");
+        $("dp-status").textContent   = d.status || "unknown";
+        $("dp-last-seen").textContent = fmtDate(d.last_seen_at || d.last_heartbeat_at || d.updated_at);
+
+        const ad = $("assignment-detail"); ad.innerHTML = "";
+        if (d.stall_id)  addItem(ad, `Stall: ${d.stall_id}`);
+        if (d.zone_id)   addItem(ad, `Zone: ${d.zone_id}`);
+        if (d.event_id)  addItem(ad, `Event: ${d.event_id}`);
+        if (!d.stall_id && !d.zone_id) addItem(ad, "Unassigned");
+
+        const act = $("activity-detail"); act.innerHTML = "";
+        if (d.last_interaction_at) addItem(act, `Last interaction: ${fmtDate(d.last_interaction_at)}`);
+        if (d.interaction_count != null) addItem(act, `Total interactions: ${d.interaction_count}`);
+        if (!d.last_interaction_at) addItem(act, "No recorded interactions.");
+
+        syncUrl();
+      }
+
+      async function loadIotRuns(eid) {
+        try {
+          const runs = await api(`/iot/runs?event_id=${enc(eid)}&limit=5`).catch(() => ({ items: [] }));
+          const el = $("iot-runs"); el.innerHTML = "";
+          const items = runs.items || runs.runs || [];
+          if (!items.length) { el.innerHTML = `<div class="item muted">No IoT runs recorded.</div>`; return; }
+          for (const run of items.slice(0, 5)) {
+            const item = document.createElement("div"); item.className = "item";
+            const statusCls = run.status === "completed" ? "good" : run.status === "failed" ? "danger" : "warn";
+            item.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><strong>${esc(humanize(run.run_type || run.type || "sync"))}</strong><span class="tag ${statusCls}">${esc(run.status)}</span></div><div class="muted" style="font-size:12px;margin-top:4px;">${fmtDate(run.created_at)}</div>`;
+            el.appendChild(item);
+          }
+        } catch { /* IoT runs endpoint may not exist in all deployments */ }
+      }
+
+      function addItem(parent, text) {
+        const d = document.createElement("div"); d.className = "item"; d.textContent = text; parent.appendChild(d);
+      }
+      function syncUrl() {
+        const u = new URL(location.href);
+        wp(u, "eventId", $("event-id").value.trim());
+        wp(u, "auth",    $("auth-token").value.trim());
+        if (SELECTED?.id) wp(u, "deviceId", SELECTED.id); else u.searchParams.delete("deviceId");
+        history.replaceState({}, "", u);
+      }
+      function wp(u, k, v) { if (v) u.searchParams.set(k, v); else u.searchParams.delete(k); }
+      function showMsg(text, type) { const m = $("message"); m.hidden = !text; m.textContent = text || ""; m.className = `status ${type}`; }
+      function enc(v) { return encodeURIComponent(v); }
+      function esc(v) { return String(v ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"); }
+      function humanize(v) { return String(v || "unknown").replaceAll("_", " ").replace(/\b\w/g, m => m.toUpperCase()); }
+      function fmtTime(v) { if (!v) return "—"; return new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
+      function fmtDate(v) { if (!v) return "—"; return new Date(v).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
+
+      function getTenantIdFromToken(t) { try { return JSON.parse(atob(t.split(".")[1])).tenant_id || null; } catch { return null; } }
+
+      async function api(path, options = {}) {
+        const token = $("auth-token").value.trim();
+        if (!token) throw new Error("Auth token required.");
+        const resp = await fetch(`${apiBase}${path}`, {
+          method: options.method || "GET",
+          headers: { "content-type": "application/json", "authorization": `Bearer ${token}`, "x-tenant-id": getTenantIdFromToken(token) || "tenant-demo" },
+          cache: "no-store",
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(payload.error || `Request failed ${resp.status}`);
+        return payload;
+      }
+    </script>
+  </body>
+</html>
