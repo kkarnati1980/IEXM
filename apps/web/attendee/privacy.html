@@ -88,7 +88,7 @@
 
     <script type="module">
       const params = new URLSearchParams(location.search);
-      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const apiBase = params.get("apiBase") ?? window.location.origin;
       const token = params.get("token") ?? localStorage.getItem("codex.attendee_token") ?? "attendee-token";
       const eventId = params.get("event_id") ?? params.get("eventId") ?? "";
 

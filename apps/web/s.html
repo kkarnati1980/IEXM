@@ -22,7 +22,7 @@
   <script>
     const params = new URLSearchParams(location.search);
     const token  = params.get('t');
-    const api    = params.get('apiBase') || 'http://127.0.0.1:3000';
+    const api    = params.get('apiBase') || window.location.origin;
     if (!token) {
       document.getElementById('err').textContent = 'No token in URL.';
       document.getElementById('err').hidden = false;
@@ -31,7 +31,7 @@
         .then(r => r.json())
         .then(d => {
           if (d.target_url) {
-            location.href = 'http://127.0.0.1:8080' + d.target_url + '&apiBase=' + encodeURIComponent(api);
+            location.href = window.location.origin + d.target_url + '&apiBase=' + encodeURIComponent(api);
           } else {
             throw new Error(d.error || 'No target URL');
           }

@@ -291,7 +291,7 @@
 
     <script type="module">
       const params  = new URLSearchParams(window.location.search);
-      const apiBase = params.get("apiBase") || (location.protocol === "file:" ? "http://127.0.0.1:3000" : (location.port === "8080" ? "http://127.0.0.1:3000" : location.origin));
+      const apiBase = params.get("apiBase") || (location.protocol === "file:" ? "http://127.0.0.1:3000" : location.origin);
       const $       = id => document.getElementById(id);
 
       $("event-id").value   = params.get("eventId")  || "event-demo";

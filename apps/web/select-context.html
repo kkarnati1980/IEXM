@@ -46,7 +46,7 @@
       import { setToken, setActiveEventId, logoutUser } from "./components.js";
 
       const params = new URLSearchParams(location.search);
-      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const apiBase = params.get("apiBase") ?? window.location.origin;
       const token = params.get("token") ?? localStorage.getItem("codex.token");
 
       // Events can come from query param (set by login) or fetched live

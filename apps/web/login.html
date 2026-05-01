@@ -44,7 +44,7 @@
       import { setToken, setActiveEventId } from "./components.js";
 
       const params = new URLSearchParams(location.search);
-      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const apiBase = params.get("apiBase") ?? window.location.origin;
 
       const statusEl = document.getElementById("status");
       const submitBtn = document.getElementById("submit-btn");

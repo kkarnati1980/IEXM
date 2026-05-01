@@ -167,7 +167,7 @@
       if (!isAuthenticated()) { logoutUser("../login.html"); throw new Error("unauthenticated"); }
 
       const params = new URLSearchParams(location.search);
-      const apiBase = params.get("apiBase") ?? (location.port === "8080" ? "http://localhost:8080" : "http://localhost:3000");
+      const apiBase = params.get("apiBase") ?? window.location.origin;
       const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "platform-token";
       const filterEventId = params.get("event_id") ?? "";
       const filterTenantId = params.get("tenant_id") ?? "";
