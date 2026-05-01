@@ -1,20 +1,33 @@
 // Email delivery worker — polls notifications for queued transactional emails
-// and sends them via SMTP (nodemailer). Never crashes; all errors are caught and logged.
-
-import nodemailer from "nodemailer";
+// and sends them via ZeptoMail HTTP API. Never crashes; all errors are caught and logged.
 
 const MAX_ATTEMPTS = 3;
 
-function createTransporter(env) {
-  return nodemailer.createTransport({
-    host: env.SMTP_HOST,
-    port: Number(env.SMTP_PORT) || 587,
-    secure: env.SMTP_PORT === "465",
-    auth: {
-      user: env.SMTP_USER,
-      pass: env.SMTP_PASS
-    }
+async function sendEmail({ to, toName, subject, html, text }, env) {
+  const apiKey = env.SMTP_PASS;
+  const fromAddress = env.SMTP_FROM || "noreply@communication.feturtles.com";
+  const fromName = env.SMTP_FROM_NAME || "Codex Platform";
+
+  const response = await fetch("https://api.zeptomail.in/v1.1/email", {
+    method: "POST",
+    headers: {
+      Authorization: "Zoho-enczapikey " + apiKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      from: { address: fromAddress, name: fromName },
+      to: [{ email_address: { address: to, name: toName || to } }],
+      subject: subject,
+      htmlbody: html,
+      textbody: text
+    })
   });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error("ZeptoMail API error " + response.status + ": " + body);
+  }
+  return true;
 }
 
 export function startEmailDeliveryWorker(repos, state, intervalMs = 30_000) {
@@ -27,7 +40,7 @@ export function startEmailDeliveryWorker(repos, state, intervalMs = 30_000) {
   return handle;
 }
 
-export async function runEmailDeliveryBatchOnce(repos, env = process.env, createTransportFn = createTransporter) {
+export async function runEmailDeliveryBatchOnce(repos, env = process.env, sendEmailFn = sendEmail) {
   const tenants = await repos.tenants.listAll();
   for (const tenant of tenants) {
     let queued;
@@ -40,7 +53,7 @@ export async function runEmailDeliveryBatchOnce(repos, env = process.env, create
     const transactional = queued.filter((n) => n.system_payload?.recipient_email);
     for (const notification of transactional) {
       try {
-        await processSend(repos, notification, env, createTransportFn);
+        await processSend(repos, notification, env, sendEmailFn);
       } catch (err) {
         console.error(`[email-delivery] Failed to process ${notification.id}:`, err.message);
       }
@@ -48,7 +61,7 @@ export async function runEmailDeliveryBatchOnce(repos, env = process.env, create
   }
 }
 
-async function processSend(repos, notification, env, createTransportFn) {
+async function processSend(repos, notification, env, sendEmailFn) {
   const { recipient_email, subject, body, html, text } = notification.system_payload;
   const now = new Date().toISOString();
   const attempts = Number(notification.attempts_count ?? 0) + 1;
@@ -57,27 +70,27 @@ async function processSend(repos, notification, env, createTransportFn) {
   let errorMessage = null;
 
   try {
-    const transporter = createTransportFn(env);
-    const fromName = env.SMTP_FROM_NAME ?? "Codex Platform";
-    const fromAddr = env.SMTP_FROM;
-    await transporter.sendMail({
-      from: `${fromName} <${fromAddr}>`,
-      to: recipient_email,
-      subject,
-      text: text ?? body ?? "",
-      html: html ?? body ?? ""
-    });
+    await sendEmailFn(
+      {
+        to: recipient_email,
+        toName: recipient_email,
+        subject,
+        html: html ?? body ?? "",
+        text: text ?? body ?? ""
+      },
+      env
+    );
     success = true;
   } catch (err) {
     errorMessage = err.message;
-    console.error(`[email-delivery] SMTP error for ${notification.id}:`, err.message);
+    console.error(`[email-delivery] ZeptoMail error for ${notification.id}:`, err.message);
   }
 
   if (success) {
     await repos.notifications.update({
       ...notification,
       status: "sent",
-      provider: "smtp",
+      provider: "zeptomail",
       attempts_count: attempts,
       last_attempt_at: now,
       final_error: null,

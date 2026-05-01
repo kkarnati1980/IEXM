@@ -6,10 +6,7 @@ import { createMemoryRepositories } from "../src/repositories/memory.mjs";
 import { runEmailDeliveryBatchOnce } from "../src/jobs/email-delivery-worker.mjs";
 
 const TEST_ENV = {
-  SMTP_HOST: "smtp.test.example",
-  SMTP_PORT: "587",
-  SMTP_USER: "testuser",
-  SMTP_PASS: "testpass",
+  SMTP_PASS: "test-zepto-api-key",
   SMTP_FROM: "noreply@test.example",
   SMTP_FROM_NAME: "Test Platform"
 };
@@ -48,44 +45,40 @@ function makeTransactionalNotification(overrides = {}) {
   };
 }
 
-function mockTransportFactory(sendMailFn) {
-  return () => ({ sendMail: sendMailFn });
-}
-
 test("email delivery worker: successful send marks notification sent", async () => {
   const state = createSeedState();
   const repos = createMemoryRepositories(state);
   const notification = makeTransactionalNotification();
   state.notifications.push(notification);
 
-  const createTransport = mockTransportFactory(async () => ({ messageId: "test-id" }));
+  const mockSendEmail = async () => true;
 
-  await runEmailDeliveryBatchOnce(repos, TEST_ENV, createTransport);
+  await runEmailDeliveryBatchOnce(repos, TEST_ENV, mockSendEmail);
 
   const updated = state.notifications.find((n) => n.id === notification.id);
   assert.equal(updated.status, "sent");
-  assert.equal(updated.provider, "smtp");
+  assert.equal(updated.provider, "zeptomail");
   assert.equal(updated.attempts_count, 1);
   assert.ok(updated.last_attempt_at);
 });
 
-test("email delivery worker: SMTP failure three times marks notification dead_letter", async () => {
+test("email delivery worker: API failure three times marks notification dead_letter", async () => {
   const state = createSeedState();
   const repos = createMemoryRepositories(state);
   const notification = makeTransactionalNotification();
   state.notifications.push(notification);
 
-  const createTransport = mockTransportFactory(async () => {
-    throw new Error("SMTP connection refused");
-  });
+  const mockSendEmail = async () => {
+    throw new Error("ZeptoMail API error 503: service unavailable");
+  };
 
   // Three poll cycles simulate three delivery attempts
-  await runEmailDeliveryBatchOnce(repos, TEST_ENV, createTransport);
-  await runEmailDeliveryBatchOnce(repos, TEST_ENV, createTransport);
-  await runEmailDeliveryBatchOnce(repos, TEST_ENV, createTransport);
+  await runEmailDeliveryBatchOnce(repos, TEST_ENV, mockSendEmail);
+  await runEmailDeliveryBatchOnce(repos, TEST_ENV, mockSendEmail);
+  await runEmailDeliveryBatchOnce(repos, TEST_ENV, mockSendEmail);
 
   const updated = state.notifications.find((n) => n.id === notification.id);
   assert.equal(updated.status, "dead_letter");
   assert.equal(updated.attempts_count, 3);
-  assert.match(updated.final_error, /SMTP connection refused/);
+  assert.match(updated.final_error, /ZeptoMail API error/);
 });
