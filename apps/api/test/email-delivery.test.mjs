@@ -60,7 +60,7 @@ test("email delivery worker: successful send marks notification sent", async () 
 
   const createTransport = mockTransportFactory(async () => ({ messageId: "test-id" }));
 
-  await runEmailDeliveryBatchOnce(repos, state, TEST_ENV, createTransport);
+  await runEmailDeliveryBatchOnce(repos, TEST_ENV, createTransport);
 
   const updated = state.notifications.find((n) => n.id === notification.id);
   assert.equal(updated.status, "sent");
@@ -80,9 +80,9 @@ test("email delivery worker: SMTP failure three times marks notification dead_le
   });
 
   // Three poll cycles simulate three delivery attempts
-  await runEmailDeliveryBatchOnce(repos, state, TEST_ENV, createTransport);
-  await runEmailDeliveryBatchOnce(repos, state, TEST_ENV, createTransport);
-  await runEmailDeliveryBatchOnce(repos, state, TEST_ENV, createTransport);
+  await runEmailDeliveryBatchOnce(repos, TEST_ENV, createTransport);
+  await runEmailDeliveryBatchOnce(repos, TEST_ENV, createTransport);
+  await runEmailDeliveryBatchOnce(repos, TEST_ENV, createTransport);
 
   const updated = state.notifications.find((n) => n.id === notification.id);
   assert.equal(updated.status, "dead_letter");

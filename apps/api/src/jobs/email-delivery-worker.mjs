@@ -19,7 +19,7 @@ function createTransporter(env) {
 
 export function startEmailDeliveryWorker(repos, state, intervalMs = 30_000) {
   const handle = setInterval(() => {
-    runEmailDeliveryBatchOnce(repos, state).catch((err) => {
+    runEmailDeliveryBatchOnce(repos).catch((err) => {
       console.error("[email-delivery] Unexpected error:", err.message);
     });
   }, intervalMs);
@@ -27,8 +27,9 @@ export function startEmailDeliveryWorker(repos, state, intervalMs = 30_000) {
   return handle;
 }
 
-export async function runEmailDeliveryBatchOnce(repos, state, env = process.env, createTransportFn = createTransporter) {
-  for (const tenant of state.tenants) {
+export async function runEmailDeliveryBatchOnce(repos, env = process.env, createTransportFn = createTransporter) {
+  const tenants = await repos.tenants.listAll();
+  for (const tenant of tenants) {
     let queued;
     try {
       queued = await repos.notifications.listQueued(tenant.id, {});
