@@ -59,6 +59,20 @@
         padding: 18px;
         min-height: 164px;
       }
+      a.card.device-only {
+        opacity: 0.72;
+        border-color: rgba(255,211,110,0.28);
+      }
+      .device-warning {
+        margin-top: 12px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(255,211,110,0.22);
+        font-size: 12px;
+        color: var(--warning);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
       .label {
         display: inline-block;
         font-size: 12px;
@@ -85,10 +99,11 @@
         critical surfaces the backend foundation supports.
       </p>
       <section class="grid">
-        <a class="card" href="./kiosk.html">
+        <a class="card device-only" href="./kiosk.html" title="This page only works on registered kiosk devices. Open it on the physical kiosk hardware, not in a regular browser.">
           <div class="label">Edge</div>
           <div class="name">Kiosk Runtime Shell</div>
           <p>Boot, idle, tap processing, active interaction, diagnostics, and QR fallback states.</p>
+          <div class="device-warning">⚠ Physical device only — open on registered kiosk hardware</div>
         </a>
         <a class="card" href="./attendee.html">
           <div class="label">Attendee</div>
