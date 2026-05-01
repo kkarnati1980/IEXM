@@ -4791,9 +4791,12 @@ export function registerRoutes(router) {
     method: "GET",
     path: "/audit/logs",
     allowedRoles: ["organizer_admin", "platform_admin"],
-    handler: async ({ repos, tenantId }) => ({
-      items: [...await repos.auditLogs.listByTenant(tenantId)].sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
-    }),
+    handler: async ({ repos, tenantId, query }) => {
+      let items = await repos.auditLogs.listByTenant(tenantId);
+      if (query?.event_id) items = items.filter((l) => l.event_id === query.event_id);
+      items = [...items].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+      return { items };
+    },
     auditEventType: "audit.logs.view"
   });
 
@@ -6325,6 +6328,22 @@ export function registerRoutes(router) {
     }
   });
 
+  // GET /events/:eventId/stalls — list stalls, optional ?hall_id= filter
+  router.addRoute({
+    id: "stalls-list",
+    method: "GET",
+    path: "/events/:eventId/stalls",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ params, principal, repos, query }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      let stalls = await repos.stalls.listByEvent(principal.tenant_id, event.id);
+      if (query?.hall_id) stalls = stalls.filter((s) => s.hall_id === query.hall_id);
+      return { stalls };
+    }
+  });
+
   // POST /events/:eventId/stalls
   router.addRoute({
     id: "stalls-create",
@@ -6892,6 +6911,26 @@ export function registerRoutes(router) {
   });
 
   // POST /events/:eventId/branding/approve — approve branding
+  // POST /events/:eventId/branding/publish — mark branding as published
+  router.addRoute({
+    id: "events-branding-publish",
+    method: "POST",
+    path: "/events/:eventId/branding/publish",
+    authRequired: true,
+    allowedRoles: ["organizer_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const branding = await repos.brandingAssets.findActiveByEvent(principal.tenant_id, event.id);
+      if (!branding) throw new HttpError(404, "No branding config found for this event");
+      if (!branding.branding_approved) throw new HttpError(400, "Branding must be approved before publishing");
+      const now = new Date().toISOString();
+      const updated = { ...branding, status: "published", published_at: now, updated_at: now };
+      await repos.brandingAssets.update(updated);
+      return { status: "published", published_at: now };
+    }
+  });
+
   router.addRoute({
     id: "events-branding-approve",
     method: "POST",

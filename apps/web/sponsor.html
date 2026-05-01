@@ -807,10 +807,12 @@
       function esc(v){return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");}
       function enc(v){return encodeURIComponent(v);}
 
+      function getTenantIdFromToken(t) { try { return JSON.parse(atob(t.split(".")[1])).tenant_id || null; } catch { return null; } }
+
       async function api(path,options={}){
         const token=$id("auth-token").value.trim();
         if(!token) throw new Error("Auth token required.");
-        const resp=await fetch(`${apiBase}${path}`,{method:options.method||"GET",headers:{"content-type":"application/json","authorization":`Bearer ${token}`,"x-tenant-id":"tenant-demo",...(options.headers||{})},cache:"no-store",body:options.body?JSON.stringify(options.body):undefined});
+        const resp=await fetch(`${apiBase}${path}`,{method:options.method||"GET",headers:{"content-type":"application/json","authorization":`Bearer ${token}`,"x-tenant-id":getTenantIdFromToken(token)||"tenant-demo",...(options.headers||{})},cache:"no-store",body:options.body?JSON.stringify(options.body):undefined});
         const payload=await resp.json().catch(()=>({}));
         if(!resp.ok) throw new Error(payload.error||`Request failed with ${resp.status}`);
         return payload;

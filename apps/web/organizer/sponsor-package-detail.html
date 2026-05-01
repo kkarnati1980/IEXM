@@ -176,8 +176,8 @@
           document.getElementById("pkg-tier").value = pkgData.tier ?? "standard";
 
           // Load sponsor orgs
-          const orgsData = await api("/organizations");
-          const orgs = (orgsData.organizations ?? orgsData ?? []).filter(o => o.type === "sponsor");
+          const orgsData = await api("/orgs");
+          const orgs = (orgsData.organizations ?? []).filter(o => o.type === "sponsor");
           const orgSel = document.getElementById("sponsor-org-select");
           orgSel.innerHTML = `<option value="">— Select sponsor org —</option>` +
             orgs.map(o => `<option value="${esc(o.id)}" ${pkgData.organization_id === o.id ? "selected" : ""}>${esc(o.name)}</option>`).join("");

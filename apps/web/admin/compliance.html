@@ -258,6 +258,12 @@
             checksSection.hidden = true;
           }
 
+          // Persist result to localStorage history (max 10 entries)
+          const histKey = `compliance_history_${tenantId}`;
+          const existing = JSON.parse(localStorage.getItem(histKey) ?? "[]");
+          existing.unshift({ checked_at: new Date().toISOString(), status: data.status, residency_zone: data.detected_zone ?? null, verified_by: "user" });
+          localStorage.setItem(histKey, JSON.stringify(existing.slice(0, 10)));
+
           loadHistory();
         } catch (err) {
           const el = document.getElementById("check-status");
@@ -267,24 +273,21 @@
         }
       });
 
-      async function loadHistory() {
+      function loadHistory() {
         const tbody = document.getElementById("history-tbody");
-        try {
-          const data = await api(`/admin/tenants/${encodeURIComponent(tenantId)}/compliance/history`);
-          const items = data.history ?? data.items ?? data ?? [];
-          if (!items.length) {
-            tbody.innerHTML = `<tr><td colspan="4" class="empty">No compliance checks recorded yet.</td></tr>`;
-            return;
-          }
-          tbody.innerHTML = items.slice(0, 50).map(h => `
-            <tr>
-              <td style="font-size:13px;">${fmt(h.checked_at ?? h.created_at)}</td>
-              <td><span class="badge ${esc(h.status ?? "review_required")}">${esc(STATUS_ICONS[h.status] ?? h.status ?? "—")}</span></td>
-              <td class="muted">${esc(h.residency_zone ?? "—")}</td>
-              <td class="muted" style="font-size:13px;">${esc(h.verified_by ?? "system")}</td>
-            </tr>`).join("");
-        } catch {
-          tbody.innerHTML = `<tr><td colspan="4" class="empty muted">History unavailable</td></tr>`;
+        const histKey = `compliance_history_${tenantId}`;
+        const items = JSON.parse(localStorage.getItem(histKey) ?? "[]");
+        if (!items.length) {
+          tbody.innerHTML = `<tr><td colspan="4" class="empty">No compliance checks recorded yet.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = items.slice(0, 10).map(h => `
+          <tr>
+            <td style="font-size:13px;">${fmt(h.checked_at ?? h.created_at)}</td>
+            <td><span class="badge ${esc(h.status ?? "review_required")}">${esc(STATUS_ICONS[h.status] ?? h.status ?? "—")}</span></td>
+            <td class="muted">${esc(h.residency_zone ?? "—")}</td>
+            <td class="muted" style="font-size:13px;">${esc(h.verified_by ?? "system")}</td>
+          </tr>`).join("");
         }
       }
 

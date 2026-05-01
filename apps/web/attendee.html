@@ -557,8 +557,11 @@
       function humanize(v) { return String(v || "").replaceAll("_", " ").replace(/\b\w/g, m => m.toUpperCase()); }
       function fmtDate(v) { if (!v) return "—"; return new Date(v).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
 
+      function getTenantIdFromToken(t) { try { return JSON.parse(atob(t.split(".")[1])).tenant_id || null; } catch { return null; } }
+      const resolvedTenantId = params.get("tenantId") || getTenantIdFromToken(ATTENDEE_TOKEN) || "tenant-demo";
+
       async function api(path, options = {}) {
-        const headers = { "content-type": "application/json", "x-tenant-id": "tenant-demo" };
+        const headers = { "content-type": "application/json", "x-tenant-id": resolvedTenantId };
         if (ATTENDEE_TOKEN) headers["authorization"] = `Bearer ${ATTENDEE_TOKEN}`;
         const resp = await fetch(`${apiBase}${path}`, {
           method: options.method || "GET",

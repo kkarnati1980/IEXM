@@ -420,9 +420,11 @@
       function enc(v) { return encodeURIComponent(v); }
       function esc(v) { return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;"); }
 
+      const tenantId = params.get("tenantId") || "tenant-demo";
+
       async function api(path) {
         const resp = await fetch(`${apiBase}${path}`, {
-          headers: { "x-tenant-id": "tenant-demo" },
+          headers: { "x-tenant-id": tenantId },
           cache:   "no-store"
         });
         const payload = await resp.json().catch(()=>({}));

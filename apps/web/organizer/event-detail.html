@@ -463,8 +463,8 @@
 
       async function loadStalls(hallId) {
         try {
-          const data = await api(`/events/${encodeURIComponent(eventId)}/halls/${encodeURIComponent(hallId)}/stalls`);
-          const stalls = data.stalls ?? data ?? [];
+          const data = await api(`/events/${encodeURIComponent(eventId)}/stalls?hall_id=${encodeURIComponent(hallId)}`);
+          const stalls = data.stalls ?? [];
           const tbody = document.getElementById(`stalls-${hallId}`);
           if (!tbody) return;
           tbody.innerHTML = stalls.length === 0
@@ -487,8 +487,8 @@
       window.addStall = (hallId) => {
         const name = prompt("Stall name:");
         if (!name) return;
-        api(`/events/${encodeURIComponent(eventId)}/halls/${encodeURIComponent(hallId)}/stalls`, {
-          method: "POST", body: { name }
+        api(`/events/${encodeURIComponent(eventId)}/stalls`, {
+          method: "POST", body: { name, stall_code: name.toUpperCase().replace(/\s+/g, "-").slice(0, 20), hall_id: hallId }
         }).then(() => { toast("Stall added"); loadStalls(hallId); }).catch(e => showStatus("halls-status", e.message, "error"));
       };
 
@@ -589,7 +589,7 @@
       document.getElementById("branding-publish-btn").addEventListener("click", async () => {
         if (!confirm("Publish branding to all assigned fleet devices?")) return;
         try {
-          await api(`/branding/publish`, { method: "POST", body: { event_id: eventId } });
+          await api(`/events/${encodeURIComponent(eventId)}/branding/publish`, { method: "POST", body: {} });
           toast("Branding published to fleet");
         } catch (err) {
           showStatus("branding-status", err.message, "error");
@@ -682,8 +682,8 @@
 
       async function loadDevices() {
         try {
-          const data = await api(`/events/${encodeURIComponent(eventId)}/devices`);
-          const devices = data.devices ?? data ?? [];
+          const data = await api(`/devices?event_id=${encodeURIComponent(eventId)}`);
+          const devices = data.devices ?? [];
           const tbody = document.getElementById("devices-tbody");
           tbody.innerHTML = devices.length === 0
             ? `<tr><td colspan="6" class="empty">No devices assigned</td></tr>`
@@ -709,8 +709,8 @@
 
       async function loadAudit() {
         try {
-          const data = await api(`/admin/audit-log?event_id=${encodeURIComponent(eventId)}`);
-          const logs = data.logs ?? data.entries ?? data ?? [];
+          const data = await api(`/audit/logs?event_id=${encodeURIComponent(eventId)}`);
+          const logs = data.items ?? data.logs ?? [];
           const tbody = document.getElementById("audit-tbody");
           tbody.innerHTML = logs.length === 0
             ? `<tr><td colspan="4" class="empty">No audit entries</td></tr>`

@@ -27,7 +27,8 @@
       document.getElementById('err').textContent = 'No token in URL.';
       document.getElementById('err').hidden = false;
     } else {
-      fetch(api + '/s/' + token, { headers: { 'x-tenant-id': 'tenant-demo' } })
+      const tenantId = params.get('tenantId') || 'tenant-demo';
+      fetch(api + '/s/' + token, { headers: { 'x-tenant-id': tenantId } })
         .then(r => r.json())
         .then(d => {
           if (d.target_url) {

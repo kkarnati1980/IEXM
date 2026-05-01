@@ -186,8 +186,8 @@
           ).join("");
 
           // Load orgs for vendor assignment
-          const orgsData = await api("/organizations");
-          const orgs = (orgsData.organizations ?? orgsData ?? []).filter(o => o.type === "vendor");
+          const orgsData = await api("/orgs");
+          const orgs = (orgsData.organizations ?? []).filter(o => o.type === "vendor");
           const orgSel = document.getElementById("vendor-org-select");
           orgSel.innerHTML = `<option value="">— Select vendor org —</option>` +
             orgs.map(o => `<option value="${esc(o.id)}" ${stallData.organization_id === o.id ? "selected" : ""}>${esc(o.name)}</option>`).join("");
