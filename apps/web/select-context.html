@@ -103,8 +103,12 @@
         if (!selectedEventId) return;
         if (token) setToken(token);
         setActiveEventId(selectedEventId);
-        const dest = `organizer/event-detail.html?eventId=${encodeURIComponent(selectedEventId)}&token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
-        location.href = dest;
+        // Determine role from JWT to route to correct page
+        let role = "organizer_admin";
+        try { role = JSON.parse(atob(token.split(".")[1])).role ?? role; } catch {}
+        const ROLE_PAGES = { organizer_admin: "organizer.html", sponsor_user: "sponsor.html", vendor_manager: "vendor.html", ops_user: "ops/fleet.html" };
+        const page = ROLE_PAGES[role] || "organizer.html";
+        location.href = `${page}?eventId=${encodeURIComponent(selectedEventId)}&apiBase=${encodeURIComponent(apiBase)}`;
       });
 
       document.getElementById("logout-link").addEventListener("click", () => {

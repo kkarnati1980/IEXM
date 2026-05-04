@@ -59,7 +59,7 @@
         <div class="shell-title">
           <div class="eyebrow">Platform Admin</div>
           <strong id="page-title">Compliance &amp; Data Residency</strong>
-          <span class="muted" id="page-sub">Loading…</span>
+          <span class="muted" id="page-sub"></span>
         </div>
         <nav class="shell-nav">
           <a href="#" id="back-link">← Tenant Detail</a>
@@ -199,12 +199,11 @@
           document.getElementById("current-zone").textContent = c.residency_zone ?? "—";
           document.getElementById("detected-zone").textContent = c.detected_zone ?? "—";
           document.getElementById("last-verified").textContent = fmt(c.last_compliance_check_at ?? c.last_checked_at ?? c.last_verified_at);
-
-          loadHistory();
         } catch (err) {
           const el = document.getElementById("global-status");
           el.textContent = err.message; el.className = "status error"; el.hidden = false;
         }
+        loadHistory();
       }
 
       document.getElementById("save-settings-btn").addEventListener("click", async () => {
@@ -289,15 +288,16 @@
             <td class="muted">${esc(h.residency_zone ?? "—")}</td>
             <td class="muted" style="font-size:13px;">${esc(h.verified_by ?? "system")}</td>
           </tr>`).join("");
-        }
       }
 
       if (tenantId) {
         loadCompliance();
       } else {
-        document.getElementById("global-status").textContent = "No tenantId in URL";
+        document.getElementById("page-sub").textContent = "No tenant selected";
+        document.getElementById("global-status").textContent = "No tenantId in URL — navigate here from Tenant Detail.";
         document.getElementById("global-status").className = "status error";
         document.getElementById("global-status").hidden = false;
+        loadHistory();
       }
     </script>
   </body>

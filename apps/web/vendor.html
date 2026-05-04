@@ -321,7 +321,7 @@
       async function loadAll() {
         try {
           const [leadsResp, metricsResp, exportsResp, crmResp] = await Promise.all([
-            api(`/stalls/${enc(stallId)}/leads?event_id=${enc(eventId)}&limit=200`),
+            api(`/stalls/${enc(stallId)}/leads?event_id=${enc(eventId)}&limit=100`),
             api(`/stalls/${enc(stallId)}/dashboard-metrics?event_id=${enc(eventId)}`),
             api(`/exports?stall_id=${enc(stallId)}&event_id=${enc(eventId)}`).catch(() => ({ items: [] })),
             api(`/crm/connections?event_id=${enc(eventId)}`).catch(() => ({ items: [] }))

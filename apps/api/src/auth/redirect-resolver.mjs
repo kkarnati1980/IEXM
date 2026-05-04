@@ -26,11 +26,17 @@ export async function resolveRedirectTarget(userId, tenantId, repos) {
     );
     return {
       requires_context_selection: true,
-      events: eventAssignments.map((a) => ({
-        event_id: a.event_id,
-        event_name: eventRecords.find((e) => e?.id === a.event_id)?.name ?? null,
-        role: a.role
-      }))
+      events: eventAssignments.map((a) => {
+        const record = eventRecords.find((e) => e?.id === a.event_id);
+        return {
+          id: a.event_id,
+          name: record?.name ?? null,
+          status: record?.status ?? "live",
+          starts_at: record?.starts_at ?? null,
+          ends_at: record?.ends_at ?? null,
+          role: a.role
+        };
+      })
     };
   }
 

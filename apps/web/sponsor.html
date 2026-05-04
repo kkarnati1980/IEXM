@@ -316,8 +316,8 @@
           <div class="toolbar" style="margin-top:12px;"><a id="organizer-link" class="cta-link" href="./organizer.html">Open organizer freeze controls</a></div>
         </article>
 
-        <!-- SNAPSHOT WORKFLOW -->
-        <article class="card">
+        <!-- SNAPSHOT WORKFLOW (organizer-only) -->
+        <article class="card organizer-only">
           <div class="section-head"><div><div class="eyebrow">Snapshot Workflow</div><h2>Publish sponsor story</h2></div></div>
           <h2 id="snapshot-title">Latest sponsor snapshot</h2>
           <div id="latest-snapshot" class="list"><div class="item muted">No published snapshot yet.</div></div>
@@ -340,10 +340,10 @@
 
         <!-- SNAPSHOT DETAIL -->
         <article class="card">
-          <div class="section-head"><div><div class="eyebrow">Snapshot Detail</div><h2>Selected snapshot</h2></div></div>
+          <div class="section-head"><div><div class="eyebrow">Snapshot Detail</div></div></div>
           <h2 id="snapshot-detail-title">Select a snapshot</h2>
           <div id="snapshot-detail" class="list"><div class="item muted">Snapshot detail will appear here.</div></div>
-          <div class="toolbar" style="margin-top:12px;"><button id="request-export" class="secondary" type="button">Request snapshot export</button></div>
+          <div class="toolbar organizer-only" style="margin-top:12px;"><button id="request-export" class="secondary" type="button">Request snapshot export</button></div>
         </article>
 
         <!-- EXPORTS -->
@@ -372,6 +372,11 @@
       try { jwtPayload = JSON.parse(atob(TOKEN.split(".")[1])); } catch {}
       const eventId = jwtPayload.event_ids?.[0] || params.get("eventId") || "event-indiaexpo";
       const orgId   = jwtPayload.org_id || jwtPayload.organization_id || params.get("sponsorId") || "org-sponsor";
+
+      // Hide organizer-only controls from sponsor_user role
+      if (jwtPayload.role !== "organizer_admin") {
+        document.querySelectorAll(".organizer-only").forEach(el => { el.style.display = "none"; });
+      }
 
       // Sign-out
       $id("nav-signout").addEventListener("click", (e) => {

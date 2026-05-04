@@ -7625,7 +7625,7 @@ export function registerRoutes(router) {
       const now = new Date().toISOString();
       const dsr = await repos.dataSubjectRequests.create({
         id: nextId("dsr"), tenant_id: tenantId, event_id, attendee_id: resolvedAttendeeId,
-        request_type, status: "requested", submitted_at: now, created_at: now,
+        request_type, status: "requested", submitted_at: now, created_at: now, updated_at: now,
         export_file_url: null, export_expires_at: null, metadata: null
       });
       await writePrivacyAudit(repos, {

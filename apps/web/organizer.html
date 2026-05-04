@@ -201,11 +201,14 @@
               <div class="item muted">Load organizer data to show event status, attendee count, and incident summary.</div>
             </div>
           </div>
-          <div class="toolbar" style="margin-top:16px;">
-            <div><label class="muted" for="event-id">Event ID</label><input id="event-id" type="text" value="event-demo"></div>
-            <div><label class="muted" for="auth-token">Organizer auth token</label><input id="auth-token" type="text" value="organizer-token"></div>
-            <div><label class="muted" for="admin-auth">Admin token (freeze ops)</label><input id="admin-auth" type="text" value="admin-token"></div>
+          <div class="toolbar" style="margin-top:16px;display:none;" aria-hidden="true">
+            <div><label class="muted" for="event-id">Event ID</label><input id="event-id" type="text"></div>
+            <div><label class="muted" for="auth-token">Organizer auth token</label><input id="auth-token" type="text"></div>
+            <div><label class="muted" for="admin-auth">Admin token (freeze ops)</label><input id="admin-auth" type="text"></div>
             <div style="flex:0 0 auto;align-self:end;"><button id="refresh-btn" class="secondary" type="button">Refresh</button></div>
+          </div>
+          <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
+            <button id="refresh-btn-visible" class="secondary" type="button" onclick="document.getElementById('refresh-btn').click()">↻ Refresh dashboard</button>
           </div>
         </article>
 
@@ -510,9 +513,15 @@
       const apiBase = params.get("apiBase") || (window.location.protocol==="file:" ? "http://127.0.0.1:3000" : window.location.origin);
       const $id = id => document.getElementById(id);
 
-      $id("event-id").value   = params.get("eventId") || "event-demo";
-      $id("auth-token").value = params.get("auth") || "organizer-token";
-      $id("admin-auth").value = params.get("adminAuth") || "admin-token";
+      // Auth — read JWT from localStorage, redirect to login if missing
+      const _storedToken = localStorage.getItem("codex.token");
+      if (!_storedToken) { location.href = "/login.html"; throw new Error("Not authenticated"); }
+      let _jwtPayload = {};
+      try { _jwtPayload = JSON.parse(atob(_storedToken.split(".")[1])); } catch {}
+
+      $id("event-id").value   = params.get("eventId") || _jwtPayload.event_ids?.[0] || "";
+      $id("auth-token").value = _storedToken;
+      $id("admin-auth").value = _storedToken;
 
       let OVERVIEW = null;
       let HEATMAP = null;
@@ -1133,8 +1142,8 @@
       function syncUrl(){
         const u=new URL(window.location.href);
         wp(u,"eventId",$id("event-id").value.trim());
-        wp(u,"auth",$id("auth-token").value.trim());
-        wp(u,"adminAuth",$id("admin-auth").value.trim());
+        u.searchParams.delete("auth");
+        u.searchParams.delete("adminAuth");
         window.history.replaceState({},"",u);
         const so=new URL("./sponsor.html",window.location.href);
         so.searchParams.set("eventId",$id("event-id").value.trim());
