@@ -318,7 +318,7 @@
           const sid = $("stall-id").value.trim();
           const [leadsResp, metricsResp, exportsResp, crmResp] = await Promise.all([
             api(`/stalls/${enc(sid)}/leads?event_id=${enc(eid)}&limit=200`),
-            api(`/stalls/${enc(sid)}/metrics?event_id=${enc(eid)}`),
+            api(`/stalls/${enc(sid)}/dashboard-metrics?event_id=${enc(eid)}`),
             api(`/exports?stall_id=${enc(sid)}&event_id=${enc(eid)}`).catch(() => ({ items: [] })),
             api(`/crm/connections?event_id=${enc(eid)}`).catch(() => ({ items: [] }))
           ]);

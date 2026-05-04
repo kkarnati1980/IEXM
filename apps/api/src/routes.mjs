@@ -6162,6 +6162,21 @@ export function registerRoutes(router) {
     }
   });
 
+  // GET /events/:eventId/data-policy
+  router.addRoute({
+    id: "events-data-policy-get",
+    method: "GET",
+    path: "/events/:eventId/data-policy",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin", "sponsor_user"],
+    handler: async ({ params, principal, repos }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const policy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { policy };
+    }
+  });
+
   // POST /events/:eventId/data-policy
   router.addRoute({
     id: "events-data-policy",
@@ -6267,6 +6282,21 @@ export function registerRoutes(router) {
       }
 
       return { policy };
+    }
+  });
+
+  // GET /events/:eventId/halls
+  router.addRoute({
+    id: "halls-list",
+    method: "GET",
+    path: "/events/:eventId/halls",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ params, principal, repos }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const halls = await repos.halls.listByEvent(principal.tenant_id, event.id);
+      return { halls };
     }
   });
 
@@ -6411,6 +6441,20 @@ export function registerRoutes(router) {
     }
   });
 
+  // GET /stalls/:stallId
+  router.addRoute({
+    id: "stalls-get",
+    method: "GET",
+    path: "/stalls/:stallId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ params, principal, repos }) => {
+      const stall = await repos.stalls.findById(principal.tenant_id, params.stallId);
+      assertEventScoped(principal, stall.event_id);
+      return { stall };
+    }
+  });
+
   // PATCH /stalls/:stallId
   router.addRoute({
     id: "stalls-patch",
@@ -6471,6 +6515,21 @@ export function registerRoutes(router) {
     }
   });
 
+  // GET /events/:eventId/sponsor-packages
+  router.addRoute({
+    id: "sponsor-packages-list",
+    method: "GET",
+    path: "/events/:eventId/sponsor-packages",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ params, principal, repos }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const packages = await repos.sponsorPackages.listByEvent(principal.tenant_id, event.id);
+      return { packages };
+    }
+  });
+
   // POST /events/:eventId/sponsor-packages
   router.addRoute({
     id: "sponsor-packages-create",
@@ -6503,6 +6562,20 @@ export function registerRoutes(router) {
         created_at: new Date().toISOString()
       });
       return { package_id: pkg.id, name: pkg.name, tier: pkg.tier, org_id: pkg.sponsor_organization_id };
+    }
+  });
+
+  // GET /sponsor-packages/:packageId
+  router.addRoute({
+    id: "sponsor-packages-get",
+    method: "GET",
+    path: "/sponsor-packages/:packageId",
+    authRequired: true,
+    allowedRoles: ["platform_admin", "organizer_admin"],
+    handler: async ({ params, principal, repos }) => {
+      const pkg = await repos.sponsorPackages.findById(principal.tenant_id, params.packageId);
+      assertEventScoped(principal, pkg.event_id);
+      return { package: pkg };
     }
   });
 
