@@ -56,6 +56,7 @@
       .tag.warn{color:var(--warn);background:rgba(180,108,20,.08);border-color:rgba(180,108,20,.2);}
       .tag.danger{color:var(--danger);background:rgba(192,58,58,.08);border-color:rgba(192,58,58,.2);}
       .tag.muted{color:var(--muted);background:rgba(17,34,51,.05);}
+      .tag.info{color:var(--accent);background:rgba(45,125,216,.08);border-color:rgba(45,125,216,.2);}
       .list{display:grid;gap:8px;}
       .item{border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.65);padding:12px;}
       .detail-section{display:grid;gap:6px;margin-bottom:16px;}
@@ -253,7 +254,9 @@
         for (const d of FILTERED) {
           const status     = d.status || "unknown";
           const statusCls  = (status === "live" || status === "assigned" || status === "online") ? "good"
-                           : (status === "repair" || status === "error") ? "danger" : "muted";
+                           : status === "inventory" ? "info"
+                           : status === "repair" ? "warn"
+                           : (status === "retired" || status === "error") ? "danger" : "muted";
           const assignment = d.stall_id || d.zone_id || d.assignment_id || "—";
           const lastSeen   = d.last_seen_at || d.last_heartbeat_at || d.updated_at;
           const tr = document.createElement("tr");
@@ -273,20 +276,22 @@
       function selectDevice(d) {
         SELECTED = d;
         renderTable();
-        $("detail-name").textContent = d.label || d.name || d.serial_number || d.id;
-        $("dp-id").textContent       = d.id;
-        $("dp-label").textContent    = d.label || d.name || d.serial_number || "—";
-        $("dp-type").textContent     = humanize(d.device_type || d.type || "kiosk");
-        $("dp-status").textContent   = d.status || "unknown";
-        $("dp-last-seen").textContent = fmtDate(d.last_seen_at || d.last_heartbeat_at || d.updated_at);
+        $("detail-name").textContent  = d.serial_number || d.label || d.id;
+        $("dp-id").textContent        = d.id;
+        $("dp-label").textContent     = d.serial_number || d.label || "—";
+        $("dp-type").textContent      = humanize(d.device_type || d.type || "kiosk");
+        $("dp-status").textContent    = d.status || "unknown";
+        $("dp-last-seen").textContent = fmtDate(d.last_seen_at || d.last_heartbeat_at || d.config_lease_expires_at);
 
         const ad = $("assignment-detail"); ad.innerHTML = "";
-        if (d.stall_id)  addItem(ad, `Stall: ${d.stall_id}`);
-        if (d.zone_id)   addItem(ad, `Zone: ${d.zone_id}`);
         if (d.event_id)  addItem(ad, `Event: ${d.event_id}`);
-        if (!d.stall_id && !d.zone_id) addItem(ad, "Unassigned");
+        if (d.stall_id)  addItem(ad, `Stall: ${d.stall_id}`);
+        if (!d.stall_id && !d.event_id) addItem(ad, "Unassigned — in inventory");
+        if (d.config_lease_expires_at) addItem(ad, `Config lease: ${fmtDate(d.config_lease_expires_at)}`);
 
         const act = $("activity-detail"); act.innerHTML = "";
+        addItem(act, `Status: ${humanize(d.status || "unknown")}`);
+        addItem(act, `Serial: ${d.serial_number || d.id}`);
         if (d.last_interaction_at) addItem(act, `Last interaction: ${fmtDate(d.last_interaction_at)}`);
         if (d.interaction_count != null) addItem(act, `Total interactions: ${d.interaction_count}`);
         if (!d.last_interaction_at) addItem(act, "No recorded interactions.");

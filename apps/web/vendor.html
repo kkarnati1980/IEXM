@@ -397,7 +397,13 @@
         const page = FILTERED.slice(PAGE * PAGE_SIZE, (PAGE + 1) * PAGE_SIZE);
 
         if (!page.length) {
-          tbody.innerHTML = `<tr><td colspan="7" class="muted" style="text-align:center;padding:20px;">No leads match current filters.</td></tr>`;
+          const isNoConsent = !$("filter-score").value && !$("filter-crm").value && $("filter-consent").value !== "anonymous" && !$("filter-search").value && ALL_LEADS.length > 0 && ALL_LEADS.every(l => !l.vendor_release_allowed);
+          const msg = isNoConsent
+            ? "No consented leads yet. Leads appear here when attendees tap at your stall and give vendor consent."
+            : ALL_LEADS.length === 0
+              ? "No interactions recorded at this stall yet."
+              : "No leads match current filters.";
+          tbody.innerHTML = `<tr><td colspan="7" class="muted" style="text-align:center;padding:24px;">${esc(msg)}</td></tr>`;
           renderPagination();
           return;
         }

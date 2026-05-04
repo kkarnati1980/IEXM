@@ -255,6 +255,13 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
     scope: "event_sponsor",
     description: "View sponsor export history"
   }),
+  "event-sponsor-analytics": entry({
+    permission: "sponsor.analytics.view",
+    roles: [ROLES.sponsorUser, ROLES.organizerAdmin, ROLES.platformAdmin],
+    scope: "event",
+    description: "View aggregate event analytics for sponsor view (no PII)",
+    sensitivity: "internal"
+  }),
   "organizer-sponsor-report-snapshot-create": entry({
     permission: "sponsor.snapshots.create",
     roles: organizer,

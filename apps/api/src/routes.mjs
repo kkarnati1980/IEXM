@@ -2167,6 +2167,62 @@ export function registerRoutes(router) {
     auditEventType: "sponsor.exports.view"
   });
 
+  // GET /events/:eventId/sponsor-analytics — aggregate stats for sponsor view (no PII)
+  router.addRoute({
+    id: "event-sponsor-analytics",
+    method: "GET",
+    path: "/events/:eventId/sponsor-analytics",
+    authRequired: true,
+    allowedRoles: ["sponsor_user", "organizer_admin", "platform_admin"],
+    handler: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const interactions = await repos.interactions.listByEvent(principal.tenant_id, event.id);
+      const total = interactions.length;
+      const unique = new Set(interactions.map((i) => i.attendee_id).filter(Boolean)).size;
+      const consented = interactions.filter((i) =>
+        ["vendor_only", "vendor_and_sponsor", "sponsor_only"].includes(i.consent_status)
+      ).length;
+      const sponsorConsented = interactions.filter((i) =>
+        ["vendor_and_sponsor", "sponsor_only"].includes(i.consent_status)
+      ).length;
+      const consentRate = total === 0 ? 0 : Number(((consented / total) * 100).toFixed(1));
+      // Top hours
+      const hourCounts = {};
+      for (const i of interactions) {
+        const h = new Date(i.created_at).toISOString().slice(0, 13) + ":00:00Z";
+        hourCounts[h] = (hourCounts[h] ?? 0) + 1;
+      }
+      const topHours = Object.entries(hourCounts)
+        .map(([hour, count]) => ({ hour, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 6);
+      // Top stalls
+      const stallCounts = {};
+      for (const i of interactions) {
+        if (i.stall_id) stallCounts[i.stall_id] = (stallCounts[i.stall_id] ?? 0) + 1;
+      }
+      const stalls = await repos.stalls.listByEvent(principal.tenant_id, event.id);
+      const stallNameMap = new Map(stalls.map((s) => [s.id, s.name]));
+      const topStalls = Object.entries(stallCounts)
+        .map(([stall_id, count]) => ({ stall_id, stall_name: stallNameMap.get(stall_id) ?? stall_id, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 6);
+      return {
+        event_id: event.id,
+        event_name: event.name,
+        total_interactions: total,
+        unique_visitors: unique,
+        consented_count: consented,
+        sponsor_consented_count: sponsorConsented,
+        consent_rate_percent: consentRate,
+        top_hours: topHours,
+        top_stalls: topStalls
+      };
+    },
+    auditEventType: "sponsor.analytics.view"
+  });
+
   router.addRoute({
     id: "organizer-sponsor-report-snapshot-create",
     method: "POST",
@@ -6683,7 +6739,7 @@ export function registerRoutes(router) {
     }
   });
 
-  // GET /devices — list devices for tenant
+  // GET /devices — list devices for tenant (includes active assignment info)
   router.addRoute({
     id: "devices-list",
     method: "GET",
@@ -6693,11 +6749,19 @@ export function registerRoutes(router) {
     handler: async ({ repos, principal, query }) => {
       let devices = await repos.devices.listByTenant(principal.tenant_id);
       if (query?.status) devices = devices.filter((d) => d.status === query.status);
+      // Get all active assignments to merge in
+      const allAssignments = query?.event_id
+        ? await repos.deviceAssignments.listByEvent(principal.tenant_id, query.event_id)
+        : [];
+      const assignmentByDeviceId = new Map(allAssignments.map((a) => [a.device_id, a]));
       if (query?.event_id) {
-        const assignments = await repos.deviceAssignments.listByEvent(principal.tenant_id, query.event_id);
-        const ids = new Set(assignments.map((a) => a.device_id));
-        devices = devices.filter((d) => ids.has(d.id));
+        devices = devices.filter((d) => assignmentByDeviceId.has(d.id));
       }
+      // Merge assignment fields into device objects
+      devices = devices.map((d) => {
+        const a = assignmentByDeviceId.get(d.id);
+        return a ? { ...d, event_id: a.event_id, stall_id: a.stall_id } : d;
+      });
       return { devices };
     }
   });
