@@ -518,6 +518,12 @@
       if (!_storedToken) { location.href = "/login.html"; throw new Error("Not authenticated"); }
       let _jwtPayload = {};
       try { _jwtPayload = JSON.parse(atob(_storedToken.split(".")[1])); } catch {}
+      // Role guard — only organizer_admin and platform_admin may use this page
+      const _role = _jwtPayload.role || "";
+      if (_role !== "organizer_admin" && _role !== "platform_admin") {
+        location.href = "/login.html";
+        throw new Error("Access denied");
+      }
 
       $id("event-id").value   = params.get("eventId") || _jwtPayload.event_ids?.[0] || "";
       $id("auth-token").value = _storedToken;
@@ -540,6 +546,7 @@
       async function loadAll() {
         try {
           const eid = $id("event-id").value.trim();
+          if (!eid) { showMsg("No event ID — check your account has an event assignment.", "error"); return; }
           const [overview, snaps] = await Promise.all([
             api(`/organizer/events/${enc(eid)}/overview`),
             api(`/organizer/events/${enc(eid)}/snapshots`).catch(()=>({items:[]}))
