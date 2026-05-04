@@ -81,6 +81,7 @@
           <a href="../index.html">Launchpad</a>
           <a href="../organizer.html">Organizer Ops</a>
           <a href="./fleet.html" class="active">Fleet</a>
+          <a href="../login.html" id="nav-signout">Sign out</a>
         </nav>
       </div>
     </div>
@@ -88,14 +89,9 @@
     <main>
       <section class="column">
 
-        <!-- CONFIG BAR -->
-        <article class="card">
+        <!-- STATUS BAR -->
+        <article class="card" id="status-card">
           <div id="message" class="status" hidden></div>
-          <div class="toolbar">
-            <div><label class="muted" style="font-size:12px;display:block;margin-bottom:4px;">Event ID</label><input id="event-id" value="event-demo" type="text"></div>
-            <div><label class="muted" style="font-size:12px;display:block;margin-bottom:4px;">Auth token</label><input id="auth-token" value="ops-token" type="text"></div>
-            <div style="align-self:end;flex:0 0 auto;"><button class="primary" onclick="loadAll()">Load fleet</button></div>
-          </div>
         </article>
 
         <!-- METRICS -->
@@ -187,8 +183,19 @@
       const apiBase = params.get("apiBase") || (location.protocol === "file:" ? "http://127.0.0.1:3000" : location.origin);
       const $       = id => document.getElementById(id);
 
-      $("event-id").value   = params.get("eventId") || "event-demo";
-      $("auth-token").value = params.get("auth")    || "ops-token";
+      // Auth — read JWT from localStorage, redirect to login if missing
+      const TOKEN = localStorage.getItem("codex.token");
+      if (!TOKEN) { location.href = "/login.html"; throw new Error("Not authenticated"); }
+      let jwtPayload = {};
+      try { jwtPayload = JSON.parse(atob(TOKEN.split(".")[1])); } catch {}
+      const eventId = jwtPayload.event_ids?.[0] || params.get("eventId") || "event-indiaexpo";
+
+      // Sign-out
+      $("nav-signout").addEventListener("click", (e) => {
+        e.preventDefault();
+        localStorage.removeItem("codex.token");
+        location.href = "/login.html";
+      });
 
       let ALL_DEVICES = [];
       let FILTERED    = [];
@@ -199,12 +206,11 @@
 
       async function loadAll() {
         try {
-          const eid = $("event-id").value.trim();
-          const devices = await api(`/devices?event_id=${enc(eid)}`).catch(() => ({ items: [] }));
+          const devices = await api(`/devices?event_id=${enc(eventId)}`).catch(() => ({ items: [] }));
           ALL_DEVICES = devices.items || devices.devices || [];
           renderMetrics();
           applyFilters();
-          loadIotRuns(eid);
+          loadIotRuns(eventId);
           syncUrl();
           showMsg("Fleet loaded.", "ok");
         } catch(e) { showMsg(e.message, "error"); }
@@ -212,14 +218,14 @@
 
       function renderMetrics() {
         const total    = ALL_DEVICES.length;
-        const online   = ALL_DEVICES.filter(d => d.status === "online").length;
-        const offline  = ALL_DEVICES.filter(d => d.status === "offline" || d.status === "error").length;
-        const assigned = ALL_DEVICES.filter(d => d.assignment_id || d.stall_id || d.zone_id).length;
+        const online   = ALL_DEVICES.filter(d => d.status === "live" || d.status === "assigned" || d.status === "online").length;
+        const offline  = ALL_DEVICES.filter(d => d.status === "repair" || d.status === "retired" || d.status === "offline" || d.status === "error").length;
+        const assigned = ALL_DEVICES.filter(d => d.status === "live" || d.status === "assigned").length;
         $("m-total").textContent    = total;
         $("m-online").textContent   = online;
         $("m-offline").textContent  = offline;
         $("m-assigned").textContent = assigned;
-        $("page-subtitle").textContent = `${total} devices — ${online} online · ${offline} offline`;
+        $("page-subtitle").textContent = `${total} devices — ${online} active · ${offline} offline`;
       }
 
       function applyFilters() {
@@ -246,14 +252,15 @@
         }
         for (const d of FILTERED) {
           const status     = d.status || "unknown";
-          const statusCls  = status === "online" ? "good" : status === "error" ? "danger" : "muted";
+          const statusCls  = (status === "live" || status === "assigned" || status === "online") ? "good"
+                           : (status === "repair" || status === "error") ? "danger" : "muted";
           const assignment = d.stall_id || d.zone_id || d.assignment_id || "—";
           const lastSeen   = d.last_seen_at || d.last_heartbeat_at || d.updated_at;
           const tr = document.createElement("tr");
           tr.className = SELECTED?.id === d.id ? "active" : "";
           tr.innerHTML = `
             <td class="muted" style="white-space:nowrap;font-size:12px;">${esc(d.id)}</td>
-            <td>${esc(d.label || d.name || "—")}</td>
+            <td>${esc(d.label || d.name || d.serial_number || "—")}</td>
             <td class="muted">${esc(humanize(d.device_type || d.type || "kiosk"))}</td>
             <td><span class="tag ${statusCls}">${esc(status)}</span></td>
             <td class="muted">${esc(assignment)}</td>
@@ -266,9 +273,9 @@
       function selectDevice(d) {
         SELECTED = d;
         renderTable();
-        $("detail-name").textContent = d.label || d.name || d.id;
+        $("detail-name").textContent = d.label || d.name || d.serial_number || d.id;
         $("dp-id").textContent       = d.id;
-        $("dp-label").textContent    = d.label || d.name || "—";
+        $("dp-label").textContent    = d.label || d.name || d.serial_number || "—";
         $("dp-type").textContent     = humanize(d.device_type || d.type || "kiosk");
         $("dp-status").textContent   = d.status || "unknown";
         $("dp-last-seen").textContent = fmtDate(d.last_seen_at || d.last_heartbeat_at || d.updated_at);
@@ -307,8 +314,6 @@
       }
       function syncUrl() {
         const u = new URL(location.href);
-        wp(u, "eventId", $("event-id").value.trim());
-        wp(u, "auth",    $("auth-token").value.trim());
         if (SELECTED?.id) wp(u, "deviceId", SELECTED.id); else u.searchParams.delete("deviceId");
         history.replaceState({}, "", u);
       }
@@ -320,14 +325,10 @@
       function fmtTime(v) { if (!v) return "—"; return new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
       function fmtDate(v) { if (!v) return "—"; return new Date(v).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
 
-      function getTenantIdFromToken(t) { try { return JSON.parse(atob(t.split(".")[1])).tenant_id || null; } catch { return null; } }
-
       async function api(path, options = {}) {
-        const token = $("auth-token").value.trim();
-        if (!token) throw new Error("Auth token required.");
         const resp = await fetch(`${apiBase}${path}`, {
           method: options.method || "GET",
-          headers: { "content-type": "application/json", "authorization": `Bearer ${token}`, "x-tenant-id": getTenantIdFromToken(token) || "tenant-demo" },
+          headers: { "content-type": "application/json", "authorization": `Bearer ${TOKEN}`, "x-tenant-id": jwtPayload.tenant_id || "tenant-demo" },
           cache: "no-store",
           body: options.body ? JSON.stringify(options.body) : undefined
         });
@@ -335,6 +336,8 @@
         if (!resp.ok) throw new Error(payload.error || `Request failed ${resp.status}`);
         return payload;
       }
+
+      loadAll();
     </script>
   </body>
 </html>

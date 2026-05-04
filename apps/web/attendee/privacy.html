@@ -91,7 +91,8 @@
       const params = new URLSearchParams(location.search);
       const apiBase = params.get("apiBase") ?? window.location.origin;
       const token = params.get("token") ?? localStorage.getItem("codex.attendee_token") ?? "attendee-token";
-      const eventId = params.get("event_id") ?? params.get("eventId") ?? "";
+      const eventId = params.get("event_id") ?? params.get("eventId") ?? "event-indiaexpo";
+      const attendeeId = params.get("attendee_id") ?? "att-ie-001";
 
       function esc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
       function fmt(iso) { return iso ? new Date(iso).toLocaleDateString() : "—"; }
@@ -124,7 +125,7 @@
         try {
           const data = await api("/attendee/privacy/dsr", {
             method: "POST",
-            body: { request_type: "export", event_id: eventId }
+            body: { request_type: "export", event_id: eventId, attendee_id: attendeeId }
           });
           currentExportDsrId = data.dsr_id ?? data.id;
           document.getElementById("export-status").hidden = false;
@@ -204,7 +205,7 @@
         try {
           const data = await api("/attendee/privacy/dsr", {
             method: "POST",
-            body: { request_type: "delete", event_id: eventId, email_confirmation: deleteEmailInput.value }
+            body: { request_type: "delete", event_id: eventId, attendee_id: attendeeId, email_confirmation: deleteEmailInput.value }
           });
           currentDeleteDsrId = data.dsr_id ?? data.id;
           document.getElementById("delete-status").hidden = false;
@@ -244,7 +245,7 @@
       async function loadRequests() {
         const tbody = document.getElementById("requests-tbody");
         try {
-          const data = await api("/attendee/privacy/dsr");
+          const data = await api(`/attendee/privacy/dsr?attendee_id=${encodeURIComponent(attendeeId)}`);
           const items = data.requests ?? data.items ?? (Array.isArray(data) ? data : []);
           if (!items.length) {
             tbody.innerHTML = `<tr><td colspan="4" class="empty">No requests yet</td></tr>`;
@@ -252,7 +253,7 @@
           }
           tbody.innerHTML = items.map(r => `
             <tr>
-              <td>${fmt(r.created_at)}</td>
+              <td>${fmt(r.submitted_at ?? r.created_at)}</td>
               <td><span class="badge">${esc(r.request_type)}</span></td>
               <td><span class="badge ${esc(r.status)}">${esc(r.status)}</span></td>
               <td class="muted">${fmt(r.completed_at)}</td>

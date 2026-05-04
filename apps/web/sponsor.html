@@ -160,6 +160,7 @@
           <a href="./index.html">Launchpad</a>
           <a href="./organizer.html" id="nav-organizer">Organizer Ops</a>
           <a href="./sponsor.html" class="active" id="nav-sponsor">Sponsor Dashboard</a>
+          <a href="./login.html" id="nav-signout">Sign out</a>
         </nav>
       </div>
     </div>
@@ -184,11 +185,8 @@
               <div class="item muted">Load sponsor data to show event, role, and snapshot posture.</div>
             </div>
           </div>
-          <div class="toolbar" style="margin-top:16px;">
-            <div><label class="muted" for="event-id">Event ID</label><input id="event-id" type="text" value="event-demo"></div>
-            <div><label class="muted" for="sponsor-id">Sponsor org ID</label><input id="sponsor-id" type="text" value="org-sponsor"></div>
-            <div><label class="muted" for="auth-token">Auth token</label><input id="auth-token" type="text" value="sponsor-token"></div>
-            <div style="flex:0 0 auto;align-self:end;"><button id="refresh-page" class="secondary" type="button">Refresh dashboard</button></div>
+          <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
+            <button id="refresh-page" class="secondary" type="button">↻ Refresh dashboard</button>
           </div>
         </article>
 
@@ -367,9 +365,20 @@
 
       const $id = id => document.getElementById(id);
 
-      $id("event-id").value   = params.get("eventId")   || "event-demo";
-      $id("sponsor-id").value = params.get("sponsorId") || "org-sponsor";
-      $id("auth-token").value = params.get("auth")      || "sponsor-token";
+      // Auth — read JWT from localStorage, redirect to login if missing
+      const TOKEN = localStorage.getItem("codex.token");
+      if (!TOKEN) { location.href = "/login.html"; throw new Error("Not authenticated"); }
+      let jwtPayload = {};
+      try { jwtPayload = JSON.parse(atob(TOKEN.split(".")[1])); } catch {}
+      const eventId = jwtPayload.event_ids?.[0] || params.get("eventId") || "event-indiaexpo";
+      const orgId   = jwtPayload.org_id || jwtPayload.organization_id || params.get("sponsorId") || "org-sponsor";
+
+      // Sign-out
+      $id("nav-signout").addEventListener("click", (e) => {
+        e.preventDefault();
+        localStorage.removeItem("codex.token");
+        location.href = "/login.html";
+      });
 
       let DB = null; // current dashboard payload
       let HEATMAP = null;
@@ -387,23 +396,21 @@
       /* ── LOAD ──────────────────────────────────────── */
       async function loadAll() {
         try {
-          const eid = $id("event-id").value.trim();
-          const sid = $id("sponsor-id").value.trim();
           const [dash, snaps, exps] = await Promise.all([
-            api(`/sponsors/${enc(sid)}/metrics?event_id=${enc(eid)}`),
-            api(`/sponsors/${enc(sid)}/report-snapshots?event_id=${enc(eid)}`),
-            api(`/sponsors/${enc(sid)}/exports?event_id=${enc(eid)}`)
+            api(`/sponsors/${enc(orgId)}/metrics?event_id=${enc(eventId)}`),
+            api(`/sponsors/${enc(orgId)}/report-snapshots?event_id=${enc(eventId)}`),
+            api(`/sponsors/${enc(orgId)}/exports?event_id=${enc(eventId)}`)
           ]);
           DB = dash;
           snapshots = snaps.items || [];
           exports_ = exps.items || [];
 
-          try { HEATMAP = await api(`/events/${enc(eid)}/heatmap`); } catch { HEATMAP = null; }
+          try { HEATMAP = await api(`/events/${enc(eventId)}/heatmap`); } catch { HEATMAP = null; }
 
           renderDashboard();
-          renderFunnel();       // SP-03
-          window._renderHeatmap(); // SP-02
-          renderAudienceInsights(); // SP-04
+          renderFunnel();
+          window._renderHeatmap();
+          renderAudienceInsights();
           renderSnapshots();
           renderExports();
           syncUrl();
@@ -731,8 +738,7 @@
 
       async function publishSnapshot() {
         try {
-          const eid=$id("event-id").value.trim(), sid=$id("sponsor-id").value.trim();
-          const res = await api(`/organizer/events/${enc(eid)}/sponsors/${enc(sid)}/report-snapshots`,{method:"POST",body:{note:$id("snapshot-note").value.trim()||null}});
+          await api(`/organizer/events/${enc(eventId)}/sponsors/${enc(orgId)}/report-snapshots`,{method:"POST",body:{note:$id("snapshot-note").value.trim()||null}});
           $id("snapshot-note").value="";
           await loadAll();
           showMsg("Snapshot published.", "ok");
@@ -765,7 +771,7 @@
       async function requestExport(){
         if(!selectedSnap){showMsg("Select a snapshot first.","error");return;}
         try{
-          await api("/exports/request",{method:"POST",body:{event_id:$id("event-id").value.trim(),export_type:"sponsor_dashboard_snapshot",filters:{snapshot_id:selectedSnap.id,sponsor_id:$id("sponsor-id").value.trim()}}});
+          await api("/exports/request",{method:"POST",body:{event_id:eventId,export_type:"sponsor_dashboard_snapshot",filters:{snapshot_id:selectedSnap.id,sponsor_id:orgId}}});
           await loadAll();
           showMsg("Export requested.","ok");
         }catch(e){showMsg(e.message,"error");}
@@ -793,9 +799,6 @@
       }
       function syncUrl(){
         const u=new URL(window.location.href);
-        wp(u,"eventId",$id("event-id").value.trim());
-        wp(u,"sponsorId",$id("sponsor-id").value.trim());
-        wp(u,"auth",$id("auth-token").value.trim());
         if(selectedSnap?.id) wp(u,"snapshotId",selectedSnap.id); else u.searchParams.delete("snapshotId");
         window.history.replaceState({},"",u);
       }
@@ -807,12 +810,8 @@
       function esc(v){return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");}
       function enc(v){return encodeURIComponent(v);}
 
-      function getTenantIdFromToken(t) { try { return JSON.parse(atob(t.split(".")[1])).tenant_id || null; } catch { return null; } }
-
       async function api(path,options={}){
-        const token=$id("auth-token").value.trim();
-        if(!token) throw new Error("Auth token required.");
-        const resp=await fetch(`${apiBase}${path}`,{method:options.method||"GET",headers:{"content-type":"application/json","authorization":`Bearer ${token}`,"x-tenant-id":getTenantIdFromToken(token)||"tenant-demo",...(options.headers||{})},cache:"no-store",body:options.body?JSON.stringify(options.body):undefined});
+        const resp=await fetch(`${apiBase}${path}`,{method:options.method||"GET",headers:{"content-type":"application/json","authorization":`Bearer ${TOKEN}`,"x-tenant-id":jwtPayload.tenant_id||"tenant-demo",...(options.headers||{})},cache:"no-store",body:options.body?JSON.stringify(options.body):undefined});
         const payload=await resp.json().catch(()=>({}));
         if(!resp.ok) throw new Error(payload.error||`Request failed with ${resp.status}`);
         return payload;
