@@ -174,9 +174,10 @@
           <span class="muted" id="page-subtitle">Live event operations, freeze controls, and analytics.</span>
         </div>
         <nav class="shell-nav">
-          <a href="./index.html">Launchpad</a>
           <a href="./organizer.html" class="active" id="nav-organizer">Organizer Ops</a>
-          <a href="./sponsor.html" id="nav-sponsor">Sponsor Dashboard</a>
+          <a href="./organizer/events.html" id="nav-events">My Events</a>
+          <a href="./account.html" id="nav-account">My Account</a>
+          <a href="./login.html" id="nav-signout">Sign out</a>
         </nav>
       </div>
     </div>
@@ -525,13 +526,25 @@
         throw new Error("Access denied");
       }
 
-      $id("event-id").value   = params.get("eventId") || _jwtPayload.event_ids?.[0] || "";
+      // Prefer JWT event_ids over URL param to avoid stale event-demo fallback
+      const _urlEventId = params.get("eventId");
+      const _jwtEventId = _jwtPayload.event_ids?.[0] || "";
+      // Only use URL param if it's in the JWT's allowed event list
+      const _resolvedEventId = (_urlEventId && _jwtPayload.event_ids?.includes(_urlEventId))
+        ? _urlEventId : _jwtEventId;
+      $id("event-id").value   = _resolvedEventId;
       $id("auth-token").value = _storedToken;
       $id("admin-auth").value = _storedToken;
 
       let OVERVIEW = null;
       let HEATMAP = null;
       let SNAPS = [];
+
+      $id("nav-signout").addEventListener("click", (e) => {
+        e.preventDefault();
+        localStorage.removeItem("codex.token");
+        location.href = "/login.html";
+      });
 
       $id("refresh-btn").addEventListener("click", loadAll);
       $id("btn-freeze-open").addEventListener("click", () => doFreeze("open"));
@@ -632,7 +645,6 @@
             const u = new URL("./sponsor.html", window.location.href);
             u.searchParams.set("eventId", $id("event-id").value.trim());
             u.searchParams.set("sponsorId", s.sponsor_id);
-            u.searchParams.set("auth", $id("auth-token").value.trim());
             window.open(u.pathname+u.search, "_blank");
           });
           sr.appendChild(tr);
@@ -1002,7 +1014,7 @@
       async function loadDataPolicy() {
         const eid = $id("event-id").value.trim();
         try {
-          const policy = await api(`/organizer/events/${enc(eid)}/data-policy`);
+          const policy = await api(`/organizer/events/${enc(eid)}/data-control`);
           const p = policy.policy || policy;
           setToggle("pol-vendor-exports",  "lbl-vendor-exports",  p.vendor_exports_enabled  ?? true);
           setToggle("pol-sponsor-pii",     "lbl-sponsor-pii",     p.sponsor_pii_enabled     ?? false);
@@ -1027,7 +1039,7 @@
         const eid = $id("event-id").value.trim();
         const ps = $id("policy-status");
         try {
-          await api(`/organizer/events/${enc(eid)}/data-policy`, {
+          await api(`/organizer/events/${enc(eid)}/data-control`, {
             method: "PUT", adminAuth: true,
             body: {
               vendor_exports_enabled:           $id("pol-vendor-exports").checked,
@@ -1152,9 +1164,7 @@
         u.searchParams.delete("auth");
         u.searchParams.delete("adminAuth");
         window.history.replaceState({},"",u);
-        const so=new URL("./sponsor.html",window.location.href);
-        so.searchParams.set("eventId",$id("event-id").value.trim());
-        $id("nav-sponsor").href=so.pathname+so.search;
+        // nav-sponsor removed; no sponsor link in organizer nav
       }
       function wp(u,k,v){if(v)u.searchParams.set(k,v);else u.searchParams.delete(k);}
       function showMsg(text,type){const m=$id("message");m.hidden=!text;m.textContent=text||"";m.className=`status ${type}`;}

@@ -264,10 +264,11 @@
           <strong>Phase 4 platform-admin IAM shell</strong>
           <span class="muted">Platform-admin user lifecycle, role alignment, scoped access, and IAM audit review.</span>
         </div>
-        <nav class="shell-nav" aria-label="Pilot shell">
-          <a id="nav-home" href="./index.html">Launchpad</a>
-          <a id="nav-organizer" href="./organizer.html">Organizer</a>
-          <a id="nav-admin" class="active" href="./admin.html">Admin</a>
+        <nav class="shell-nav" aria-label="Admin shell">
+          <a id="nav-admin" class="active" href="./admin.html">IAM Admin</a>
+          <a id="nav-tenants" href="./admin/tenants.html">Tenants</a>
+          <a id="nav-account" href="./account.html">My Account</a>
+          <a id="nav-signout" href="./login.html">Sign out</a>
         </nav>
       </div>
     </div>
@@ -296,8 +297,8 @@
               </div>
             </div>
             <div class="link-stack">
-              <a id="open-launchpad-link" class="mini-link" href="./index.html">Return to pilot launchpad</a>
-              <a id="open-organizer-link" class="mini-link" href="./organizer.html">Open organizer operations shell</a>
+              <a id="open-tenants-link" class="mini-link" href="./admin/tenants.html">Go to Tenants</a>
+              <a id="open-organizer-link" class="mini-link" href="./organizer/events.html">Organizer events</a>
             </div>
           </div>
           <div id="message" class="status ok" hidden></div>
@@ -534,6 +535,22 @@
         params.get("apiBase") ||
         (window.location.protocol === "file:" ? "http://127.0.0.1:3000" : window.location.origin);
 
+      // Auth — read JWT from localStorage, redirect if missing or wrong role
+      const _storedToken = localStorage.getItem("codex.token");
+      if (!_storedToken) { location.href = "/login.html"; throw new Error("Not authenticated"); }
+      let _jwtPayload = {};
+      try { _jwtPayload = JSON.parse(atob(_storedToken.split(".")[1])); } catch {}
+      if (_jwtPayload.role !== "platform_admin") {
+        location.href = "/admin/tenants.html";
+        throw new Error("Access denied");
+      }
+
+      document.getElementById("nav-signout").addEventListener("click", (e) => {
+        e.preventDefault();
+        localStorage.removeItem("codex.token");
+        location.href = "/login.html";
+      });
+
       const authTokenInput = document.getElementById("auth-token");
       const authTokenGroup = document.getElementById("auth-token-group");
       const browserAuthGroup = document.getElementById("browser-auth-group");
@@ -589,7 +606,7 @@
 
       const openOrganizerLink = document.getElementById("open-organizer-link");
 
-      authTokenInput.value = params.get("auth") || "platform-token";
+      authTokenInput.value = params.get("auth") || _storedToken || "platform-token";
 
       let referenceData = null;
       let managedUsers = [];
@@ -634,7 +651,7 @@
       authSession = await createBrowserAuthSlot({
         apiBase,
         slot: "primary",
-        defaultToken: "platform-token",
+        defaultToken: _storedToken || "platform-token",
         tokenInput: authTokenInput,
         tokenGroup: authTokenGroup,
         browserGroup: browserAuthGroup,
@@ -1283,8 +1300,7 @@
       }
 
       function refreshShellLinks() {
-        const organizer = new URL("./organizer.html", window.location.href);
-        organizer.searchParams.set("eventId", "event-demo");
+        const organizer = new URL("./organizer/events.html", window.location.href);
         if (apiBase !== window.location.origin) {
           organizer.searchParams.set("apiBase", apiBase);
         }

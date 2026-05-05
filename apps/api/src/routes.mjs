@@ -2428,16 +2428,21 @@ export function registerRoutes(router) {
       const avgSyncLatencyMs = syncLatencies.length === 0 ? 0 : average(syncLatencies);
       const interactions = await repos.interactions.listByEvent(resources.event.tenant_id, resources.event.id);
       const incidents = await repos.incidents.listByEvent(resources.event.tenant_id, resources.event.id);
+      const uniqueAttendees = new Set(interactions.map((i) => i.attendee_id).filter(Boolean)).size;
       return {
         event_id: resources.event.id,
+        event_name: resources.event.name,
+        event_status: resources.event.status,
         metrics_definition_version: resources.event.metrics_definition_version,
         report_snapshot_version: resources.event.report_snapshot_version,
         total_interactions: interactions.length,
+        unique_attendees: uniqueAttendees,
         online_devices: onlineDevices,
         offline_devices: assignments.length - onlineDevices,
         average_queue_depth: Number(avgQueueDepth.toFixed(2)),
         average_sync_latency_ms: Number(avgSyncLatencyMs.toFixed(2)),
         open_incidents: incidents.filter((entry) => entry.status !== "resolved").length,
+        unresolved_incidents: incidents.filter((entry) => entry.status !== "resolved").length,
         top_stalls: await topStalls(repos, resources.event.tenant_id, resources.event.id),
         iot_integration: await buildIotIntegrationStatus(repos, resources.event.tenant_id, resources.event.id)
       };

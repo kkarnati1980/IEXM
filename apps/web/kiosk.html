@@ -1676,7 +1676,7 @@
         // Attendee link
         const link = result.customer_short_link || result.customer_link || "—";
         document.getElementById("attendee-link-display").textContent = link;
-        // Auto-open attendee consent page in new tab
+        // Show attendee consent link — click to open, never auto-open (prevents browser permission popups)
         try {
           const token = link.split('/s/').pop();
           if (token && token !== '—') {
@@ -1684,8 +1684,6 @@
             const attendeeUrl = 'http://127.0.0.1:8080/s.html?t=' + encodeURIComponent(token) + '&apiBase=' + encodeURIComponent(apiBase);
             document.getElementById("attendee-link-display").innerHTML =
               '<a href="' + attendeeUrl + '" target="_blank" style="color:#4af;word-break:break-all">' + link + '</a>';
-            // Auto-open in new tab
-            window.open(attendeeUrl, '_blank');
           }
         } catch(e) { /* silent */ }
         // Consent
