@@ -3,29 +3,34 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="../shared.css">
+    <link rel="stylesheet" href="/shared-app.css">
     <title>Your Data &amp; Privacy Rights — Codex</title>
     <style>
-      :root{--bg:#101117;--panel:#1a1c25;--panel-2:#14161d;--border:rgba(255,255,255,0.08);--text:#f4f1ea;--muted:#b2ac9f;--accent:#f3c97d;--accent-2:#9fd3c7;--good:#9fd3c7;--warn:#f3c97d;--bad:#ff9f9f;}
+      :root {
+  --bg: #f5f7fa; --panel: #ffffff; --panel-2: #f9fafb;
+  --border: #e5e7eb; --text: #111827; --muted: #6b7280;
+  --accent: #2D6A9F; --accent-soft: rgba(45,106,159,0.10);
+  --accent-2: #2563eb; --good: #16a34a; --warn: #d97706; --bad: #dc2626;
+}
       *{box-sizing:border-box;}
-      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--text);background:radial-gradient(circle at top left,rgba(243,201,125,0.16),transparent 28%),linear-gradient(160deg,var(--bg),#090a0e 66%);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 16px;}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--text);background: var(--bg);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 16px;}
       .page-header{max-width:720px;width:100%;text-align:center;margin-bottom:32px;}
       .page-header h1{font-size:1.8rem;margin:0 0 12px;}
       .page-header p{color:var(--muted);font-size:15px;line-height:1.6;margin:0;}
       .card-grid{max-width:720px;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;}
       @media(max-width:600px){.card-grid{grid-template-columns:1fr;}}
-      .card{border-radius:22px;padding:24px;background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--border);}
+      .card{border-radius:22px;padding:24px;background:var(--panel);border:1px solid var(--border);}
       .card h3{margin:0 0 8px;font-size:1rem;}
       .card p{font-size:13px;color:var(--muted);line-height:1.5;margin:0 0 16px;}
       .status{padding:12px 14px;border-radius:14px;font-size:14px;margin-bottom:12px;}
-      .status.ok{background:rgba(159,211,199,0.16);color:var(--good);}
-      .status.error{background:rgba(255,159,159,0.12);color:var(--bad);}
-      .status.warn{background:rgba(243,201,125,0.14);color:var(--warn);}
+      .status.ok{background:#dcfce7;color:var(--good);}
+      .status.error{background:#fee2e2;color:var(--bad);}
+      .status.warn{background:#fef3c7;color:var(--warn);}
       button{border:0;border-radius:12px;padding:10px 16px;cursor:pointer;font:inherit;font-size:14px;width:100%;}
-      button.primary{background:var(--accent);color:#211503;font-weight:600;}
-      button.bad{background:rgba(255,159,159,0.14);color:var(--bad);}
+      button.primary{background:var(--accent);color:#fff;font-weight:600;}
+      button.bad{background:#fee2e2;color:var(--bad);}
       button:disabled{opacity:0.4;cursor:default;}
-      input{width:100%;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:var(--text);padding:10px 12px;font:inherit;margin-bottom:10px;}
+      input{width:100%;border-radius:12px;border:1px solid var(--border);background:var(--panel);color:var(--text);padding:10px 12px;font:inherit;margin-bottom:10px;}
       input:focus{outline:2px solid var(--accent);border-color:transparent;}
       .badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid var(--border);font-size:12px;}
       .badge.completed{color:var(--good);}

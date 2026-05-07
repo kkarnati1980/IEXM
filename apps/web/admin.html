@@ -3,30 +3,21 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="shared.css">
+    <link rel="stylesheet" href="/shared-app.css">
     <title>IAM Console — Codex</title>
     <style>
       :root {
-        --bg: #101117;
-        --panel: #1a1c25;
-        --panel-2: #14161d;
-        --border: rgba(255,255,255,0.08);
-        --text: #f4f1ea;
-        --muted: #b2ac9f;
-        --accent: #f3c97d;
-        --accent-2: #9fd3c7;
-        --good: #9fd3c7;
-        --warn: #f3c97d;
-        --bad: #ff9f9f;
-      }
+  --bg: #f5f7fa; --panel: #ffffff; --panel-2: #f9fafb;
+  --border: #e5e7eb; --text: #111827; --muted: #6b7280;
+  --accent: #2D6A9F; --accent-soft: rgba(45,106,159,0.10);
+  --accent-2: #2563eb; --good: #16a34a; --warn: #d97706; --bad: #dc2626;
+}
       * { box-sizing: border-box; }
       body {
         margin: 0;
         font-family: "IBM Plex Sans", sans-serif;
         color: var(--text);
-        background:
-          radial-gradient(circle at top left, rgba(243, 201, 125, 0.16), transparent 28%),
-          linear-gradient(160deg, var(--bg), #090a0e 66%);
+        background: var(--bg);
       }
       .shell {
         max-width: 1440px;
@@ -61,12 +52,12 @@
         padding: 10px 13px;
         border-radius: 999px;
         border: 1px solid var(--border);
-        background: rgba(255,255,255,0.04);
+        background: var(--panel);
         color: var(--text);
         text-decoration: none;
       }
       .shell-nav a.active {
-        background: rgba(243, 201, 125, 0.18);
+        background: rgba(45,106,159,0.10);
         color: var(--accent);
       }
       main {
@@ -85,7 +76,7 @@
       .card {
         border-radius: 22px;
         padding: 18px;
-        background: linear-gradient(180deg, var(--panel), var(--panel-2));
+        background: var(--panel);
         border: 1px solid var(--border);
       }
       .eyebrow {
@@ -96,7 +87,7 @@
         font-size: 12px;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        background: rgba(159, 211, 199, 0.12);
+        background: rgba(45,106,159,0.10);
         color: var(--accent-2);
       }
       .muted { color: var(--muted); }
@@ -116,7 +107,7 @@
       .item {
         border-radius: 16px;
         padding: 12px;
-        background: rgba(255,255,255,0.03);
+        background: var(--panel);
         border: 1px solid var(--border);
       }
       .context-chip strong,
@@ -150,8 +141,8 @@
       input, select, textarea {
         width: 100%;
         border-radius: 12px;
-        border: 1px solid rgba(255,255,255,0.12);
-        background: rgba(255,255,255,0.04);
+        border: 1px solid var(--border);
+        background: var(--panel);
         color: var(--text);
         padding: 11px 12px;
       }
@@ -167,18 +158,18 @@
       }
       button.primary {
         background: var(--accent);
-        color: #211503;
+        color: #fff;
       }
       button.secondary {
-        background: rgba(255,255,255,0.1);
+        background: var(--panel-2);
         color: var(--text);
       }
       button.warn {
-        background: rgba(243, 201, 125, 0.16);
+        background: #fef3c7;
         color: var(--warn);
       }
       button.bad {
-        background: rgba(255, 159, 159, 0.14);
+        background: #fee2e2;
         color: var(--bad);
       }
       .status {
@@ -188,11 +179,11 @@
         font-size: 14px;
       }
       .status.ok {
-        background: rgba(159, 211, 199, 0.16);
+        background: #dcfce7;
         color: var(--good);
       }
       .status.error {
-        background: rgba(255, 159, 159, 0.12);
+        background: #fee2e2;
         color: var(--bad);
       }
       table {
@@ -209,7 +200,7 @@
         cursor: pointer;
       }
       tbody tr.active {
-        background: rgba(243, 201, 125, 0.08);
+        background: rgba(45,106,159,0.08);
       }
       .pill,
       .status-pill {

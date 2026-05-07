@@ -4,25 +4,19 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Launchpad — Codex Platform</title>
+    <link rel="stylesheet" href="/shared-app.css">
     <style>
       :root {
-        --bg: #101117;
-        --panel: #1a1c25;
-        --panel-2: #14161d;
-        --text: #f4f1ea;
-        --muted: #b2ac9f;
-        --accent: #f3c97d;
-        --warning: #f3c97d;
-        --border: rgba(255,255,255,0.08);
+        --bg: #f5f7fa; --panel: #ffffff; --panel-2: #f9fafb;
+        --border: #e5e7eb; --text: #111827; --muted: #6b7280;
+        --accent: #2D6A9F; --accent-soft: rgba(45,106,159,0.10);
+        --good: #16a34a; --warn: #d97706; --bad: #dc2626;
       }
-      * { box-sizing: border-box; }
       body {
         margin: 0;
         font-family: "IBM Plex Sans", sans-serif;
         color: var(--text);
-        background:
-          radial-gradient(circle at top left, rgba(243,201,125,0.16), transparent 28%),
-          linear-gradient(160deg, var(--bg), #090a0e 66%);
+        background: var(--bg);
         min-height: 100vh;
       }
       main {
@@ -30,13 +24,28 @@
         margin: 0 auto;
         padding: 48px 24px 64px;
       }
+      .label {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--accent);
+        background: var(--accent-soft);
+        padding: 3px 10px;
+        border-radius: 4px;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
       h1 {
         margin: 0 0 12px;
-        font-size: clamp(2rem, 4vw, 3.8rem);
+        font-size: clamp(2rem, 4vw, 3rem);
+        font-weight: 700;
+        color: var(--text);
       }
       p {
         color: var(--muted);
         max-width: 760px;
+        line-height: 1.6;
       }
       .grid {
         display: grid;
@@ -54,46 +63,43 @@
         display: block;
         text-decoration: none;
         color: inherit;
-        background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+        background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 18px;
-        padding: 18px;
-        min-height: 164px;
-        transition: border-color 0.15s, background 0.15s;
+        border-radius: 16px;
+        padding: 20px;
+        min-height: 160px;
+        transition: border-color 0.15s, box-shadow 0.15s;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
       }
       a.card:hover {
-        background: rgba(255,255,255,0.06);
-        border-color: rgba(255,255,255,0.14);
+        border-color: rgba(45,106,159,0.3);
+        box-shadow: 0 4px 12px rgba(45,106,159,0.12);
+        text-decoration: none;
       }
       a.card.device-only {
         opacity: 0.72;
-        border-color: rgba(243,201,125,0.28);
+        border-color: rgba(45,106,159,0.25);
       }
       .device-warning {
         margin-top: 12px;
         padding-top: 10px;
-        border-top: 1px solid rgba(243,201,125,0.22);
+        border-top: 1px solid var(--border);
         font-size: 12px;
-        color: var(--warning);
+        color: var(--warn);
         display: flex;
         align-items: center;
         gap: 6px;
       }
-      .label {
-        display: inline-block;
-        font-size: 12px;
-        color: var(--accent);
-        margin-bottom: 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-      }
       .name {
-        font-size: 1.2rem;
+        font-size: 1.1rem;
+        font-weight: 600;
         margin-bottom: 8px;
+        color: var(--text);
       }
       .section {
-        margin-top: 34px;
+        margin-top: 40px;
       }
+      h2 { margin: 0 0 10px; color: var(--text); }
     </style>
   </head>
   <body>
@@ -140,7 +146,7 @@
 
       <section class="section">
         <div class="label">Phase 3</div>
-        <h2 style="margin:0 0 10px;">Polished role-to-role navigation</h2>
+        <h2>Polished role-to-role navigation</h2>
         <p>
           The attendee, vendor, and organizer shells now preserve pilot context in the URL so you can move
           between pages without rebuilding stall and event state by hand.
@@ -165,4 +171,4 @@
       </section>
     </main>
   </body>
-  </html>
+</html>
