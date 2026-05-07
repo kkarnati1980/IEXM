@@ -2176,7 +2176,7 @@ export function createPostgresRepositories(db, securityContext = null) {
         const result = await execute(
           `SELECT * FROM report_snapshots WHERE tenant_id = $1 AND event_id = $2 ORDER BY created_at ASC`,
           [tenantId, eventId]
-        ).catch(() => ({ rows: [] }));
+        );
         return result.rows ?? [];
       },
       async listByIds(tenantId, eventId, ids) {
@@ -2185,7 +2185,7 @@ export function createPostgresRepositories(db, securityContext = null) {
         const result = await execute(
           `SELECT * FROM report_snapshots WHERE tenant_id = $1 AND event_id = $2 AND id IN (${placeholders}) ORDER BY created_at ASC`,
           [tenantId, eventId, ...ids]
-        ).catch(() => ({ rows: [] }));
+        );
         return result.rows ?? [];
       }
     },
