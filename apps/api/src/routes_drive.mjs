@@ -84,7 +84,7 @@ export function registerDriveRoutes(router) {
         stallId: resources.stall.id,
         eventId: resources.stall.event_id,
         tenantId: principal.tenant_id,
-        userId: principal.id,
+        userId: principal.user_id,
         provider: 'google_drive'
       }
       return { auth_url: getGoogleAuthUrl(state) }
@@ -106,7 +106,7 @@ export function registerDriveRoutes(router) {
         stallId: resources.stall.id,
         eventId: resources.stall.event_id,
         tenantId: principal.tenant_id,
-        userId: principal.id,
+        userId: principal.user_id,
         provider: 'onedrive'
       }
       return { auth_url: getOneDriveAuthUrl(state) }
@@ -134,22 +134,27 @@ export function registerDriveRoutes(router) {
       }
 
       try {
+        console.log('[google-cb] Step 2: exchanging code, stall:', state.stallId, 'user:', state.userId)
         const tokens = await exchangeGoogleCode(code)
         if (!tokens.access_token) {
-          console.error('[drive] Google token exchange failed:', tokens.error, tokens.error_description)
+          console.error('[google-cb] Step 2 FAIL: token exchange error:', tokens.error, tokens.error_description)
           return { _redirect: '/vendor?drive_error=token_exchange_failed' }
         }
+        console.log('[google-cb] Step 3: tokens received, getting user email')
         const email = await getGoogleUserEmail(tokens.access_token)
         const expiresAt = new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000)
 
+        console.log('[google-cb] Step 4: encrypting tokens')
+        const encAccess = encryptToken(tokens.access_token)
+        const encRefresh = tokens.refresh_token ? encryptToken(tokens.refresh_token) : null
+
+        console.log('[google-cb] Step 5: deactivating existing connections')
         const existing = await repos.stallDriveConnections.findByStall(state.stallId, state.tenantId)
         for (const conn of existing.filter(c => c.status === 'active')) {
           await repos.stallDriveConnections.setStatus(conn.id, 'disconnected')
         }
 
-        const encAccess = encryptToken(tokens.access_token)
-        const encRefresh = tokens.refresh_token ? encryptToken(tokens.refresh_token) : null
-
+        console.log('[google-cb] Step 6: saving to DB, email:', email, 'userId:', state.userId)
         await repos.stallDriveConnections.create({
           id: 'sdc-' + shortId(),
           tenant_id: state.tenantId,
@@ -165,9 +170,10 @@ export function registerDriveRoutes(router) {
           connected_at: new Date().toISOString()
         })
 
+        console.log('[google-cb] Step 7: done, connected=google')
         return { _redirect: '/vendor?connected=google' }
       } catch (err) {
-        console.error('[drive] Google callback error:', err.stack ?? err.message)
+        console.error('[google-cb] ERROR at step above:', err.stack ?? err.message)
         return { _redirect: '/vendor?drive_error=' + categorizeDriveError(err) }
       }
     }
