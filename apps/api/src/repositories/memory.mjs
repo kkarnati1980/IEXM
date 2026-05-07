@@ -850,6 +850,14 @@ export function createMemoryRepositories(state) {
           (entry) => entry.tenant_id === tenantId && entry.event_id === eventId
         );
       },
+      async listByOrganization(tenantId, eventId, organizationId) {
+        return state.exportRequests.filter(
+          (entry) =>
+            entry.tenant_id === tenantId &&
+            entry.event_id === eventId &&
+            entry.requested_for_organization_id === organizationId
+        ).sort((a, b) => (b.created_at > a.created_at ? 1 : -1));
+      },
       async findById(tenantId, id) {
         return findById(state.exportRequests, tenantId, id, "Export request");
       },

@@ -376,6 +376,7 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   "admin-commercial-approval-create": entry({ permission: "admin.commercial_approvals.create", roles: platform, scope: "tenant", description: "Record a commercial approval decision", sensitivity: "sensitive" }),
 
   "organizer-exports-list": entry({ permission: "organizer.exports.view", roles: organizer, scope: "event", description: "List organizer event exports", sensitivity: "pii" }),
+  "vendor-exports-list": entry({ permission: "exports.list", roles: [ROLES.vendorManager, ROLES.sponsorUser, ROLES.organizerAdmin], scope: "event", description: "List own organization exports", sensitivity: "pii" }),
   "exports-request": entry({ permission: "exports.request", roles: [ROLES.vendorManager, ROLES.sponsorUser, ROLES.organizerAdmin], scope: "event", description: "Request an export", sensitivity: "pii" }),
   "exports-approve": entry({ permission: "exports.approve", roles: organizer, scope: "event", description: "Approve an export", sensitivity: "pii" }),
   "exports-reject": entry({ permission: "exports.reject", roles: organizer, scope: "event", description: "Reject an export", sensitivity: "pii" }),

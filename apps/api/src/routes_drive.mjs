@@ -50,7 +50,7 @@ export function registerDriveRoutes(router) {
     id: 'stall-drive-connect-google',
     method: 'GET',
     path: '/stalls/:stallId/drive/connect/google',
-    allowedRoles: ['vendor_manager', 'platform_admin'],
+    allowedRoles: ['vendor_manager', 'organizer_admin', 'platform_admin'],
     resolveResources: async ({ repos, principal, params }) => {
       const stall = await repos.stalls.findById(principal.tenant_id, params.stallId)
       if (!stall) throw new HttpError(404, 'Stall not found')
@@ -72,7 +72,7 @@ export function registerDriveRoutes(router) {
     id: 'stall-drive-connect-onedrive',
     method: 'GET',
     path: '/stalls/:stallId/drive/connect/onedrive',
-    allowedRoles: ['vendor_manager', 'platform_admin'],
+    allowedRoles: ['vendor_manager', 'organizer_admin', 'platform_admin'],
     resolveResources: async ({ repos, principal, params }) => {
       const stall = await repos.stalls.findById(principal.tenant_id, params.stallId)
       if (!stall) throw new HttpError(404, 'Stall not found')
@@ -227,7 +227,7 @@ export function registerDriveRoutes(router) {
     id: 'stall-drive-disconnect',
     method: 'DELETE',
     path: '/stalls/:stallId/drive/disconnect',
-    allowedRoles: ['vendor_manager', 'platform_admin'],
+    allowedRoles: ['vendor_manager', 'organizer_admin', 'platform_admin'],
     resolveResources: async ({ repos, principal, params }) => {
       const stall = await repos.stalls.findById(principal.tenant_id, params.stallId)
       if (!stall) throw new HttpError(404, 'Stall not found')
@@ -249,7 +249,7 @@ export function registerDriveRoutes(router) {
     id: 'stall-drive-folders-list',
     method: 'GET',
     path: '/stalls/:stallId/drive/folders',
-    allowedRoles: ['vendor_manager', 'platform_admin'],
+    allowedRoles: ['vendor_manager', 'organizer_admin', 'platform_admin'],
     resolveResources: async ({ repos, principal, params }) => {
       const stall = await repos.stalls.findById(principal.tenant_id, params.stallId)
       if (!stall) throw new HttpError(404, 'Stall not found')
@@ -279,7 +279,7 @@ export function registerDriveRoutes(router) {
     id: 'stall-drive-shared-folders-create',
     method: 'POST',
     path: '/stalls/:stallId/drive/shared-folders',
-    allowedRoles: ['vendor_manager', 'platform_admin'],
+    allowedRoles: ['vendor_manager', 'organizer_admin', 'platform_admin'],
     resolveResources: async ({ repos, principal, params }) => {
       const stall = await repos.stalls.findById(principal.tenant_id, params.stallId)
       if (!stall) throw new HttpError(404, 'Stall not found')
@@ -335,7 +335,7 @@ export function registerDriveRoutes(router) {
     id: 'stall-drive-shared-folders-update',
     method: 'PATCH',
     path: '/stalls/:stallId/drive/shared-folders/:folderId',
-    allowedRoles: ['vendor_manager', 'platform_admin'],
+    allowedRoles: ['vendor_manager', 'organizer_admin', 'platform_admin'],
     resolveResources: async ({ repos, principal, params }) => {
       const stall = await repos.stalls.findById(principal.tenant_id, params.stallId)
       if (!stall) throw new HttpError(404, 'Stall not found')
@@ -356,7 +356,7 @@ export function registerDriveRoutes(router) {
     id: 'stall-drive-shared-folders-delete',
     method: 'DELETE',
     path: '/stalls/:stallId/drive/shared-folders/:folderId',
-    allowedRoles: ['vendor_manager', 'platform_admin'],
+    allowedRoles: ['vendor_manager', 'organizer_admin', 'platform_admin'],
     resolveResources: async ({ repos, principal, params }) => {
       const stall = await repos.stalls.findById(principal.tenant_id, params.stallId)
       if (!stall) throw new HttpError(404, 'Stall not found')
@@ -376,7 +376,7 @@ export function registerDriveRoutes(router) {
     id: 'stall-drive-access-grants-create',
     method: 'POST',
     path: '/stalls/:stallId/drive/access-grants',
-    allowedRoles: ['vendor_manager', 'platform_admin'],
+    allowedRoles: ['vendor_manager', 'organizer_admin', 'platform_admin'],
     resolveResources: async ({ repos, principal, params }) => {
       const stall = await repos.stalls.findById(principal.tenant_id, params.stallId)
       if (!stall) throw new HttpError(404, 'Stall not found')
@@ -449,7 +449,7 @@ export function registerDriveRoutes(router) {
     id: 'stall-drive-access-grant-revoke',
     method: 'POST',
     path: '/stalls/:stallId/drive/access-grants/:grantId/revoke',
-    allowedRoles: ['vendor_manager', 'platform_admin'],
+    allowedRoles: ['vendor_manager', 'organizer_admin', 'platform_admin'],
     resolveResources: async ({ repos, principal, params }) => {
       const stall = await repos.stalls.findById(principal.tenant_id, params.stallId)
       if (!stall) throw new HttpError(404, 'Stall not found')
@@ -470,7 +470,7 @@ export function registerDriveRoutes(router) {
     id: 'stall-drive-access-grant-suspend',
     method: 'POST',
     path: '/stalls/:stallId/drive/access-grants/:grantId/suspend',
-    allowedRoles: ['vendor_manager', 'platform_admin'],
+    allowedRoles: ['vendor_manager', 'organizer_admin', 'platform_admin'],
     resolveResources: async ({ repos, principal, params }) => {
       const stall = await repos.stalls.findById(principal.tenant_id, params.stallId)
       if (!stall) throw new HttpError(404, 'Stall not found')
@@ -491,7 +491,7 @@ export function registerDriveRoutes(router) {
     id: 'stall-drive-access-grant-restore',
     method: 'POST',
     path: '/stalls/:stallId/drive/access-grants/:grantId/restore',
-    allowedRoles: ['vendor_manager', 'platform_admin'],
+    allowedRoles: ['vendor_manager', 'organizer_admin', 'platform_admin'],
     resolveResources: async ({ repos, principal, params }) => {
       const stall = await repos.stalls.findById(principal.tenant_id, params.stallId)
       if (!stall) throw new HttpError(404, 'Stall not found')

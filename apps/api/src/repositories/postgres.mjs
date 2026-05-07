@@ -1891,6 +1891,16 @@ export function createPostgresRepositories(db, securityContext = null) {
           )
         );
       },
+      async listByOrganization(tenantId, eventId, organizationId) {
+        return many(
+          await execute(
+            `SELECT * FROM export_requests
+             WHERE tenant_id = $1 AND event_id = $2 AND requested_for_organization_id = $3
+             ORDER BY created_at DESC`,
+            [tenantId, eventId, organizationId]
+          )
+        );
+      },
       async findById(tenantId, id) {
         return one(
           await execute("SELECT * FROM export_requests WHERE tenant_id = $1 AND id = $2", [tenantId, id]),

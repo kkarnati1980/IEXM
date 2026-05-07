@@ -4722,6 +4722,26 @@ export function registerRoutes(router) {
   });
 
   router.addRoute({
+    id: "vendor-exports-list",
+    method: "GET",
+    path: "/exports",
+    allowedRoles: ["vendor_manager", "sponsor_user", "organizer_admin"],
+    resolveResources: async ({ repos, principal, query }) => {
+      const event = await repos.events.findById(principal.tenant_id, query.event_id);
+      return { event };
+    },
+    handler: async ({ repos, principal, resources }) => {
+      const items = await repos.exportRequests.listByOrganization(
+        principal.tenant_id,
+        resources.event.id,
+        principal.organization_id
+      );
+      return { items };
+    },
+    auditEventType: "exports.list"
+  });
+
+  router.addRoute({
     id: "exports-approve",
     method: "POST",
     path: "/exports/:exportId/approve",
