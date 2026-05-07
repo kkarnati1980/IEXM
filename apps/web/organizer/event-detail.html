@@ -280,14 +280,14 @@
 
     <script type="module">
       import { onboardingChecklistHtml, isAuthenticated, logoutUser, checkBreakGlassAlerts } from "../components.js";
-      if (!isAuthenticated()) { logoutUser("../login.html"); throw new Error("unauthenticated"); }
+      if (!isAuthenticated()) { logoutUser("/login"); throw new Error("unauthenticated"); }
 
       const params = new URLSearchParams(location.search);
       const apiBase = params.get("apiBase") ?? window.location.origin;
       const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "organizer-token";
       const eventId = params.get("eventId") ?? "";
 
-      document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logoutUser("../login.html"); });
+      document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logoutUser("/login"); });
 
       document.getElementById("back-link").href = `events.html?token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
 

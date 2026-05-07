@@ -449,7 +449,7 @@ export function isAuthenticated() {
  * Clears session data and redirects to the login page.
  * @param {string} [loginPath] - path to login page (default "/login.html")
  */
-export function logoutUser(loginPath = "/login.html") {
+export function logoutUser(loginPath = "/login") {
   clearSession();
   location.href = loginPath;
 }

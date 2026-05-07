@@ -99,13 +99,13 @@
 
     <script type="module">
       import { isAuthenticated, logoutUser } from "../components.js";
-      if (!isAuthenticated()) { logoutUser("../login.html"); throw new Error("unauthenticated"); }
+      if (!isAuthenticated()) { logoutUser("/login"); throw new Error("unauthenticated"); }
       const params = new URLSearchParams(location.search);
       const apiBase = params.get("apiBase") ?? window.location.origin;
       const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "organizer-token";
       const userId = params.get("userId") ?? "";
 
-      document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logoutUser("../login.html"); });
+      document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logoutUser("/login"); });
       document.getElementById("back-link").href = `team.html?token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;
 
       function esc(s) { return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }

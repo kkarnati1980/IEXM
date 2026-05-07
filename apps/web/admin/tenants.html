@@ -172,12 +172,12 @@
 
     <script type="module">
       import { isAuthenticated, logoutUser } from "../components.js";
-      if (!isAuthenticated()) { logoutUser("../login.html"); throw new Error("unauthenticated"); }
+      if (!isAuthenticated()) { logoutUser("/login"); throw new Error("unauthenticated"); }
       const params = new URLSearchParams(location.search);
       const apiBase = params.get("apiBase") ?? window.location.origin;
       const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "platform-token";
 
-      document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logoutUser("../login.html"); });
+      document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logoutUser("/login"); });
 
       const globalStatus = document.getElementById("global-status");
       const tbody = document.getElementById("tenants-tbody");

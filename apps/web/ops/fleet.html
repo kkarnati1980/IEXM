@@ -79,10 +79,8 @@
           <span class="muted" id="page-subtitle">IoT device status and event assignments.</span>
         </div>
         <nav class="shell-nav">
-          <a href="../index.html">Launchpad</a>
-          <a href="../organizer.html">Organizer Ops</a>
           <a href="./fleet.html" class="active">Fleet</a>
-          <a href="../login.html" id="nav-signout">Sign out</a>
+          <a href="#" id="nav-signout">Sign out</a>
         </nav>
       </div>
     </div>
@@ -186,7 +184,7 @@
 
       // Auth — read JWT from localStorage, redirect to login if missing
       const TOKEN = localStorage.getItem("codex.token");
-      if (!TOKEN) { location.href = "/login.html"; throw new Error("Not authenticated"); }
+      if (!TOKEN) { location.href = "/login"; throw new Error("Not authenticated"); }
       let jwtPayload = {};
       try { jwtPayload = JSON.parse(atob(TOKEN.split(".")[1])); } catch {}
       const eventId = jwtPayload.event_ids?.[0] || params.get("eventId") || "event-indiaexpo";
@@ -195,7 +193,8 @@
       $("nav-signout").addEventListener("click", (e) => {
         e.preventDefault();
         localStorage.removeItem("codex.token");
-        location.href = "/login.html";
+        localStorage.removeItem("codex.active_event_id");
+        location.href = "/login";
       });
 
       let ALL_DEVICES = [];

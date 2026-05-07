@@ -497,6 +497,27 @@
           </div>
         </article>
 
+        <!-- SNAPSHOT COMPARISON -->
+        <article class="card">
+          <div class="section-head"><div><div class="eyebrow">Snapshot Comparison</div><h2>Compare snapshots</h2><p class="muted" style="font-size:13px;margin:4px 0 0;">Select 2 or more snapshots to compare performance across time.</p></div></div>
+          <div id="snapshot-picker" style="margin:16px 0;display:flex;flex-direction:column;gap:8px;">
+            <div class="muted" style="font-size:13px;">Load snapshots first by refreshing the dashboard.</div>
+          </div>
+          <button id="btn-compare" onclick="runComparison()" style="background:#2563eb;color:#fff;padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;">Compare Selected →</button>
+
+          <div id="comparison-results" style="display:none;margin-top:24px;">
+            <div style="overflow-x:auto;">
+              <table id="compare-table" style="width:100%;border-collapse:collapse;font-size:14px;">
+                <thead id="compare-thead"></thead>
+                <tbody id="compare-tbody"></tbody>
+              </table>
+            </div>
+            <div id="comparison-chart" style="margin-top:24px;"></div>
+            <div id="trend-chart" style="margin-top:24px;display:none;"></div>
+            <button onclick="exportComparison()" style="margin-top:16px;padding:8px 16px;background:#374151;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Export Comparison as CSV</button>
+          </div>
+        </article>
+
         <!-- LIVE DASHBOARD TOTALS -->
         <article class="card">
           <div class="section-head"><div><div class="eyebrow">Live Totals</div><h2>Live vs frozen comparison</h2></div></div>
@@ -516,13 +537,13 @@
 
       // Auth — read JWT from localStorage, redirect to login if missing
       const _storedToken = localStorage.getItem("codex.token");
-      if (!_storedToken) { location.href = "/login.html"; throw new Error("Not authenticated"); }
+      if (!_storedToken) { location.href = "/login"; throw new Error("Not authenticated"); }
       let _jwtPayload = {};
       try { _jwtPayload = JSON.parse(atob(_storedToken.split(".")[1])); } catch {}
       // Role guard — only organizer_admin and platform_admin may use this page
       const _role = _jwtPayload.role || "";
       if (_role !== "organizer_admin" && _role !== "platform_admin") {
-        location.href = "/login.html";
+        location.href = "/login";
         throw new Error("Access denied");
       }
 
@@ -543,7 +564,8 @@
       $id("nav-signout").addEventListener("click", (e) => {
         e.preventDefault();
         localStorage.removeItem("codex.token");
-        location.href = "/login.html";
+        localStorage.removeItem("codex.active_event_id");
+        location.href = "/login";
       });
 
       $id("refresh-btn").addEventListener("click", loadAll);
@@ -573,6 +595,7 @@
           renderHourlyChart();  // OR-03
           renderVelocity();     // OR-03
           renderSnapshots();
+          renderSnapshotPicker(SNAPS);
           syncUrl();
           showMsg("Dashboard refreshed.", "ok");
         } catch(e) { showMsg(e.message, "error"); }
@@ -874,6 +897,220 @@
           showMsg("Organizer snapshot taken.", "ok");
         }catch(e){showMsg(e.message,"error");}
       }
+
+
+      /* ── SNAPSHOT COMPARISON ────────────────────────── */
+      let _comparisonData = null;
+
+      function renderSnapshotPicker(snaps) {
+        const picker = document.getElementById("snapshot-picker");
+        if (!snaps || !snaps.length) {
+          picker.textContent = "";
+          const d = document.createElement("div");
+          d.className = "muted";
+          d.style.fontSize = "13px";
+          d.textContent = "No snapshots yet. Take a snapshot first.";
+          picker.appendChild(d);
+          return;
+        }
+        picker.textContent = "";
+        snaps.forEach(s => {
+          const label = document.createElement("label");
+          label.style.cssText = "display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);cursor:pointer;";
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.value = s.id;
+          cb.style.cssText = "width:16px;height:16px;cursor:pointer;";
+          const txt = document.createElement("span");
+          txt.style.fontSize = "13px";
+          const noteStr = s.note ? ` — ${s.note}` : "";
+          txt.textContent = `v${s.version ?? s.snapshot_version ?? "?"} — ${fmtDate(s.created_at)}${noteStr}`;
+          label.appendChild(cb);
+          label.appendChild(txt);
+          picker.appendChild(label);
+        });
+      }
+
+      async function runComparison() {
+        const eid = document.getElementById("event-id").value.trim();
+        const selected = Array.from(document.querySelectorAll("#snapshot-picker input:checked")).map(cb => cb.value);
+        if (selected.length < 2) { showMsg("Select at least 2 snapshots to compare.", "error"); return; }
+        try {
+          const data = await api(`/events/${enc(eid)}/snapshots/compare`, {
+            method: "POST",
+            body: { snapshot_ids: selected }
+          });
+          _comparisonData = data;
+          renderComparisonTable(data);
+          renderComparisonChart(data);
+          if (selected.length >= 3) {
+            renderTrendChart(data);
+            document.getElementById("trend-chart").style.display = "block";
+          } else {
+            document.getElementById("trend-chart").style.display = "none";
+          }
+          document.getElementById("comparison-results").style.display = "block";
+          showMsg("Comparison loaded.", "ok");
+        } catch(e) { showMsg(e.message, "error"); }
+      }
+
+      function renderComparisonTable(data) {
+        const metricLabels = {
+          total_interactions: "Total Interactions",
+          unique_attendees: "Unique Attendees",
+          consented_leads: "Consented Leads",
+          consent_rate: "Consent Rate",
+          opted_in_leads: "Opted-in Leads"
+        };
+        const metrics = Object.keys(metricLabels);
+        const snaps = data.snapshots;
+        const trend = data.trend || {};
+        const thead = document.getElementById("compare-thead");
+        const tbody = document.getElementById("compare-tbody");
+
+        thead.textContent = "";
+        const hdr = document.createElement("tr");
+        hdr.style.borderBottom = "1px solid rgba(255,255,255,0.08)";
+        const thStyle = "text-align:left;padding:8px;font-size:11px;text-transform:uppercase;letter-spacing:0.07em;color:#9ca3af;";
+        const addTh = (txt, right) => { const th = document.createElement("th"); th.style.cssText = thStyle + (right ? "text-align:right;" : ""); th.textContent = txt; hdr.appendChild(th); };
+        addTh("Metric", false);
+        snaps.forEach(s => addTh(`v${s.version} ${fmtDateShort(s.created_at)}`, true));
+        addTh("Trend", true);
+        thead.appendChild(hdr);
+
+        tbody.textContent = "";
+        metrics.forEach(key => {
+          const row = document.createElement("tr");
+          row.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
+          const addTd = (txt, right, style) => { const td = document.createElement("td"); td.style.cssText = "padding:8px;font-size:13px;" + (right ? "text-align:right;" : "") + (style || ""); td.textContent = txt; row.appendChild(td); };
+          addTd(metricLabels[key], false);
+          snaps.forEach(s => addTd(num(s.metrics[key] ?? 0), true));
+          const tv = trend[key] ?? "stable";
+          const icon = tv === "up" ? "▲" : tv === "down" ? "▼" : "→";
+          const col = tv === "up" ? "#10b981" : tv === "down" ? "#ef4444" : "#9ca3af";
+          addTd(icon, true, `font-size:14px;font-weight:700;color:${col};`);
+          tbody.appendChild(row);
+        });
+      }
+
+      function renderComparisonChart(data) {
+        const el = document.getElementById("comparison-chart");
+        const metrics = ["total_interactions", "unique_attendees", "consented_leads"];
+        const snaps = data.snapshots;
+        const colors = ["#2563eb","#10b981","#f59e0b","#ef4444","#8b5cf6"];
+        const W = 560, H = 200, PAD = 40, BAR_GAP = 4;
+        const groupW = Math.floor((W - PAD * 2) / metrics.length);
+        const barW = Math.max(4, Math.floor((groupW - BAR_GAP * (snaps.length + 1)) / snaps.length));
+        let maxVal = 1;
+        metrics.forEach(key => snaps.forEach(s => { maxVal = Math.max(maxVal, Number(s.metrics[key] ?? 0)); }));
+        const labels = { total_interactions: "Interactions", unique_attendees: "Attendees", consented_leads: "Consented" };
+        const ns = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(ns, "svg");
+        svg.setAttribute("viewBox", `0 -20 ${W} ${H + 20}`);
+        svg.style.cssText = `width:100%;max-width:${W}px;display:block;`;
+        const gLegend = document.createElementNS(ns, "g");
+        gLegend.setAttribute("transform", "translate(0,20)");
+        snaps.forEach((s, si) => {
+          const r = document.createElementNS(ns, "rect");
+          r.setAttribute("x", si * 90); r.setAttribute("y", 0); r.setAttribute("width", 12); r.setAttribute("height", 12);
+          r.setAttribute("fill", colors[si % colors.length]); r.setAttribute("rx", 2);
+          gLegend.appendChild(r);
+          const t = document.createElementNS(ns, "text");
+          t.setAttribute("x", si * 90 + 16); t.setAttribute("y", 10);
+          t.setAttribute("fill", "#9ca3af"); t.setAttribute("font-size", 11);
+          t.textContent = `v${s.version}`;
+          gLegend.appendChild(t);
+        });
+        svg.appendChild(gLegend);
+        const gBars = document.createElementNS(ns, "g");
+        gBars.setAttribute("transform", "translate(0,20)");
+        metrics.forEach((key, gi) => {
+          const gx = PAD + gi * groupW;
+          snaps.forEach((s, si) => {
+            const val = Number(s.metrics[key] ?? 0);
+            const barH = Math.max(2, Math.round((val / maxVal) * (H - 40)));
+            const bx = gx + BAR_GAP + si * (barW + BAR_GAP);
+            const by = H - 20 - barH;
+            const rect = document.createElementNS(ns, "rect");
+            rect.setAttribute("x", bx); rect.setAttribute("y", by);
+            rect.setAttribute("width", barW); rect.setAttribute("height", barH);
+            rect.setAttribute("fill", colors[si % colors.length]); rect.setAttribute("rx", 2); rect.setAttribute("opacity", 0.85);
+            const title = document.createElementNS(ns, "title"); title.textContent = `v${s.version}: ${val}`;
+            rect.appendChild(title);
+            gBars.appendChild(rect);
+          });
+          const txt = document.createElementNS(ns, "text");
+          txt.setAttribute("x", gx + groupW / 2); txt.setAttribute("y", H - 4);
+          txt.setAttribute("text-anchor", "middle"); txt.setAttribute("fill", "#9ca3af"); txt.setAttribute("font-size", 10);
+          txt.textContent = labels[key] || key;
+          gBars.appendChild(txt);
+        });
+        svg.appendChild(gBars);
+        const lbl = document.createElement("div");
+        lbl.style.cssText = "font-size:12px;color:#9ca3af;margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;";
+        lbl.textContent = "Bar Chart";
+        el.textContent = "";
+        el.appendChild(lbl);
+        el.appendChild(svg);
+      }
+
+      function renderTrendChart(data) {
+        const el = document.getElementById("trend-chart");
+        const key = "total_interactions";
+        const snaps = data.snapshots;
+        const W = 560, H = 160, PAD = 40;
+        let maxVal = Math.max(1, ...snaps.map(s => Number(s.metrics[key] ?? 0)));
+        const pts = snaps.map((s, i) => ({
+          x: PAD + i * ((W - PAD * 2) / Math.max(1, snaps.length - 1)),
+          y: H - PAD - Math.round((Number(s.metrics[key] ?? 0) / maxVal) * (H - PAD * 2)),
+          val: Number(s.metrics[key] ?? 0), v: s.version
+        }));
+        const ns = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(ns, "svg");
+        svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+        svg.style.cssText = `width:100%;max-width:${W}px;display:block;`;
+        const poly = document.createElementNS(ns, "polyline");
+        poly.setAttribute("points", pts.map(p => `${p.x},${p.y}`).join(" "));
+        poly.setAttribute("fill", "none"); poly.setAttribute("stroke", "#2563eb"); poly.setAttribute("stroke-width", 2);
+        svg.appendChild(poly);
+        pts.forEach(p => {
+          const c = document.createElementNS(ns, "circle");
+          c.setAttribute("cx", p.x); c.setAttribute("cy", p.y); c.setAttribute("r", 5); c.setAttribute("fill", "#2563eb");
+          svg.appendChild(c);
+          const t = document.createElementNS(ns, "text");
+          t.setAttribute("x", p.x); t.setAttribute("y", p.y - 8); t.setAttribute("text-anchor", "middle");
+          t.setAttribute("fill", "#9ca3af"); t.setAttribute("font-size", 10); t.textContent = String(p.val);
+          svg.appendChild(t);
+        });
+        const lbl = document.createElement("div");
+        lbl.style.cssText = "font-size:12px;color:#9ca3af;margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;";
+        lbl.textContent = "Trend — Total Interactions";
+        el.textContent = "";
+        el.appendChild(lbl);
+        el.appendChild(svg);
+      }
+
+      function exportComparison() {
+        if (!_comparisonData) return;
+        const snaps = _comparisonData.snapshots;
+        const metrics = ["total_interactions","unique_attendees","consented_leads","consent_rate","opted_in_leads"];
+        const header = ["Metric", ...snaps.map(s => `v${s.version} ${fmtDate(s.created_at)}`)].join(",");
+        const rows = metrics.map(key => [key, ...snaps.map(s => s.metrics[key] ?? 0)].join(","));
+        const csv = [header, ...rows].join("\n");
+        const blob = new Blob([csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = "snapshot-comparison.csv"; a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function fmtDateShort(iso) {
+        if (!iso) return "";
+        try { return new Date(iso).toLocaleDateString("en-IN", { month: "short", day: "numeric" }); } catch { return iso; }
+      }
+
+      window.runComparison = runComparison;
+      window.exportComparison = exportComparison;
+
 
       /* ── FREEZE OPERATIONS ──────────────────────────── */
       async function doFreeze(state) {

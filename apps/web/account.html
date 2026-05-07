@@ -283,7 +283,8 @@
 
       document.getElementById("sign-out-btn").addEventListener("click", () => {
         localStorage.removeItem("codex.token");
-        location.href = "./index.html";
+        localStorage.removeItem("codex.active_event_id");
+        location.href = "/login";
       });
 
       function showChangePasswordModal() {

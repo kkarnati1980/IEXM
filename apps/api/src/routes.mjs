@@ -856,6 +856,38 @@ export function registerRoutes(router) {
   });
 
   router.addRoute({
+    id: "devices-iot-runs",
+    method: "GET",
+    path: "/devices/iot-runs",
+    allowedRoles: ["ops_user", "platform_admin", "organizer_admin"],
+    handler: async ({ repos, principal, query }) => {
+      const eventId = query.event_id ?? null;
+      const limit = Math.min(Number(query.limit ?? 20), 100);
+      const runs = eventId
+        ? await repos.iotIntegrationRuns.listByEvent(principal.tenant_id, eventId, { limit }).catch(() => [])
+        : [];
+      return { items: (runs || []).map(formatIntegrationRun) };
+    },
+    auditEventType: "ops.iot_runs.view"
+  });
+
+  router.addRoute({
+    id: "iot-runs-list",
+    method: "GET",
+    path: "/iot/runs",
+    allowedRoles: ["ops_user", "platform_admin", "organizer_admin"],
+    handler: async ({ repos, principal, query }) => {
+      const eventId = query.event_id ?? null;
+      const limit = Math.min(Number(query.limit ?? 20), 100);
+      const runs = eventId
+        ? await repos.iotIntegrationRuns.listByEvent(principal.tenant_id, eventId, { limit }).catch(() => [])
+        : [];
+      return { items: (runs || []).map(formatIntegrationRun) };
+    },
+    auditEventType: "ops.iot_runs_list.view"
+  });
+
+  router.addRoute({
     id: "device-credentials-list",
     method: "GET",
     path: "/devices/:deviceId/credentials",
@@ -2448,6 +2480,72 @@ export function registerRoutes(router) {
       };
     },
     auditEventType: "organizer.overview.view"
+  });
+
+  router.addRoute({
+    id: "organizer-event-snapshots-list",
+    method: "GET",
+    path: "/organizer/events/:eventId/snapshots",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      return { event };
+    },
+    handler: async ({ repos, resources }) => {
+      const snapshots = await repos.reportSnapshots.listByEvent(resources.event.tenant_id, resources.event.id);
+      return {
+        event_id: resources.event.id,
+        items: snapshots.map(s => ({
+          id: s.id,
+          version: s.report_snapshot_version,
+          snapshot_type: s.payload?.snapshot_type ?? "organizer",
+          note: s.payload?.note ?? null,
+          created_at: s.created_at
+        }))
+      };
+    },
+    auditEventType: "organizer.event_snapshots.view"
+  });
+
+  router.addRoute({
+    id: "organizer-event-snapshots-create",
+    method: "POST",
+    path: "/organizer/events/:eventId/snapshots",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      return { event };
+    },
+    handler: async ({ repos, resources, body, principal }) => {
+      const interactions = await repos.interactions.listByEvent(resources.event.tenant_id, resources.event.id);
+      const uniqueAttendees = new Set(interactions.map(i => i.attendee_id).filter(Boolean)).size;
+      const existing = await repos.reportSnapshots.listByEvent(resources.event.tenant_id, resources.event.id);
+      const nextVersion = existing.reduce((max, s) => Math.max(max, Number(s.report_snapshot_version ?? 0)), 0) + 1;
+      const now = new Date().toISOString();
+      const snapshot = await repos.reportSnapshots.create({
+        id: nextId("report-snapshot"),
+        tenant_id: resources.event.tenant_id,
+        event_id: resources.event.id,
+        report_snapshot_version: nextVersion,
+        payload: {
+          snapshot_type: "organizer",
+          note: body.note ?? null,
+          created_by_user_id: principal.user_id ?? null,
+          total_interactions: interactions.length,
+          unique_attendees: uniqueAttendees
+        },
+        created_at: now
+      });
+      return {
+        id: snapshot.id,
+        version: snapshot.report_snapshot_version,
+        snapshot_type: "organizer",
+        note: body.note ?? null,
+        created_at: snapshot.created_at
+      };
+    },
+    auditEventType: "organizer.event_snapshot.created"
   });
 
   router.addRoute({
@@ -4907,12 +5005,93 @@ export function registerRoutes(router) {
       }
       await repos.users.update({ ...user, last_login_at: new Date().toISOString() });
 
+      if (user.mfa_required) {
+        const otp = String(Math.floor(100000 + Math.random() * 900000));
+        state.mfaTokens = state.mfaTokens || {};
+        state.mfaTokens[user.id] = { otp, expires_at: Date.now() + 10 * 60 * 1000 };
+        await dispatchTransactionalEmail({
+          repos,
+          tenantId: user.tenant_id,
+          recipientEmail: user.email,
+          messageType: "mfa_otp",
+          templateVars: { display_name: user.display_name || "there", otp },
+          actorUserId: user.id
+        });
+        return {
+          mfa_required: true,
+          user_id: user.id,
+          message: "Check your email for a verification code"
+        };
+      }
+
       const roleAssignments = await repos.userRoleAssignments.listByUser(user.tenant_id, user.id);
       const scopes = await repos.userAccessScopes.listByUser(user.tenant_id, user.id);
       const { buildUserPrincipal } = await import("./auth/principals.mjs");
       const principal = buildUserPrincipal(user, scopes, roleAssignments);
       const secret = state.sessionSecret;
       const token = issuePlatformToken(principal, secret);
+      const redirect = await resolveRedirectTarget(user.id, user.tenant_id, repos);
+      return {
+        token,
+        user: { id: user.id, email: user.email, full_name: user.display_name, role: user.role },
+        ...redirect
+      };
+    }
+  });
+
+  router.addRoute({
+    id: "auth-mfa-send-otp",
+    method: "POST",
+    path: "/auth/mfa/send-otp",
+    authRequired: false,
+    validate: (body) => body ?? {},
+    handler: async ({ body, repos, state }) => {
+      const { user_id } = body;
+      if (!user_id) throw new HttpError(400, "user_id is required");
+      const user = await repos.users.findByIdGlobal(user_id);
+      if (!user) throw new HttpError(404, "User not found");
+      const otp = String(Math.floor(100000 + Math.random() * 900000));
+      state.mfaTokens = state.mfaTokens || {};
+      state.mfaTokens[user.id] = { otp, expires_at: Date.now() + 10 * 60 * 1000 };
+      await dispatchTransactionalEmail({
+        repos,
+        tenantId: user.tenant_id,
+        recipientEmail: user.email,
+        messageType: "mfa_otp",
+        templateVars: { display_name: user.display_name || "there", otp },
+        actorUserId: user.id
+      });
+      return { message: "Verification code sent to your email" };
+    }
+  });
+
+  router.addRoute({
+    id: "auth-mfa-verify-otp",
+    method: "POST",
+    path: "/auth/mfa/verify-otp",
+    authRequired: false,
+    validate: (body) => body ?? {},
+    handler: async ({ body, repos, state }) => {
+      const { user_id, otp } = body;
+      if (!user_id || !otp) throw new HttpError(400, "user_id and otp are required");
+      state.mfaTokens = state.mfaTokens || {};
+      const record = state.mfaTokens[user_id];
+      if (!record) throw new HttpError(400, "VERIFICATION_CODE_INVALID");
+      if (Date.now() > record.expires_at) {
+        delete state.mfaTokens[user_id];
+        throw new HttpError(400, "VERIFICATION_CODE_EXPIRED");
+      }
+      if (String(otp) !== String(record.otp)) {
+        throw new HttpError(400, "VERIFICATION_CODE_INVALID");
+      }
+      delete state.mfaTokens[user_id];
+      const user = await repos.users.findByIdGlobal(user_id);
+      if (!user) throw new HttpError(404, "User not found");
+      const roleAssignments = await repos.userRoleAssignments.listByUser(user.tenant_id, user.id);
+      const scopes = await repos.userAccessScopes.listByUser(user.tenant_id, user.id);
+      const { buildUserPrincipal } = await import("./auth/principals.mjs");
+      const principal = buildUserPrincipal(user, scopes, roleAssignments);
+      const token = issuePlatformToken(principal, state.sessionSecret);
       const redirect = await resolveRedirectTarget(user.id, user.tenant_id, repos);
       return {
         token,
@@ -7017,6 +7196,89 @@ export function registerRoutes(router) {
       await repos.nfcReaders.update(updated);
       return { reader: updated };
     }
+  });
+
+  // GET /events/:eventId/snapshots — list report snapshots for comparison
+  router.addRoute({
+    id: "events-report-snapshots-list",
+    method: "GET",
+    path: "/events/:eventId/snapshots",
+    allowedRoles: ["organizer_admin", "sponsor_user", "platform_admin"],
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      return { event };
+    },
+    handler: async ({ repos, resources }) => {
+      const rows = await repos.comparisonSnapshots.listByEvent(resources.event.tenant_id, resources.event.id);
+      return {
+        event_id: resources.event.id,
+        items: rows.map(s => ({
+          id: s.id,
+          version: s.version,
+          created_at: s.created_at,
+          note: s.note ?? null,
+          type: s.type ?? "organizer",
+          metrics: s.metrics ?? {}
+        }))
+      };
+    },
+    auditEventType: "organizer.report_snapshots.view"
+  });
+
+  // POST /events/:eventId/snapshots/compare — compare multiple snapshots
+  router.addRoute({
+    id: "events-report-snapshots-compare",
+    method: "POST",
+    path: "/events/:eventId/snapshots/compare",
+    allowedRoles: ["organizer_admin", "sponsor_user", "platform_admin"],
+    validate: (body) => body ?? {},
+    resolveResources: async ({ repos, principal, params }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      return { event };
+    },
+    handler: async ({ repos, resources, body }) => {
+      const { snapshot_ids } = body;
+      if (!Array.isArray(snapshot_ids) || snapshot_ids.length < 2) {
+        throw new HttpError(400, "snapshot_ids must be an array of at least 2 IDs");
+      }
+      const rows = await repos.comparisonSnapshots.listByIds(resources.event.tenant_id, resources.event.id, snapshot_ids);
+
+      if (rows.length < 2) {
+        throw new HttpError(404, "Could not find the requested snapshots");
+      }
+
+      const metricKeys = ["total_interactions", "unique_attendees", "consented_leads", "consent_rate", "opted_in_leads"];
+      const snapshots = rows.map(s => ({
+        id: s.id,
+        version: s.version,
+        created_at: s.created_at,
+        note: s.note ?? null,
+        metrics: s.metrics ?? {}
+      }));
+
+      const deltas = [];
+      for (let i = 0; i < snapshots.length - 1; i++) {
+        const from = snapshots[i];
+        const to = snapshots[i + 1];
+        const changes = {};
+        for (const key of metricKeys) {
+          const fromVal = Number(from.metrics[key] ?? 0);
+          const toVal = Number(to.metrics[key] ?? 0);
+          changes[key] = Number((toVal - fromVal).toFixed(2));
+        }
+        deltas.push({ from_id: from.id, to_id: to.id, changes });
+      }
+
+      const trend = {};
+      for (const key of metricKeys) {
+        const first = Number(snapshots[0].metrics[key] ?? 0);
+        const last = Number(snapshots[snapshots.length - 1].metrics[key] ?? 0);
+        trend[key] = last > first ? "up" : last < first ? "down" : "stable";
+      }
+
+      return { snapshots, deltas, trend };
+    },
+    auditEventType: "organizer.report_snapshots.compare"
   });
 
   // GET /events/:eventId/branding — get branding config

@@ -21,24 +21,45 @@
       .status{padding:12px 14px;border-radius:12px;font-size:14px;margin-bottom:16px;}
       .status.error{background:rgba(255,159,159,0.12);color:var(--bad);}
       .status.ok{background:rgba(159,211,199,0.16);color:var(--good);}
+      .resend-link{display:block;text-align:center;margin-top:12px;font-size:13px;color:var(--accent-2);cursor:pointer;text-decoration:underline;}
+      .otp-hint{font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.5;}
     </style>
   </head>
   <body>
     <div class="card">
       <div class="eyebrow">Codex</div>
-      <h1>Sign in</h1>
-      <div id="status" hidden class="status"></div>
-      <form id="login-form" novalidate>
-        <div class="field">
-          <label for="email">Email address</label>
-          <input type="email" id="email" autocomplete="email" autofocus required>
-        </div>
-        <div class="field">
-          <label for="password">Password</label>
-          <input type="password" id="password" autocomplete="current-password" required>
-        </div>
-        <button type="submit" id="submit-btn">Sign in</button>
-      </form>
+
+      <!-- Step 1: email/password -->
+      <div id="step-login">
+        <h1>Sign in</h1>
+        <div id="status-login" hidden class="status"></div>
+        <form id="login-form" novalidate>
+          <div class="field">
+            <label for="email">Email address</label>
+            <input type="email" id="email" autocomplete="email" autofocus required>
+          </div>
+          <div class="field">
+            <label for="password">Password</label>
+            <input type="password" id="password" autocomplete="current-password" required>
+          </div>
+          <button type="submit" id="submit-btn">Sign in</button>
+        </form>
+      </div>
+
+      <!-- Step 2: OTP verification (hidden initially) -->
+      <div id="step-otp" hidden>
+        <h1>Verify your identity</h1>
+        <div id="status-otp" hidden class="status"></div>
+        <p class="otp-hint">We sent a 6-digit code to your email. Enter it below to complete sign in.</p>
+        <form id="otp-form" novalidate>
+          <div class="field">
+            <label for="otp-code">Verification code</label>
+            <input type="text" id="otp-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" required>
+          </div>
+          <button type="submit" id="otp-submit-btn">Verify</button>
+        </form>
+        <span class="resend-link" id="resend-link">Resend code</span>
+      </div>
     </div>
 
     <script type="module">
@@ -47,23 +68,57 @@
       const params = new URLSearchParams(location.search);
       const apiBase = params.get("apiBase") ?? window.location.origin;
 
-      const statusEl = document.getElementById("status");
-      const submitBtn = document.getElementById("submit-btn");
+      let pendingUserId = null;
 
-      function showError(msg) {
-        statusEl.textContent = msg;
-        statusEl.className = "status error";
-        statusEl.hidden = false;
+      const loginStatusEl = document.getElementById("status-login");
+      const otpStatusEl   = document.getElementById("status-otp");
+      const submitBtn     = document.getElementById("submit-btn");
+      const otpSubmitBtn  = document.getElementById("otp-submit-btn");
+
+      function showLoginError(msg) {
+        loginStatusEl.textContent = msg;
+        loginStatusEl.className = "status error";
+        loginStatusEl.hidden = false;
+      }
+
+      function showOtpError(msg) {
+        otpStatusEl.textContent = msg;
+        otpStatusEl.className = "status error";
+        otpStatusEl.hidden = false;
+      }
+
+      function showOtpInfo(msg) {
+        otpStatusEl.textContent = msg;
+        otpStatusEl.className = "status ok";
+        otpStatusEl.hidden = false;
+      }
+
+      function switchToOtp() {
+        document.getElementById("step-login").hidden = true;
+        document.getElementById("step-otp").hidden = false;
+        document.getElementById("otp-code").focus();
+      }
+
+      function handleRedirect(data) {
+        setToken(data.token);
+        if (data.requires_context_selection) {
+          const ctxParams = new URLSearchParams({ apiBase, token: data.token });
+          if (data.events?.length) ctxParams.set("events", JSON.stringify(data.events));
+          location.href = `select-context.html?${ctxParams}`;
+          return;
+        }
+        const redirect = data.redirect_to ?? "/";
+        location.href = `${redirect}?token=${encodeURIComponent(data.token)}&apiBase=${encodeURIComponent(apiBase)}`;
       }
 
       document.getElementById("login-form").addEventListener("submit", async (e) => {
         e.preventDefault();
         const email = document.getElementById("email").value.trim();
         const password = document.getElementById("password").value;
-        if (!email || !password) { showError("Email and password are required."); return; }
+        if (!email || !password) { showLoginError("Email and password are required."); return; }
 
         submitBtn.disabled = true;
-        statusEl.hidden = true;
+        loginStatusEl.hidden = true;
 
         try {
           const res = await fetch(`${apiBase}/auth/login`, {
@@ -74,26 +129,73 @@
           const data = await res.json().catch(() => ({}));
 
           if (!res.ok) {
-            showError(res.status === 401 ? "Invalid email or password." : res.status === 403 ? "Your account has been disabled." : (data.error ?? "Login failed."));
+            showLoginError(res.status === 401 ? "Invalid email or password." : res.status === 403 ? "Your account has been disabled." : (data.error ?? "Login failed."));
             submitBtn.disabled = false;
             return;
           }
 
-          setToken(data.token);
-
-          if (data.requires_context_selection) {
-            const ctxParams = new URLSearchParams({ apiBase, token: data.token });
-            if (data.events?.length) ctxParams.set("events", JSON.stringify(data.events));
-            location.href = `select-context.html?${ctxParams}`;
+          if (data.mfa_required) {
+            pendingUserId = data.user_id;
+            switchToOtp();
+            submitBtn.disabled = false;
             return;
           }
 
-          const redirect = data.redirect_to ?? "/";
-          location.href = `${redirect}?token=${encodeURIComponent(data.token)}&apiBase=${encodeURIComponent(apiBase)}`;
+          handleRedirect(data);
 
         } catch {
-          showError("Network error — please try again.");
+          showLoginError("Network error — please try again.");
           submitBtn.disabled = false;
+        }
+      });
+
+      document.getElementById("otp-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const otp = document.getElementById("otp-code").value.trim();
+        if (!otp) { showOtpError("Please enter your verification code."); return; }
+
+        otpSubmitBtn.disabled = true;
+        otpStatusEl.hidden = true;
+
+        try {
+          const res = await fetch(`${apiBase}/auth/mfa/verify-otp`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ user_id: pendingUserId, otp })
+          });
+          const data = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            const errCode = data.error ?? "";
+            showOtpError(
+              errCode === "VERIFICATION_CODE_EXPIRED" ? "Your code has expired. Please request a new one." :
+              errCode === "VERIFICATION_CODE_INVALID" ? "Invalid code. Please check and try again." :
+              (data.message ?? "Verification failed.")
+            );
+            otpSubmitBtn.disabled = false;
+            return;
+          }
+
+          handleRedirect(data);
+
+        } catch {
+          showOtpError("Network error — please try again.");
+          otpSubmitBtn.disabled = false;
+        }
+      });
+
+      document.getElementById("resend-link").addEventListener("click", async () => {
+        if (!pendingUserId) return;
+        otpStatusEl.hidden = true;
+        try {
+          await fetch(`${apiBase}/auth/mfa/send-otp`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ user_id: pendingUserId })
+          });
+          showOtpInfo("A new code has been sent to your email.");
+        } catch {
+          showOtpError("Could not resend — please try again.");
         }
       });
     </script>

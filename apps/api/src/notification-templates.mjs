@@ -101,6 +101,7 @@ function renderBody(messageType, vars = {}) {
     case "offboarding_initiated": return renderOffboardingInitiated(vars);
     case "offboarding_deletion_reminder_14d": return renderOffboardingDeletionReminder14d(vars);
     case "offboarding_deletion_reminder_3d": return renderOffboardingDeletionReminder3d(vars);
+    case "mfa_otp": return renderMfaOtp(vars);
     default: throw new Error(`Unknown notification template: ${messageType}`);
   }
 }
@@ -453,6 +454,22 @@ function renderOffboardingDeletionReminder3d({
       `To cancel or pause the offboarding process, contact ${contact_email} immediately.`,
       ``,
       `After deletion is complete, data cannot be recovered. This action is irreversible.`
+    ].join("\n")
+  };
+}
+
+function renderMfaOtp({ display_name = "there", otp = "" }) {
+  return {
+    subject: "Your verification code — Codex",
+    body: [
+      `Hi ${display_name},`,
+      ``,
+      `Your two-step verification code is:`,
+      ``,
+      `${otp}`,
+      ``,
+      `This code expires in 10 minutes.`,
+      `If you did not attempt to sign in, please contact support immediately.`
     ].join("\n")
   };
 }

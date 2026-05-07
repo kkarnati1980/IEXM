@@ -289,7 +289,7 @@
 
       // Auth — read JWT from localStorage, redirect to login if missing
       const TOKEN = localStorage.getItem("codex.token");
-      if (!TOKEN) { location.href = "/login.html"; throw new Error("Not authenticated"); }
+      if (!TOKEN) { location.href = "/login"; throw new Error("Not authenticated"); }
       let jwtPayload = {};
       try { jwtPayload = JSON.parse(atob(TOKEN.split(".")[1])); } catch {}
       const eventId = jwtPayload.event_ids?.[0] || params.get("eventId") || "event-indiaexpo";
@@ -299,7 +299,8 @@
       $("nav-signout").addEventListener("click", (e) => {
         e.preventDefault();
         localStorage.removeItem("codex.token");
-        location.href = "/login.html";
+        localStorage.removeItem("codex.active_event_id");
+        location.href = "/login";
       });
 
       let ALL_LEADS   = [];

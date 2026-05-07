@@ -262,6 +262,10 @@ export function createPostgresRepositories(db, securityContext = null) {
           [hash]
         );
         return result.rows[0] ?? null;
+      },
+      async findByIdGlobal(id) {
+        const result = await execute(`SELECT * FROM users WHERE id = $1`, [id]);
+        return result.rows[0] ?? null;
       }
     },
     events: {
@@ -2165,6 +2169,24 @@ export function createPostgresRepositories(db, securityContext = null) {
             [tenantId, eventId]
           )
         );
+      }
+    },
+    comparisonSnapshots: {
+      async listByEvent(tenantId, eventId) {
+        const result = await execute(
+          `SELECT * FROM report_snapshots WHERE tenant_id = $1 AND event_id = $2 ORDER BY created_at ASC`,
+          [tenantId, eventId]
+        ).catch(() => ({ rows: [] }));
+        return result.rows ?? [];
+      },
+      async listByIds(tenantId, eventId, ids) {
+        if (!ids.length) return [];
+        const placeholders = ids.map((_, i) => `$${i + 3}`).join(",");
+        const result = await execute(
+          `SELECT * FROM report_snapshots WHERE tenant_id = $1 AND event_id = $2 AND id IN (${placeholders}) ORDER BY created_at ASC`,
+          [tenantId, eventId, ...ids]
+        ).catch(() => ({ rows: [] }));
+        return result.rows ?? [];
       }
     },
     leaderboardSnapshots: {

@@ -350,14 +350,14 @@
 
     <script type="module">
       import { showRoleAssignmentModal, isAuthenticated, logoutUser } from "../components.js";
-      if (!isAuthenticated()) { logoutUser("../login.html"); throw new Error("unauthenticated"); }
+      if (!isAuthenticated()) { logoutUser("/login"); throw new Error("unauthenticated"); }
 
       const params = new URLSearchParams(location.search);
       const apiBase = params.get("apiBase") ?? window.location.origin;
       const token = params.get("token") ?? localStorage.getItem("codex.token") ?? "platform-token";
       const tenantId = params.get("tenantId") ?? "";
 
-      document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logoutUser("../login.html"); });
+      document.getElementById("logout-link").addEventListener("click", (e) => { e.preventDefault(); logoutUser("/login"); });
 
       // Update back link
       document.getElementById("back-link").href = `tenants.html?token=${encodeURIComponent(token)}&apiBase=${encodeURIComponent(apiBase)}`;

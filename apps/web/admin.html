@@ -362,7 +362,7 @@
             </div>
             <label class="muted" style="display:flex; align-items:center; gap:8px; margin-top:22px;">
               <input id="create-mfa-required" type="checkbox">
-              Require MFA flag
+              Require two-step verification
             </label>
           </div>
           <div class="detail-actions" style="margin-top:14px;">
@@ -433,7 +433,7 @@
               </div>
               <label class="muted" style="display:flex; align-items:center; gap:8px; margin-top:22px;">
                 <input id="update-mfa-required" type="checkbox">
-                Require MFA flag
+                Require two-step verification
               </label>
             </div>
             <div class="detail-actions">
@@ -485,15 +485,19 @@
         </article>
 
         <article class="card">
-          <div class="eyebrow">IAM Audit</div>
+          <div class="eyebrow">Access Change History</div>
           <h2>Recent admin activity</h2>
           <div id="audit-list" class="audit-list list">
-            <div class="item empty">IAM audit entries will appear here.</div>
+            <div class="item empty">Access change history entries will appear here.</div>
           </div>
         </article>
 
         <article class="card">
           <div class="eyebrow">Security Hardening</div>
+          <div style="background:#7d4e00;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">
+            <span style="font-size:18px;">⚠️</span>
+            <span style="color:#fef3c7;font-size:13px;font-weight:500;">These settings affect the entire platform. Change only with engineering team guidance.</span>
+          </div>
           <h2>Alerts and pen-test readiness</h2>
           <div id="security-summary" class="list">
             <div class="item empty">Security posture, alerts, and readiness controls will appear here.</div>
@@ -515,10 +519,18 @@
         </article>
 
         <article class="card">
-          <div class="eyebrow">Access Control</div>
-          <h2>Route permission matrix</h2>
-          <div id="access-control-summary" class="list">
-            <div class="item empty">Access-control matrix coverage will appear here.</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <div>
+              <div class="eyebrow">Access Control</div>
+              <h2 style="margin:4px 0 0;">Route permission matrix</h2>
+              <p style="color:#9ca3af;font-size:13px;margin:4px 0 0;">Engineering reference only. No business action required.</p>
+            </div>
+            <button id="toggle-acl" onclick="(function(){const body=document.getElementById('acl-body');const isHidden=body.style.display==='none';body.style.display=isHidden?'block':'none';document.getElementById('toggle-acl').textContent=isHidden?'Hide Technical Details':'Show Technical Details';})()" style="padding:8px 16px;background:#374151;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Show Technical Details</button>
+          </div>
+          <div id="acl-body" style="display:none;">
+            <div id="access-control-summary" class="list">
+              <div class="item empty">Access-control matrix coverage will appear here.</div>
+            </div>
           </div>
         </article>
       </aside>
@@ -537,7 +549,7 @@
 
       // Auth — read JWT from localStorage, redirect if missing or wrong role
       const _storedToken = localStorage.getItem("codex.token");
-      if (!_storedToken) { location.href = "/login.html"; throw new Error("Not authenticated"); }
+      if (!_storedToken) { location.href = "/login"; throw new Error("Not authenticated"); }
       let _jwtPayload = {};
       try { _jwtPayload = JSON.parse(atob(_storedToken.split(".")[1])); } catch {}
       if (_jwtPayload.role !== "platform_admin") {
@@ -548,7 +560,8 @@
       document.getElementById("nav-signout").addEventListener("click", (e) => {
         e.preventDefault();
         localStorage.removeItem("codex.token");
-        location.href = "/login.html";
+        localStorage.removeItem("codex.active_event_id");
+        location.href = "/login";
       });
 
       const authTokenInput = document.getElementById("auth-token");

@@ -107,6 +107,9 @@ export function createMemoryRepositories(state) {
           ) ?? null
         );
       },
+      async findByIdGlobal(id) {
+        return state.users.find((entry) => entry.id === id) ?? null;
+      },
       async findByExternalSubject(issuer, subject) {
         return (
           state.users.find(
@@ -928,6 +931,19 @@ export function createMemoryRepositories(state) {
         return state.reportSnapshots
           .filter((entry) => entry.tenant_id === tenantId && entry.event_id === eventId)
           .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
+      }
+    },
+    comparisonSnapshots: {
+      async listByEvent(tenantId, eventId) {
+        return (state.comparisonSnapshots || [])
+          .filter(s => s.tenant_id === tenantId && s.event_id === eventId)
+          .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+      },
+      async listByIds(tenantId, eventId, ids) {
+        const idSet = new Set(ids);
+        return (state.comparisonSnapshots || [])
+          .filter(s => s.tenant_id === tenantId && s.event_id === eventId && idSet.has(s.id))
+          .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
       }
     },
     leaderboardSnapshots: {

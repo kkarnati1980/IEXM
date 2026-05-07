@@ -206,6 +206,17 @@
     </main>
 
     <script>
+      (function() {
+        const token = localStorage.getItem('codex.token');
+        if (!token) { window.location.href = '/login'; return; }
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+          const role = payload.role || (payload.roles||[])[0];
+          if (role !== 'platform_admin' && role !== 'ops_user') {
+            window.location.href = '/login';
+          }
+        } catch { window.location.href = '/login'; }
+      })();
       const params  = new URLSearchParams(window.location.search);
       const apiBase = params.get("apiBase") || (location.protocol === "file:" ? "http://127.0.0.1:3000" : location.origin);
       const healthUrl = apiBase + "/health";
