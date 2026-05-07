@@ -4025,10 +4025,11 @@ export function createPostgresRepositories(db, securityContext = null) {
       },
       async findByStall(stallId, tenantId) {
         return many(await execute(
-          `SELECT sfa.*, ssf.folder_name, a.email as attendee_email, a.display_name as attendee_name
+          `SELECT sfa.*, ssf.folder_name,
+                  ap.email as attendee_email, ap.full_name as attendee_name
            FROM stall_folder_access sfa
            JOIN stall_shared_folders ssf ON ssf.id = sfa.folder_id
-           LEFT JOIN attendees a ON a.id = sfa.attendee_id
+           LEFT JOIN attendee_profiles ap ON ap.attendee_id = sfa.attendee_id
            WHERE sfa.stall_id = $1 AND sfa.tenant_id = $2
            ORDER BY sfa.granted_at DESC`,
           [stallId, tenantId]

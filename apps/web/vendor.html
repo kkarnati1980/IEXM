@@ -265,43 +265,99 @@
 
         <!-- DOCUMENT STORAGE -->
         <article class="card" id="drive-connection-card">
-          <div class="section-head"><div><div class="eyebrow">Document Storage</div><h2>Connect your drive</h2><p>Share documents with attendees automatically when they tap at your stall.</p></div></div>
-          <div id="drive-not-connected">
-            <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
-              <button id="btn-connect-google" class="secondary" style="display:flex;align-items:center;gap:8px;justify-content:center;border-color:#4285f4;color:#4285f4;">
-                <span>&#9654;</span> Connect Google Drive
+          <div class="eyebrow">Document Storage</div>
+
+          <!-- NOT CONNECTED -->
+          <div id="drive-not-connected" style="margin-top:12px;">
+            <h2 style="margin:0 0 6px;">Connect your document storage</h2>
+            <p style="color:#6b7280;margin:0 0 20px;font-size:14px;">Share company documents with attendees automatically when they tap at your stall.</p>
+            <div style="display:flex;flex-direction:column;gap:10px;max-width:300px;">
+              <button onclick="connectGoogle()" style="display:flex;align-items:center;justify-content:center;gap:10px;padding:11px 18px;background:#fff;border:1.5px solid #dadce0;border-radius:8px;font-size:14px;font-weight:500;color:#3c4043;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.08);">
+                <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#4285F4" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#34A853" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#EA4335" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                Connect Google Drive
               </button>
-              <button id="btn-connect-onedrive" class="secondary" style="display:flex;align-items:center;gap:8px;justify-content:center;border-color:#0078d4;color:#0078d4;">
-                <span>&#9729;</span> Connect OneDrive
+              <button onclick="connectOneDrive()" style="display:flex;align-items:center;justify-content:center;gap:10px;padding:11px 18px;background:#fff;border:1.5px solid #dadce0;border-radius:8px;font-size:14px;font-weight:500;color:#3c4043;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.08);">
+                <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#0078d4" d="M28.6 8.4A13.6 13.6 0 0 0 16 16.2a9.6 9.6 0 0 0-1.2-.1A10.4 10.4 0 0 0 4.8 26.5L16 31.2h20.8l8-6.4a9.6 9.6 0 0 0-9.6-12.8 13.6 13.6 0 0 0-6.6-3.6z"/><path fill="#1490df" d="M42.4 24.8a9.6 9.6 0 0 0-1.6-.2 9.6 9.6 0 0 0-8 4.4L24 36.8h19.2a4.8 4.8 0 0 0 4.8-4.8 4.8 4.8 0 0 0-5.6-7.2z"/></svg>
+                Connect OneDrive
               </button>
             </div>
+            <div id="drive-error-msg" style="color:#ef4444;font-size:13px;margin-top:10px;display:none;"></div>
           </div>
-          <div id="drive-connected" style="display:none;">
-            <div class="item" style="display:flex;align-items:center;gap:8px;padding:8px 0;">
-              <span style="width:8px;height:8px;background:#22c55e;border-radius:50%;flex-shrink:0;"></span>
-              <span id="drive-provider-label" style="font-weight:600;">Google Drive</span>
-              <span class="muted">connected as</span>
-              <strong id="drive-account-email" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></strong>
+
+          <!-- CONNECTED -->
+          <div id="drive-connected" style="display:none;margin-top:12px;">
+            <h2 style="margin:0 0 14px;">Document storage</h2>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:#f0fdf4;border:1.5px solid #10b981;border-radius:10px;margin-bottom:18px;">
+              <div style="display:flex;align-items:center;gap:12px;">
+                <div style="width:34px;height:34px;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.1);">
+                  <span id="drive-provider-icon" style="font-size:18px;">📁</span>
+                </div>
+                <div>
+                  <div style="font-weight:600;font-size:14px;" id="drive-provider-label">Google Drive</div>
+                  <div style="font-size:13px;color:#6b7280;margin-top:1px;" id="drive-account-email">—</div>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="display:flex;align-items:center;gap:5px;font-size:12px;color:#10b981;font-weight:500;">
+                  <span style="width:7px;height:7px;background:#10b981;border-radius:50%;display:inline-block;"></span>
+                  Connected
+                </span>
+                <button onclick="disconnectDrive()" style="padding:5px 11px;background:#fff;border:1px solid #fca5a5;color:#ef4444;border-radius:6px;font-size:12px;cursor:pointer;font-weight:500;">Disconnect</button>
+              </div>
             </div>
-            <button id="btn-disconnect-drive" class="secondary sm" style="color:#ef4444;border-color:#ef4444;margin-top:4px;">Disconnect</button>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px;">
+              <div style="padding:12px;background:#f9fafb;border-radius:8px;text-align:center;">
+                <div id="stat-folders" style="font-size:20px;font-weight:700;">0</div>
+                <div style="font-size:12px;color:#6b7280;margin-top:2px;">Shared folders</div>
+              </div>
+              <div style="padding:12px;background:#f9fafb;border-radius:8px;text-align:center;">
+                <div id="stat-grants" style="font-size:20px;font-weight:700;">0</div>
+                <div style="font-size:12px;color:#6b7280;margin-top:2px;">Access grants</div>
+              </div>
+              <div style="padding:12px;background:#f9fafb;border-radius:8px;text-align:center;">
+                <div id="stat-views" style="font-size:20px;font-weight:700;">0</div>
+                <div style="font-size:12px;color:#6b7280;margin-top:2px;">Document views</div>
+              </div>
+            </div>
+            <button onclick="browseFolders()" style="padding:9px 18px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;margin-right:8px;">+ Add shared folder</button>
+            <button onclick="loadSharedFolders()" style="padding:9px 18px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:14px;cursor:pointer;">Refresh</button>
           </div>
-          <div id="drive-error-msg" class="mini-note" style="color:#ef4444;margin-top:8px;display:none;"></div>
         </article>
 
         <!-- SHARED FOLDERS -->
         <article class="card" id="shared-folders-card" style="display:none;">
-          <div class="section-head"><div><div class="eyebrow">Shared Folders</div><h2>Manage shared folders</h2><p>Select folders from your drive to share with attendees.</p></div></div>
-          <button id="btn-browse-folders" class="secondary sm" style="margin-bottom:12px;">+ Add folder from drive</button>
-          <div id="folder-browser" style="display:none;border:1px solid #e2e8f0;border-radius:8px;max-height:220px;overflow-y:auto;margin-bottom:12px;">
-            <div id="folder-browser-list" style="padding:8px;"></div>
+          <div class="eyebrow">Shared Folders</div>
+          <h2 style="margin:8px 0 4px;">Folders shared with attendees</h2>
+          <p style="color:#6b7280;font-size:14px;margin:0 0 14px;">Attendees can access these folders after tapping at your stall.</p>
+          <div id="folder-browser" style="display:none;margin-bottom:14px;padding:14px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;">
+            <div style="font-weight:600;margin-bottom:10px;font-size:14px;">Select a folder from your drive:</div>
+            <div id="folder-browser-list" style="max-height:220px;overflow-y:auto;"></div>
+            <button onclick="document.getElementById('folder-browser').style.display='none'" style="margin-top:10px;padding:5px 11px;background:#fff;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>
           </div>
           <div id="shared-folders-list"></div>
         </article>
 
         <!-- ACCESS GRANTS -->
         <article class="card" id="access-grants-card" style="display:none;">
-          <div class="section-head"><div><div class="eyebrow">Document Access</div><h2>Attendee document access</h2></div></div>
-          <div id="grants-list"></div>
+          <div class="eyebrow">Document Access</div>
+          <h2 style="margin:8px 0 4px;">Attendee document access</h2>
+          <p style="color:#6b7280;font-size:14px;margin:0 0 14px;">Manage who has access to your shared documents.</p>
+          <div id="grants-empty" style="color:#9ca3af;font-size:14px;padding:16px 0;">No access grants yet. Grants are created automatically when attendees tap at your stall.</div>
+          <div id="grants-table-wrap" style="display:none;overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+              <thead>
+                <tr style="border-bottom:1px solid #e5e7eb;">
+                  <th style="text-align:left;padding:8px 10px;color:#6b7280;font-weight:500;">Attendee</th>
+                  <th style="text-align:left;padding:8px 10px;color:#6b7280;font-weight:500;">Folder</th>
+                  <th style="text-align:left;padding:8px 10px;color:#6b7280;font-weight:500;">Last accessed</th>
+                  <th style="text-align:left;padding:8px 10px;color:#6b7280;font-weight:500;">Opens</th>
+                  <th style="text-align:left;padding:8px 10px;color:#6b7280;font-weight:500;">Status</th>
+                  <th style="text-align:left;padding:8px 10px;color:#6b7280;font-weight:500;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="grants-tbody"></tbody>
+            </table>
+          </div>
         </article>
 
         <!-- CRM SETTINGS -->
@@ -722,8 +778,10 @@
           if (data.connected && data.status === 'active') {
             $('drive-not-connected').style.display = 'none';
             $('drive-connected').style.display = 'block';
-            $('drive-account-email').textContent = data.drive_account_email ?? '';
-            $('drive-provider-label').textContent = data.provider === 'google_drive' ? 'Google Drive' : 'OneDrive';
+            $('drive-account-email').textContent = data.drive_account_email ?? '—';
+            const isGoogle = data.provider === 'google_drive';
+            $('drive-provider-label').textContent = isGoogle ? 'Google Drive' : 'OneDrive';
+            $('drive-provider-icon').textContent = isGoogle ? '🔵' : '☁️';
             $('shared-folders-card').style.display = '';
             $('access-grants-card').style.display = '';
             loadSharedFolders();
@@ -776,47 +834,71 @@
         }
       }
 
+      function escHtml(s) {
+        return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      }
+
       async function loadAccessGrants() {
         try {
           const data = await api(`/stalls/${enc(stallId)}/drive/access-grants`);
-          const list = $('grants-list');
-          list.textContent = '';
-          if (!data.items?.length) {
-            const empty = document.createElement('div');
-            empty.className = 'item muted';
-            empty.textContent = 'No document access grants yet. Grants are created automatically when attendees tap.';
-            list.appendChild(empty);
+          const grants = data.items ?? [];
+          $('stat-grants').textContent = grants.length;
+          if (!grants.length) {
+            $('grants-empty').style.display = '';
+            $('grants-table-wrap').style.display = 'none';
             return;
           }
-          const base = location.origin;
-          data.items.forEach(g => {
-            const row = document.createElement('div');
-            row.className = 'item';
-            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;flex-wrap:wrap;';
-            const nameEl = document.createElement('span');
-            nameEl.style.flex = '1';
-            nameEl.textContent = (g.attendee_name || g.attendee_email || 'Unknown attendee') + ' — ' + (g.folder_name || 'folder');
-            const badge = document.createElement('span');
-            badge.className = 'mini-note';
-            badge.textContent = g.status;
-            badge.style.color = g.status === 'active' ? '#16a34a' : g.status === 'revoked' ? '#ef4444' : '#d97706';
-            const revokeBtn = document.createElement('button');
-            revokeBtn.className = 'secondary sm';
-            revokeBtn.textContent = g.status === 'revoked' ? 'Revoked' : 'Revoke';
-            revokeBtn.disabled = g.status === 'revoked';
-            revokeBtn.style.color = '#ef4444';
-            revokeBtn.addEventListener('click', () => revokeGrant(g.id));
-            row.append(nameEl, badge, revokeBtn);
-            list.appendChild(row);
+          $('grants-empty').style.display = 'none';
+          $('grants-table-wrap').style.display = '';
+          const statusColor = { active: '#16a34a', suspended: '#b45309', revoked: '#dc2626' };
+          const statusBg   = { active: '#dcfce7', suspended: '#fef9c3', revoked: '#fee2e2' };
+          const tbody = $('grants-tbody');
+          tbody.textContent = '';
+          grants.forEach(g => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid #f3f4f6';
+            const accessedText = g.last_accessed_at
+              ? new Date(g.last_accessed_at).toLocaleDateString() : 'Not yet';
+            const cells = [
+              `<div style="font-weight:500;">${escHtml(g.attendee_name||'Anonymous')}</div><div style="font-size:12px;color:#6b7280;">${escHtml(g.attendee_email||'—')}</div>`,
+              escHtml(g.folder_name||'—'),
+              `<span style="color:#6b7280;">${escHtml(accessedText)}</span>`,
+              escHtml(g.access_count??0),
+              `<span style="padding:3px 8px;border-radius:4px;font-size:12px;font-weight:500;background:${statusBg[g.status]||'#f3f4f6'};color:${statusColor[g.status]||'#374151'};">${escHtml(g.status)}</span>`
+            ];
+            cells.forEach(html => {
+              const td = document.createElement('td');
+              td.style.padding = '10px';
+              td.innerHTML = html;
+              tr.appendChild(td);
+            });
+            const actTd = document.createElement('td');
+            actTd.style.padding = '10px';
+            if (g.status === 'active') {
+              const rBtn = document.createElement('button');
+              rBtn.textContent = 'Revoke';
+              rBtn.style.cssText = 'padding:4px 8px;background:#fff;border:1px solid #fca5a5;color:#ef4444;border-radius:4px;font-size:12px;cursor:pointer;margin-right:4px;';
+              rBtn.addEventListener('click', () => revokeGrant(g.id));
+              const sBtn = document.createElement('button');
+              sBtn.textContent = 'Suspend';
+              sBtn.style.cssText = 'padding:4px 8px;background:#fff;border:1px solid #fbbf24;color:#d97706;border-radius:4px;font-size:12px;cursor:pointer;';
+              sBtn.addEventListener('click', () => suspendGrant(g.id));
+              actTd.append(rBtn, sBtn);
+            } else {
+              const restBtn = document.createElement('button');
+              restBtn.textContent = 'Restore';
+              restBtn.style.cssText = 'padding:4px 8px;background:#fff;border:1px solid #86efac;color:#16a34a;border-radius:4px;font-size:12px;cursor:pointer;';
+              restBtn.addEventListener('click', () => restoreGrant(g.id));
+              actTd.appendChild(restBtn);
+            }
+            tr.appendChild(actTd);
+            tbody.appendChild(tr);
           });
-        } catch {
-          const list = $('grants-list');
-          list.textContent = '';
-          const errEl = document.createElement('div');
-          errEl.className = 'mini-note';
-          errEl.style.color = '#ef4444';
-          errEl.textContent = 'Could not load access grants.';
-          list.appendChild(errEl);
+        } catch (err) {
+          console.error('[drive] loadAccessGrants error:', err);
+          $('grants-empty').textContent = 'No access grants yet.';
+          $('grants-empty').style.display = '';
+          $('grants-table-wrap').style.display = 'none';
         }
       }
 
@@ -894,6 +976,27 @@
         }
       }
 
+      async function suspendGrant(grantId) {
+        if (!confirm('Suspend this attendee\'s document access?')) return;
+        try {
+          await api(`/stalls/${enc(stallId)}/drive/access-grants/${enc(grantId)}/suspend`, { method: 'POST' });
+          await loadAccessGrants();
+        } catch (err) {
+          alert('Could not suspend: ' + err.message);
+        }
+      }
+
+      async function restoreGrant(grantId) {
+        try {
+          await api(`/stalls/${enc(stallId)}/drive/access-grants/${enc(grantId)}/restore`, { method: 'POST' });
+          await loadAccessGrants();
+        } catch (err) {
+          alert('Could not restore: ' + err.message);
+        }
+      }
+
+      function browseFolders() { browseDriveFolders(); }
+
       async function connectGoogle() {
         try {
           const data = await api(`/stalls/${enc(stallId)}/drive/connect/google`);
@@ -927,11 +1030,7 @@
         }
       }
 
-      // Wire up buttons
-      $('btn-connect-google').addEventListener('click', connectGoogle);
-      $('btn-connect-onedrive').addEventListener('click', connectOneDrive);
-      $('btn-disconnect-drive').addEventListener('click', disconnectDrive);
-      $('btn-browse-folders').addEventListener('click', browseDriveFolders);
+      // Drive buttons use inline onclick handlers in the new design
 
       // Handle successful OAuth redirect back
       const urlParams = new URLSearchParams(location.search);
