@@ -30,6 +30,29 @@ function parseState(raw) {
   }
 }
 
+function driveConfigError() {
+  const missing = []
+  if (!process.env.GOOGLE_OAUTH_CLIENT_ID) missing.push('GOOGLE_OAUTH_CLIENT_ID')
+  if (!process.env.GOOGLE_OAUTH_CLIENT_SECRET) missing.push('GOOGLE_OAUTH_CLIENT_SECRET')
+  if (!process.env.GOOGLE_OAUTH_REDIRECT_URI) missing.push('GOOGLE_OAUTH_REDIRECT_URI')
+  if (!process.env.DRIVE_ENCRYPTION_KEY || process.env.DRIVE_ENCRYPTION_KEY.length < 64)
+    missing.push('DRIVE_ENCRYPTION_KEY')
+  if (missing.length) {
+    console.error('[drive] Missing required env vars:', missing.join(', '))
+    return 'not_configured'
+  }
+  return null
+}
+
+function categorizeDriveError(err) {
+  const msg = err.message ?? ''
+  if (msg.includes('DRIVE_ENCRYPTION_KEY')) return 'missing_encryption_key'
+  if (msg.includes('token') || msg.includes('Token')) return 'token_error'
+  if (msg.includes('fetch') || msg.includes('network') || msg.includes('ECONNREFUSED')) return 'network_error'
+  if (msg.includes('RLS') || msg.includes('security policy') || msg.includes('permission')) return 'db_permission_error'
+  return 'server_error'
+}
+
 async function getDecryptedAccessToken(repos, connection) {
   if (!connection) throw new HttpError(404, 'No active drive connection for this stall')
   if (connection.status !== 'active') throw new HttpError(409, 'Drive connection is not active')
@@ -102,6 +125,9 @@ export function registerDriveRoutes(router) {
       if (error) return { _redirect: '/vendor?drive_error=' + encodeURIComponent(error) }
       if (!code || !rawState) return { _redirect: '/vendor?drive_error=missing_params' }
 
+      const cfgErr = driveConfigError()
+      if (cfgErr) return { _redirect: '/vendor?drive_error=' + cfgErr }
+
       const state = parseState(rawState)
       if (!state?.stallId || !state?.tenantId) {
         return { _redirect: '/vendor?drive_error=invalid_state' }
@@ -110,16 +136,19 @@ export function registerDriveRoutes(router) {
       try {
         const tokens = await exchangeGoogleCode(code)
         if (!tokens.access_token) {
+          console.error('[drive] Google token exchange failed:', tokens.error, tokens.error_description)
           return { _redirect: '/vendor?drive_error=token_exchange_failed' }
         }
         const email = await getGoogleUserEmail(tokens.access_token)
         const expiresAt = new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000)
 
-        // Deactivate any existing active connections for this stall
         const existing = await repos.stallDriveConnections.findByStall(state.stallId, state.tenantId)
         for (const conn of existing.filter(c => c.status === 'active')) {
           await repos.stallDriveConnections.setStatus(conn.id, 'disconnected')
         }
+
+        const encAccess = encryptToken(tokens.access_token)
+        const encRefresh = tokens.refresh_token ? encryptToken(tokens.refresh_token) : null
 
         await repos.stallDriveConnections.create({
           id: 'sdc-' + shortId(),
@@ -128,8 +157,8 @@ export function registerDriveRoutes(router) {
           event_id: state.eventId,
           provider: 'google_drive',
           connected_by_user_id: state.userId,
-          access_token: encryptToken(tokens.access_token),
-          refresh_token: tokens.refresh_token ? encryptToken(tokens.refresh_token) : null,
+          access_token: encAccess,
+          refresh_token: encRefresh,
           token_expires_at: expiresAt.toISOString(),
           drive_account_email: email,
           status: 'active',
@@ -138,8 +167,8 @@ export function registerDriveRoutes(router) {
 
         return { _redirect: '/vendor?connected=google' }
       } catch (err) {
-        console.error('[drive] Google callback error:', err.message)
-        return { _redirect: '/vendor?drive_error=server_error' }
+        console.error('[drive] Google callback error:', err.stack ?? err.message)
+        return { _redirect: '/vendor?drive_error=' + categorizeDriveError(err) }
       }
     }
   })
@@ -154,6 +183,9 @@ export function registerDriveRoutes(router) {
       if (error) return { _redirect: '/vendor?drive_error=' + encodeURIComponent(error) }
       if (!code || !rawState) return { _redirect: '/vendor?drive_error=missing_params' }
 
+      const cfgErr = driveConfigError()
+      if (cfgErr) return { _redirect: '/vendor?drive_error=' + cfgErr }
+
       const state = parseState(rawState)
       if (!state?.stallId || !state?.tenantId) {
         return { _redirect: '/vendor?drive_error=invalid_state' }
@@ -162,6 +194,7 @@ export function registerDriveRoutes(router) {
       try {
         const tokens = await exchangeOneDriveCode(code)
         if (!tokens.access_token) {
+          console.error('[drive] OneDrive token exchange failed:', tokens.error, tokens.error_description)
           return { _redirect: '/vendor?drive_error=token_exchange_failed' }
         }
         const email = await getOneDriveUserEmail(tokens.access_token)
@@ -172,6 +205,9 @@ export function registerDriveRoutes(router) {
           await repos.stallDriveConnections.setStatus(conn.id, 'disconnected')
         }
 
+        const encAccess = encryptToken(tokens.access_token)
+        const encRefresh = tokens.refresh_token ? encryptToken(tokens.refresh_token) : null
+
         await repos.stallDriveConnections.create({
           id: 'sdc-' + shortId(),
           tenant_id: state.tenantId,
@@ -179,8 +215,8 @@ export function registerDriveRoutes(router) {
           event_id: state.eventId,
           provider: 'onedrive',
           connected_by_user_id: state.userId,
-          access_token: encryptToken(tokens.access_token),
-          refresh_token: tokens.refresh_token ? encryptToken(tokens.refresh_token) : null,
+          access_token: encAccess,
+          refresh_token: encRefresh,
           token_expires_at: expiresAt.toISOString(),
           drive_account_email: email,
           status: 'active',
@@ -189,8 +225,8 @@ export function registerDriveRoutes(router) {
 
         return { _redirect: '/vendor?connected=onedrive' }
       } catch (err) {
-        console.error('[drive] OneDrive callback error:', err.message)
-        return { _redirect: '/vendor?drive_error=server_error' }
+        console.error('[drive] OneDrive callback error:', err.stack ?? err.message)
+        return { _redirect: '/vendor?drive_error=' + categorizeDriveError(err) }
       }
     }
   })

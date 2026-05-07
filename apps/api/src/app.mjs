@@ -20,6 +20,23 @@ import { startDSRWorker } from "./jobs/dsr-worker.mjs";
 import { startEmailDeliveryWorker } from "./jobs/email-delivery-worker.mjs";
 import { startDriveTokenRefreshJob } from "./jobs/drive-token-refresh.mjs";
 
+function validateDriveEnvVars() {
+  const required = [
+    "DRIVE_ENCRYPTION_KEY",
+    "GOOGLE_OAUTH_CLIENT_ID",
+    "GOOGLE_OAUTH_CLIENT_SECRET",
+    "GOOGLE_OAUTH_REDIRECT_URI"
+  ];
+  const missing = required.filter((k) => !process.env[k]);
+  if (missing.length) {
+    console.warn("[drive] WARNING — missing env vars (drive OAuth will fail):", missing.join(", "));
+  }
+  const key = process.env.DRIVE_ENCRYPTION_KEY ?? "";
+  if (key && key.length !== 64) {
+    console.warn(`[drive] WARNING — DRIVE_ENCRYPTION_KEY is ${key.length} chars, need 64 hex chars (32 bytes)`);
+  }
+}
+
 export async function createApp(options = {}) {
   const router = createRouter();
   registerRoutes(router);
@@ -87,6 +104,7 @@ export async function createApp(options = {}) {
     startDSRWorker(repos, state);
     startEmailDeliveryWorker(repos, state);
     startDriveTokenRefreshJob(repos);
+    validateDriveEnvVars();
   }
 
   return {

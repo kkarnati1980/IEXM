@@ -946,7 +946,20 @@
         history.replaceState({}, '', location.pathname);
       }
       if (urlParams.get('drive_error')) {
-        $('drive-error-msg').textContent = 'Drive connection failed: ' + urlParams.get('drive_error');
+        const errCode = urlParams.get('drive_error');
+        const errMessages = {
+          not_configured: 'Drive integration is not configured on this server (missing env vars). Contact the platform administrator.',
+          missing_encryption_key: 'Server configuration error: DRIVE_ENCRYPTION_KEY is not set. Contact the platform administrator.',
+          token_exchange_failed: 'OAuth token exchange failed. Check that the Google OAuth client credentials are correct.',
+          token_error: 'Token processing error. Try reconnecting.',
+          network_error: 'Network error while connecting to the drive provider. Please try again.',
+          db_permission_error: 'Database permission error. Contact the platform administrator.',
+          invalid_state: 'OAuth state parameter was invalid. Please try connecting again.',
+          missing_params: 'OAuth callback was missing required parameters.',
+          server_error: 'An unexpected server error occurred. Check the server logs for details.'
+        };
+        const msg = errMessages[errCode] ?? ('Drive connection failed: ' + errCode);
+        $('drive-error-msg').textContent = msg;
         $('drive-error-msg').style.display = '';
         history.replaceState({}, '', location.pathname);
       }
