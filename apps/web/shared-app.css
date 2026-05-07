@@ -64,11 +64,9 @@ a:hover { text-decoration: underline; }
 button { font-family: var(--font); }
 input, select, textarea { font-family: var(--font); }
 
-/* ── Shell (top nav bar) ── */
+/* ── Shell (top nav bar wrapper) ── */
 .shell {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+  /* intentionally no min-height or flex — pages place <main> outside .shell */
 }
 
 .shell-bar {
