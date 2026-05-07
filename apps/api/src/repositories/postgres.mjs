@@ -3849,6 +3849,226 @@ export function createPostgresRepositories(db, securityContext = null) {
       incrementRouteHit() {
         return undefined;
       }
+    },
+
+    stallDriveConnections: {
+      async findByStall(stallId, tenantId) {
+        return many(await execute(
+          `SELECT * FROM stall_drive_connections WHERE stall_id = $1 AND tenant_id = $2
+           ORDER BY created_at DESC`,
+          [stallId, tenantId]
+        ))
+      },
+      async findActive(stallId, tenantId) {
+        const result = await execute(
+          `SELECT * FROM stall_drive_connections WHERE stall_id = $1 AND tenant_id = $2
+           AND status = 'active' ORDER BY created_at DESC LIMIT 1`,
+          [stallId, tenantId]
+        )
+        return result.rows[0] ?? null
+      },
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO stall_drive_connections
+             (id,tenant_id,stall_id,event_id,provider,connected_by_user_id,
+              access_token,refresh_token,token_expires_at,drive_account_email,
+              status,connected_at,last_refreshed_at,created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+            [
+              record.id, record.tenant_id, record.stall_id, record.event_id,
+              record.provider, record.connected_by_user_id,
+              record.access_token ?? null, record.refresh_token ?? null,
+              record.token_expires_at ?? null, record.drive_account_email ?? null,
+              record.status ?? 'active',
+              record.connected_at ?? new Date().toISOString(),
+              record.last_refreshed_at ?? null,
+              record.created_at ?? new Date().toISOString()
+            ]
+          ),
+          'StallDriveConnection'
+        )
+      },
+      async updateTokens(id, tokens) {
+        return one(
+          await execute(
+            `UPDATE stall_drive_connections
+             SET access_token=$2, token_expires_at=$3, last_refreshed_at=$4
+             WHERE id=$1 RETURNING *`,
+            [id, tokens.access_token, tokens.token_expires_at, tokens.last_refreshed_at ?? new Date().toISOString()]
+          ),
+          'StallDriveConnection'
+        )
+      },
+      async setStatus(id, status) {
+        return one(
+          await execute(
+            `UPDATE stall_drive_connections SET status=$2 WHERE id=$1 RETURNING *`,
+            [id, status]
+          ),
+          'StallDriveConnection'
+        )
+      },
+      async findExpiringBefore(date) {
+        return many(await execute(
+          `SELECT * FROM stall_drive_connections
+           WHERE status = 'active' AND token_expires_at < $1`,
+          [date.toISOString()]
+        ))
+      }
+    },
+
+    stallSharedFolders: {
+      async listActive(stallId, tenantId) {
+        return many(await execute(
+          `SELECT * FROM stall_shared_folders
+           WHERE stall_id = $1 AND tenant_id = $2 AND status != 'archived'
+           ORDER BY sort_order, created_at`,
+          [stallId, tenantId]
+        ))
+      },
+      async findById(id) {
+        const result = await execute(
+          `SELECT * FROM stall_shared_folders WHERE id = $1`, [id]
+        )
+        return result.rows[0] ?? null
+      },
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO stall_shared_folders
+             (id,tenant_id,stall_id,event_id,connection_id,provider,
+              folder_id,folder_name,folder_path,default_access,
+              allow_download,allow_view,status,sort_order,created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+            [
+              record.id, record.tenant_id, record.stall_id, record.event_id,
+              record.connection_id, record.provider,
+              record.folder_id, record.folder_name, record.folder_path ?? null,
+              record.default_access ?? 'open',
+              record.allow_download ?? true, record.allow_view ?? true,
+              record.status ?? 'active', record.sort_order ?? 0,
+              record.created_at ?? new Date().toISOString()
+            ]
+          ),
+          'StallSharedFolder'
+        )
+      },
+      async update(id, fields) {
+        const allowed = ['folder_name','folder_path','default_access','allow_download','allow_view','status','sort_order']
+        const sets = Object.keys(fields)
+          .filter(k => allowed.includes(k))
+          .map((k, i) => `${k} = $${i + 2}`)
+          .join(', ')
+        const vals = Object.keys(fields).filter(k => allowed.includes(k)).map(k => fields[k])
+        return one(
+          await execute(
+            `UPDATE stall_shared_folders SET ${sets} WHERE id = $1 RETURNING *`,
+            [id, ...vals]
+          ),
+          'StallSharedFolder'
+        )
+      },
+      async archive(id) {
+        return one(
+          await execute(
+            `UPDATE stall_shared_folders SET status='archived' WHERE id=$1 RETURNING *`,
+            [id]
+          ),
+          'StallSharedFolder'
+        )
+      }
+    },
+
+    stallFolderAccess: {
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO stall_folder_access
+             (id,tenant_id,stall_id,event_id,folder_id,attendee_id,interaction_id,
+              access_token,access_token_expires_at,granted_by,status,
+              access_count,granted_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+            [
+              record.id, record.tenant_id, record.stall_id, record.event_id,
+              record.folder_id, record.attendee_id ?? null, record.interaction_id ?? null,
+              record.access_token, record.access_token_expires_at,
+              record.granted_by ?? 'auto', record.status ?? 'active',
+              record.access_count ?? 0,
+              record.granted_at ?? new Date().toISOString()
+            ]
+          ),
+          'StallFolderAccess'
+        )
+      },
+      async findByToken(token) {
+        const result = await execute(
+          `SELECT sfa.*, ssf.folder_name, ssf.allow_view, ssf.allow_download,
+                  ssf.provider, ssf.connection_id, ssf.folder_id as drive_folder_id,
+                  ssf.default_access
+           FROM stall_folder_access sfa
+           JOIN stall_shared_folders ssf ON ssf.id = sfa.folder_id
+           WHERE sfa.access_token = $1`,
+          [token]
+        )
+        return result.rows[0] ?? null
+      },
+      async findByStall(stallId, tenantId) {
+        return many(await execute(
+          `SELECT sfa.*, ssf.folder_name, a.email as attendee_email, a.display_name as attendee_name
+           FROM stall_folder_access sfa
+           JOIN stall_shared_folders ssf ON ssf.id = sfa.folder_id
+           LEFT JOIN attendees a ON a.id = sfa.attendee_id
+           WHERE sfa.stall_id = $1 AND sfa.tenant_id = $2
+           ORDER BY sfa.granted_at DESC`,
+          [stallId, tenantId]
+        ))
+      },
+      async findAllByInteraction(tenantId, interactionId) {
+        return many(await execute(
+          `SELECT * FROM stall_folder_access WHERE tenant_id=$1 AND interaction_id=$2`,
+          [tenantId, interactionId]
+        ))
+      },
+      async updateStatus(id, status, reason) {
+        const now = new Date().toISOString()
+        return one(
+          await execute(
+            `UPDATE stall_folder_access
+             SET status=$2, revoked_at=$3, revoke_reason=$4
+             WHERE id=$1 RETURNING *`,
+            [id, status, status === 'revoked' ? now : null, reason ?? null]
+          ),
+          'StallFolderAccess'
+        )
+      },
+      async incrementAccessCount(id) {
+        await execute(
+          `UPDATE stall_folder_access
+           SET access_count = access_count + 1, last_accessed_at = now()
+           WHERE id = $1`,
+          [id]
+        )
+      },
+      async logEvent(record) {
+        return one(
+          await execute(
+            `INSERT INTO stall_folder_access_log
+             (id,tenant_id,folder_access_id,event_type,file_id,file_name,ip_address,user_agent,occurred_at)
+             VALUES (
+               'sfal-' || substr(md5(random()::text),1,12),
+               $1,$2,$3,$4,$5,$6,$7,$8
+             ) RETURNING *`,
+            [
+              record.tenant_id, record.folder_access_id, record.event_type,
+              record.file_id ?? null, record.file_name ?? null,
+              record.ip_address ?? null, record.user_agent ?? null,
+              record.occurred_at ?? new Date().toISOString()
+            ]
+          ),
+          'StallFolderAccessLog'
+        )
+      }
     }
   };
 

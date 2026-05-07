@@ -18,6 +18,7 @@ import { startRetentionPurgeJob, startRetentionExpiryCountdownJob } from "./jobs
 import { startFullExportWorker } from "./jobs/full-export-worker.mjs";
 import { startDSRWorker } from "./jobs/dsr-worker.mjs";
 import { startEmailDeliveryWorker } from "./jobs/email-delivery-worker.mjs";
+import { startDriveTokenRefreshJob } from "./jobs/drive-token-refresh.mjs";
 
 export async function createApp(options = {}) {
   const router = createRouter();
@@ -85,6 +86,7 @@ export async function createApp(options = {}) {
     startFullExportWorker(repos, state);
     startDSRWorker(repos, state);
     startEmailDeliveryWorker(repos, state);
+    startDriveTokenRefreshJob(repos);
   }
 
   return {
@@ -205,6 +207,9 @@ async function dispatch({
     validationMiddleware(ctx);
 
     const payload = await route.handler(ctx);
+    if (payload?._redirect) {
+      return { statusCode: 302, headers: { location: payload._redirect, "cache-control": "no-store" }, body: null };
+    }
     ctx.response = payload;
     responseMaskingMiddleware(ctx);
     await auditMiddleware(ctx);

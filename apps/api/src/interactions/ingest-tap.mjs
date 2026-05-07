@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { nextId } from "../store.mjs";
 import { HttpError } from "../http-error.mjs";
 
@@ -68,10 +69,22 @@ export async function ingestTapEvent({ repos, body, resources, cloudReceivedAt =
         updated_at: now
       });
 
+      const docGrants = await autoGrantDocumentAccess(txRepos, {
+        stallId: resources.stall.id,
+        interactionId: interaction.id,
+        tenantId: resources.event.tenant_id,
+        eventId: resources.event.id
+      });
+
       return {
         mode: "created",
         interaction,
-        tapEvent: createdTap
+        tapEvent: createdTap,
+        document_access: docGrants.length > 0 ? {
+          has_documents: true,
+          access_url: (process.env.BASE_URL ?? "") + "/docs/" + docGrants[0].access_token,
+          folders: docGrants.map(g => g.folder_name)
+        } : { has_documents: false, access_url: null, folders: [] }
       };
     } catch (error) {
       if (error instanceof HttpError && error.statusCode === 409 && error.details?.code === "duplicate_tap") {
@@ -93,5 +106,39 @@ export async function ingestTapEvent({ repos, body, resources, cloudReceivedAt =
       throw error;
     }
   });
+}
+
+async function autoGrantDocumentAccess(repos, { stallId, interactionId, tenantId, eventId }) {
+  try {
+    const folders = await repos.stallSharedFolders.listActive(stallId, tenantId);
+    const openFolders = folders.filter(f => f.default_access === "open" && f.status === "active");
+    if (!openFolders.length) return [];
+
+    const expiryDays = parseInt(process.env.DRIVE_ACCESS_TOKEN_EXPIRY_DAYS ?? "30", 10);
+    const expiresAt = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000).toISOString();
+
+    const grants = [];
+    for (const folder of openFolders) {
+      const accessToken = randomBytes(32).toString("hex");
+      await repos.stallFolderAccess.create({
+        id: "sfa-" + randomBytes(6).toString("hex"),
+        tenant_id: tenantId,
+        stall_id: stallId,
+        event_id: eventId,
+        folder_id: folder.id,
+        attendee_id: null,
+        interaction_id: interactionId,
+        access_token: accessToken,
+        access_token_expires_at: expiresAt,
+        granted_by: "auto",
+        status: "active"
+      });
+      grants.push({ folder_name: folder.folder_name, access_token: accessToken });
+    }
+    return grants;
+  } catch (err) {
+    console.error("[drive] Auto-grant failed:", err.message);
+    return [];
+  }
 }
 

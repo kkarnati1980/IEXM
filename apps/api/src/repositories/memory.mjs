@@ -1598,6 +1598,110 @@ export function createMemoryRepositories(state) {
       incrementRouteHit(routeId) {
         state.metrics.routeHits[routeId] = (state.metrics.routeHits[routeId] ?? 0) + 1;
       }
+    },
+
+    stallDriveConnections: {
+      async findByStall(stallId, tenantId) {
+        return (state.stallDriveConnections ?? [])
+          .filter(r => r.stall_id === stallId && r.tenant_id === tenantId)
+          .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+      },
+      async findActive(stallId, tenantId) {
+        return (state.stallDriveConnections ?? []).find(
+          r => r.stall_id === stallId && r.tenant_id === tenantId && r.status === 'active'
+        ) ?? null
+      },
+      async create(record) {
+        if (!state.stallDriveConnections) state.stallDriveConnections = []
+        state.stallDriveConnections.push(record)
+        return record
+      },
+      async updateTokens(id, tokens) {
+        const r = (state.stallDriveConnections ?? []).find(x => x.id === id)
+        if (!r) throw new Error('StallDriveConnection not found')
+        Object.assign(r, tokens)
+        return r
+      },
+      async setStatus(id, status) {
+        const r = (state.stallDriveConnections ?? []).find(x => x.id === id)
+        if (!r) throw new Error('StallDriveConnection not found')
+        r.status = status
+        return r
+      },
+      async findExpiringBefore(date) {
+        return (state.stallDriveConnections ?? []).filter(
+          r => r.status === 'active' && r.token_expires_at && new Date(r.token_expires_at) < date
+        )
+      }
+    },
+
+    stallSharedFolders: {
+      async listActive(stallId, tenantId) {
+        return (state.stallSharedFolders ?? [])
+          .filter(r => r.stall_id === stallId && r.tenant_id === tenantId && r.status !== 'archived')
+          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      },
+      async findById(id) {
+        return (state.stallSharedFolders ?? []).find(r => r.id === id) ?? null
+      },
+      async create(record) {
+        if (!state.stallSharedFolders) state.stallSharedFolders = []
+        state.stallSharedFolders.push(record)
+        return record
+      },
+      async update(id, fields) {
+        const r = (state.stallSharedFolders ?? []).find(x => x.id === id)
+        if (!r) throw new Error('StallSharedFolder not found')
+        Object.assign(r, fields)
+        return r
+      },
+      async archive(id) {
+        const r = (state.stallSharedFolders ?? []).find(x => x.id === id)
+        if (!r) throw new Error('StallSharedFolder not found')
+        r.status = 'archived'
+        return r
+      }
+    },
+
+    stallFolderAccess: {
+      async create(record) {
+        if (!state.stallFolderAccess) state.stallFolderAccess = []
+        state.stallFolderAccess.push(record)
+        return record
+      },
+      async findByToken(token) {
+        const grant = (state.stallFolderAccess ?? []).find(r => r.access_token === token)
+        if (!grant) return null
+        const folder = (state.stallSharedFolders ?? []).find(f => f.id === grant.folder_id)
+        return folder ? { ...grant, folder_name: folder.folder_name, allow_view: folder.allow_view, allow_download: folder.allow_download, provider: folder.provider, connection_id: folder.connection_id, drive_folder_id: folder.folder_id, default_access: folder.default_access } : grant
+      },
+      async findByStall(stallId, tenantId) {
+        return (state.stallFolderAccess ?? []).filter(
+          r => r.stall_id === stallId && r.tenant_id === tenantId
+        )
+      },
+      async findAllByInteraction(tenantId, interactionId) {
+        return (state.stallFolderAccess ?? []).filter(
+          r => r.tenant_id === tenantId && r.interaction_id === interactionId
+        )
+      },
+      async updateStatus(id, status, reason) {
+        const r = (state.stallFolderAccess ?? []).find(x => x.id === id)
+        if (!r) throw new Error('StallFolderAccess not found')
+        r.status = status
+        if (status === 'revoked') { r.revoked_at = new Date().toISOString(); r.revoke_reason = reason ?? null }
+        return r
+      },
+      async incrementAccessCount(id) {
+        const r = (state.stallFolderAccess ?? []).find(x => x.id === id)
+        if (r) { r.access_count = (r.access_count ?? 0) + 1; r.last_accessed_at = new Date().toISOString() }
+      },
+      async logEvent(record) {
+        if (!state.stallFolderAccessLog) state.stallFolderAccessLog = []
+        const entry = { id: 'sfal-' + Math.random().toString(16).slice(2, 14), ...record, occurred_at: record.occurred_at ?? new Date().toISOString() }
+        state.stallFolderAccessLog.push(entry)
+        return entry
+      }
     }
   };
 

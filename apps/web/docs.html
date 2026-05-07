@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documents — Codex</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; min-height: 100vh; }
+    .brand-bar { height: 3px; background: linear-gradient(90deg, #2D6A9F, #3b82f6); }
+    .docs-header { background: #fff; border-bottom: 1px solid #e2e8f0; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .docs-header h1 { font-size: 1.15rem; font-weight: 700; color: #1e293b; }
+    .event-name { font-size: 0.8rem; color: #64748b; margin-top: 2px; }
+    .access-badge { font-size: 0.72rem; background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; border-radius: 20px; padding: 4px 10px; white-space: nowrap; }
+    .state-page { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; text-align: center; padding: 32px; gap: 12px; }
+    .state-icon { font-size: 3rem; }
+    .state-page h2 { font-size: 1.4rem; font-weight: 700; }
+    .state-page p { color: #64748b; max-width: 340px; line-height: 1.5; }
+    .folder-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 20px; }
+    @media (min-width: 540px) { .folder-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (min-width: 768px) { .folder-grid { grid-template-columns: repeat(4, 1fr); } }
+    .folder-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px 12px; cursor: pointer; text-align: center; transition: box-shadow .15s, border-color .15s; }
+    .folder-card:hover { box-shadow: 0 4px 16px rgba(45,106,159,.12); border-color: #2D6A9F; }
+    .folder-icon { font-size: 2.2rem; margin-bottom: 8px; }
+    .folder-name { font-size: 0.82rem; font-weight: 600; color: #1e293b; word-break: break-word; }
+    .folder-meta { font-size: 0.72rem; color: #94a3b8; margin-top: 4px; }
+    .file-panel { padding: 0 20px 20px; display: none; }
+    .file-panel-header { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid #e2e8f0; margin-bottom: 12px; }
+    .btn-back { background: none; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 12px; font-size: 0.82rem; cursor: pointer; color: #475569; }
+    .btn-back:hover { background: #f1f5f9; }
+    .file-panel-header h2 { font-size: 1rem; font-weight: 700; }
+    .file-list { display: flex; flex-direction: column; gap: 6px; }
+    .file-row { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; }
+    .file-icon { font-size: 1.4rem; flex-shrink: 0; }
+    .file-info { flex: 1; min-width: 0; }
+    .file-name-label { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-meta { font-size: 0.72rem; color: #94a3b8; }
+    .file-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .btn-action { border: none; border-radius: 6px; padding: 6px 12px; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: opacity .15s; }
+    .btn-view { background: #2D6A9F; color: #fff; }
+    .btn-dl { background: #f1f5f9; color: #1e293b; border: 1px solid #e2e8f0; }
+    .btn-action:hover { opacity: .85; }
+    .viewer-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 100; flex-direction: column; }
+    .viewer-overlay.active { display: flex; }
+    .viewer-header { background: #1e293b; color: #fff; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .viewer-filename-label { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .viewer-header-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .btn-close { background: rgba(255,255,255,.1); border: none; color: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 0.8rem; }
+    .btn-close:hover { background: rgba(255,255,255,.2); }
+    .file-iframe { flex: 1; border: none; background: #fff; }
+    .loading { text-align: center; padding: 40px; color: #94a3b8; font-size: 0.9rem; }
+    .empty-state { text-align: center; padding: 40px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="brand-bar"></div>
+  <div class="docs-header" id="main-header" style="display:none">
+    <div>
+      <h1 id="stall-name">Documents</h1>
+      <div class="event-name" id="event-name"></div>
+    </div>
+    <span class="access-badge" id="access-expiry"></span>
+  </div>
+  <div id="folder-grid" class="folder-grid"></div>
+  <div id="file-panel" class="file-panel">
+    <div class="file-panel-header">
+      <button class="btn-back" id="btn-back">&#8592; Back</button>
+      <h2 id="folder-title"></h2>
+    </div>
+    <div id="file-list" class="file-list"></div>
+  </div>
+  <div id="viewer-overlay" class="viewer-overlay">
+    <div class="viewer-header">
+      <span class="viewer-filename-label" id="viewer-filename"></span>
+      <div class="viewer-header-actions">
+        <button class="btn-close btn-dl" id="viewer-dl-btn" style="display:none">&#8595; Download</button>
+        <button class="btn-close" id="viewer-close-btn">&#10005; Close</button>
+      </div>
+    </div>
+    <iframe id="file-iframe" class="file-iframe" src="" title="Document viewer" sandbox="allow-scripts allow-same-origin allow-popups"></iframe>
+  </div>
+  <div id="state-loading" class="state-page"><div class="state-icon">&#8987;</div><h2>Loading&hellip;</h2></div>
+  <div id="state-notfound" class="state-page" style="display:none"><div class="state-icon">&#128279;</div><h2>Link Not Found</h2><p>This document link is invalid or has already been used.</p></div>
+  <div id="state-revoked" class="state-page" style="display:none"><div class="state-icon">&#128274;</div><h2>Access Removed</h2><p>Access to these documents has been removed by the organiser.</p></div>
+  <div id="state-expired" class="state-page" style="display:none"><div class="state-icon">&#9200;</div><h2>Access Expired</h2><p>Your document access link has expired. Contact the exhibitor for a new link.</p></div>
+  <div id="state-suspended" class="state-page" style="display:none"><div class="state-icon">&#9208;</div><h2>Temporarily Unavailable</h2><p>Document access is temporarily paused. Please try again later.</p></div>
+
+  <script>
+    'use strict'
+
+    const token = resolveToken()
+    let activeDownload = null   // { folderAccessToken, folderId, fileId }
+
+    function resolveToken() {
+      const parts = location.pathname.split('/docs/')
+      if (parts.length > 1 && parts[1]) return parts[1].split('/')[0]
+      return new URLSearchParams(location.search).get('token') ?? ''
+    }
+
+    function fileIcon(mimeType) {
+      if (!mimeType) return '📁'
+      if (mimeType.includes('pdf')) return '📄'
+      if (mimeType.includes('word') || mimeType.includes('document')) return '📝'
+      if (mimeType.includes('sheet') || mimeType.includes('excel')) return '📊'
+      if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) return '📋'
+      if (mimeType.includes('image')) return '🖼'
+      if (mimeType.includes('video')) return '🎬'
+      return '📁'
+    }
+
+    function formatSize(bytes) {
+      if (!bytes) return ''
+      if (bytes < 1024) return bytes + ' B'
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+    }
+
+    function formatExpiry(iso) {
+      if (!iso) return ''
+      const d = new Date(iso)
+      return 'Access valid until ' + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    }
+
+    function showState(id) {
+      const ids = ['state-loading','state-notfound','state-revoked','state-expired','state-suspended']
+      ids.forEach(s => { document.getElementById(s).style.display = s === id ? 'flex' : 'none' })
+    }
+
+    function hideAllStates() {
+      ['state-loading','state-notfound','state-revoked','state-expired','state-suspended']
+        .forEach(s => { document.getElementById(s).style.display = 'none' })
+    }
+
+    async function init() {
+      if (!token) { showState('state-notfound'); return }
+
+      try {
+        const res = await fetch('/docs/' + token + '/folders')
+        if (res.status === 404) { showState('state-notfound'); return }
+        if (res.status === 410) { showState('state-expired'); return }
+        if (res.status === 403) { showState('state-suspended'); return }
+        if (!res.ok) { showState('state-notfound'); return }
+
+        const data = await res.json()
+        hideAllStates()
+        document.getElementById('main-header').style.display = 'flex'
+        document.getElementById('access-expiry').textContent = formatExpiry(data.expires_at)
+        renderFolderGrid(data.folders ?? [])
+      } catch {
+        showState('state-notfound')
+      }
+    }
+
+    function renderFolderGrid(folders) {
+      const grid = document.getElementById('folder-grid')
+      grid.textContent = ''
+
+      if (!folders.length) {
+        const empty = document.createElement('div')
+        empty.className = 'empty-state'
+        empty.style.gridColumn = '1 / -1'
+        empty.textContent = 'No documents shared yet.'
+        grid.appendChild(empty)
+        return
+      }
+
+      folders.forEach(f => {
+        const card = document.createElement('div')
+        card.className = 'folder-card'
+
+        const icon = document.createElement('div')
+        icon.className = 'folder-icon'
+        icon.textContent = '📂'
+
+        const name = document.createElement('div')
+        name.className = 'folder-name'
+        name.textContent = f.folder_name
+
+        const meta = document.createElement('div')
+        meta.className = 'folder-meta'
+        meta.textContent = f.provider === 'google_drive' ? 'Google Drive' : 'OneDrive'
+
+        card.append(icon, name, meta)
+        card.addEventListener('click', () =>
+          openFolder(f.access_token, f.folder_id ?? f.id, f.folder_name, !!f.allow_view, !!f.allow_download)
+        )
+        grid.appendChild(card)
+      })
+    }
+
+    async function openFolder(folderAccessToken, folderId, folderName, allowView, allowDownload) {
+      document.getElementById('folder-grid').style.display = 'none'
+      const panel = document.getElementById('file-panel')
+      panel.style.display = 'block'
+      document.getElementById('folder-title').textContent = folderName
+
+      const fileList = document.getElementById('file-list')
+      fileList.textContent = ''
+      const loading = document.createElement('div')
+      loading.className = 'loading'
+      loading.textContent = 'Loading files…'
+      fileList.appendChild(loading)
+
+      try {
+        const res = await fetch('/docs/' + folderAccessToken + '/folders/' + folderId + '/files')
+        if (!res.ok) {
+          fileList.textContent = ''
+          const err = document.createElement('div')
+          err.className = 'empty-state'
+          err.textContent = 'Could not load files.'
+          fileList.appendChild(err)
+          return
+        }
+        const data = await res.json()
+        renderFileList(fileList, data.files ?? [], folderAccessToken, folderId, allowView, allowDownload)
+      } catch {
+        fileList.textContent = ''
+        const err = document.createElement('div')
+        err.className = 'empty-state'
+        err.textContent = 'Could not load files.'
+        fileList.appendChild(err)
+      }
+    }
+
+    function renderFileList(container, files, folderAccessToken, folderId, allowView, allowDownload) {
+      container.textContent = ''
+
+      if (!files.length) {
+        const empty = document.createElement('div')
+        empty.className = 'empty-state'
+        empty.textContent = 'No files in this folder.'
+        container.appendChild(empty)
+        return
+      }
+
+      files.forEach(f => {
+        const row = document.createElement('div')
+        row.className = 'file-row'
+
+        const icon = document.createElement('div')
+        icon.className = 'file-icon'
+        icon.textContent = fileIcon(f.mime_type)
+
+        const info = document.createElement('div')
+        info.className = 'file-info'
+        const nameEl = document.createElement('div')
+        nameEl.className = 'file-name-label'
+        nameEl.textContent = f.name
+        nameEl.title = f.name
+        const metaEl = document.createElement('div')
+        metaEl.className = 'file-meta'
+        metaEl.textContent = [formatSize(f.size), f.modified_at ? new Date(f.modified_at).toLocaleDateString() : ''].filter(Boolean).join(' · ')
+        info.append(nameEl, metaEl)
+
+        const actions = document.createElement('div')
+        actions.className = 'file-actions'
+
+        if (allowView) {
+          const viewBtn = document.createElement('button')
+          viewBtn.className = 'btn-action btn-view'
+          viewBtn.textContent = 'View'
+          viewBtn.addEventListener('click', () => viewFile(folderAccessToken, folderId, f.id, f.name, allowDownload))
+          actions.appendChild(viewBtn)
+        }
+        if (allowDownload) {
+          const dlBtn = document.createElement('button')
+          dlBtn.className = 'btn-action btn-dl'
+          dlBtn.textContent = 'Save'
+          dlBtn.addEventListener('click', () => downloadFile(folderAccessToken, folderId, f.id, f.name))
+          actions.appendChild(dlBtn)
+        }
+
+        row.append(icon, info, actions)
+        container.appendChild(row)
+      })
+    }
+
+    document.getElementById('btn-back').addEventListener('click', () => {
+      document.getElementById('file-panel').style.display = 'none'
+      document.getElementById('folder-grid').style.display = 'grid'
+    })
+
+    async function viewFile(folderAccessToken, folderId, fileId, fileName, allowDownload) {
+      try {
+        const res = await fetch('/docs/' + folderAccessToken + '/folders/' + folderId + '/files/' + fileId + '/view')
+        if (!res.ok) { alert('Could not open file.'); return }
+        const data = await res.json()
+        document.getElementById('viewer-filename').textContent = fileName
+        document.getElementById('file-iframe').src = data.viewer_url
+        const dlBtn = document.getElementById('viewer-dl-btn')
+        dlBtn.style.display = allowDownload ? 'block' : 'none'
+        activeDownload = allowDownload ? { folderAccessToken, folderId, fileId, fileName } : null
+        document.getElementById('viewer-overlay').classList.add('active')
+      } catch {
+        alert('Could not open file.')
+      }
+    }
+
+    async function downloadFile(folderAccessToken, folderId, fileId, fileName) {
+      try {
+        const res = await fetch('/docs/' + folderAccessToken + '/folders/' + folderId + '/files/' + fileId + '/download')
+        if (!res.ok) { alert('Could not download file.'); return }
+        const data = await res.json()
+        if (data.download_url) {
+          const a = document.createElement('a')
+          a.href = data.download_url
+          a.download = fileName
+          a.rel = 'noopener noreferrer'
+          a.target = '_blank'
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+        }
+      } catch {
+        alert('Could not download file.')
+      }
+    }
+
+    document.getElementById('viewer-dl-btn').addEventListener('click', () => {
+      if (activeDownload) {
+        downloadFile(activeDownload.folderAccessToken, activeDownload.folderId, activeDownload.fileId, activeDownload.fileName)
+      }
+    })
+
+    document.getElementById('viewer-close-btn').addEventListener('click', () => {
+      document.getElementById('viewer-overlay').classList.remove('active')
+      document.getElementById('file-iframe').src = ''
+      activeDownload = null
+    })
+
+    init()
+  </script>
+</body>
+</html>

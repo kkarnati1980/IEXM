@@ -262,6 +262,47 @@
           </div>
         </article>
 
+        <!-- DOCUMENT STORAGE -->
+        <article class="card" id="drive-connection-card">
+          <div class="section-head"><div><div class="eyebrow">Document Storage</div><h2>Connect your drive</h2><p>Share documents with attendees automatically when they tap at your stall.</p></div></div>
+          <div id="drive-not-connected">
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
+              <button id="btn-connect-google" class="secondary" style="display:flex;align-items:center;gap:8px;justify-content:center;border-color:#4285f4;color:#4285f4;">
+                <span>&#9654;</span> Connect Google Drive
+              </button>
+              <button id="btn-connect-onedrive" class="secondary" style="display:flex;align-items:center;gap:8px;justify-content:center;border-color:#0078d4;color:#0078d4;">
+                <span>&#9729;</span> Connect OneDrive
+              </button>
+            </div>
+          </div>
+          <div id="drive-connected" style="display:none;">
+            <div class="item" style="display:flex;align-items:center;gap:8px;padding:8px 0;">
+              <span style="width:8px;height:8px;background:#22c55e;border-radius:50%;flex-shrink:0;"></span>
+              <span id="drive-provider-label" style="font-weight:600;">Google Drive</span>
+              <span class="muted">connected as</span>
+              <strong id="drive-account-email" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></strong>
+            </div>
+            <button id="btn-disconnect-drive" class="secondary sm" style="color:#ef4444;border-color:#ef4444;margin-top:4px;">Disconnect</button>
+          </div>
+          <div id="drive-error-msg" class="mini-note" style="color:#ef4444;margin-top:8px;display:none;"></div>
+        </article>
+
+        <!-- SHARED FOLDERS -->
+        <article class="card" id="shared-folders-card" style="display:none;">
+          <div class="section-head"><div><div class="eyebrow">Shared Folders</div><h2>Manage shared folders</h2><p>Select folders from your drive to share with attendees.</p></div></div>
+          <button id="btn-browse-folders" class="secondary sm" style="margin-bottom:12px;">+ Add folder from drive</button>
+          <div id="folder-browser" style="display:none;border:1px solid #e2e8f0;border-radius:8px;max-height:220px;overflow-y:auto;margin-bottom:12px;">
+            <div id="folder-browser-list" style="padding:8px;"></div>
+          </div>
+          <div id="shared-folders-list"></div>
+        </article>
+
+        <!-- ACCESS GRANTS -->
+        <article class="card" id="access-grants-card" style="display:none;">
+          <div class="section-head"><div><div class="eyebrow">Document Access</div><h2>Attendee document access</h2></div></div>
+          <div id="grants-list"></div>
+        </article>
+
         <!-- CRM SETTINGS -->
         <article class="card">
           <div class="section-head"><div><div class="eyebrow">CRM Settings</div><h2>Connections</h2><p>Configure Salesforce, HubSpot, or Zoho.</p></div></div>
@@ -650,6 +691,243 @@
         return payload;
       }
 
+      // ── Drive / Document storage ──────────────────────────────────────
+      async function loadDriveConnection() {
+        try {
+          const data = await api(`/stalls/${enc(stallId)}/drive/connection`);
+          if (data.connected && data.status === 'active') {
+            $('drive-not-connected').style.display = 'none';
+            $('drive-connected').style.display = 'block';
+            $('drive-account-email').textContent = data.drive_account_email ?? '';
+            $('drive-provider-label').textContent = data.provider === 'google_drive' ? 'Google Drive' : 'OneDrive';
+            $('shared-folders-card').style.display = '';
+            $('access-grants-card').style.display = '';
+            loadSharedFolders();
+            loadAccessGrants();
+          } else {
+            $('drive-not-connected').style.display = '';
+            $('drive-connected').style.display = 'none';
+          }
+        } catch { /* no connection — leave default state */ }
+      }
+
+      async function loadSharedFolders() {
+        try {
+          const data = await api(`/stalls/${enc(stallId)}/drive/shared-folders`);
+          const list = $('shared-folders-list');
+          list.textContent = '';
+          if (!data.items?.length) {
+            const empty = document.createElement('div');
+            empty.className = 'item muted';
+            empty.textContent = 'No folders shared yet. Add a folder from your drive.';
+            list.appendChild(empty);
+            return;
+          }
+          data.items.forEach(f => {
+            const row = document.createElement('div');
+            row.className = 'item';
+            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;';
+            const nameEl = document.createElement('span');
+            nameEl.textContent = '📂 ' + f.folder_name;
+            nameEl.style.flex = '1';
+            const badge = document.createElement('span');
+            badge.className = 'mini-note';
+            badge.textContent = f.default_access === 'open' ? 'Auto-share' : 'Restricted';
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'secondary sm';
+            removeBtn.textContent = 'Remove';
+            removeBtn.style.color = '#ef4444';
+            removeBtn.addEventListener('click', () => removeSharedFolder(f.id));
+            row.append(nameEl, badge, removeBtn);
+            list.appendChild(row);
+          });
+        } catch (err) {
+          const list = $('shared-folders-list');
+          list.textContent = '';
+          const errEl = document.createElement('div');
+          errEl.className = 'mini-note';
+          errEl.style.color = '#ef4444';
+          errEl.textContent = 'Could not load folders.';
+          list.appendChild(errEl);
+        }
+      }
+
+      async function loadAccessGrants() {
+        try {
+          const data = await api(`/stalls/${enc(stallId)}/drive/access-grants`);
+          const list = $('grants-list');
+          list.textContent = '';
+          if (!data.items?.length) {
+            const empty = document.createElement('div');
+            empty.className = 'item muted';
+            empty.textContent = 'No document access grants yet. Grants are created automatically when attendees tap.';
+            list.appendChild(empty);
+            return;
+          }
+          const base = location.origin;
+          data.items.forEach(g => {
+            const row = document.createElement('div');
+            row.className = 'item';
+            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;flex-wrap:wrap;';
+            const nameEl = document.createElement('span');
+            nameEl.style.flex = '1';
+            nameEl.textContent = (g.attendee_name || g.attendee_email || 'Unknown attendee') + ' — ' + (g.folder_name || 'folder');
+            const badge = document.createElement('span');
+            badge.className = 'mini-note';
+            badge.textContent = g.status;
+            badge.style.color = g.status === 'active' ? '#16a34a' : g.status === 'revoked' ? '#ef4444' : '#d97706';
+            const revokeBtn = document.createElement('button');
+            revokeBtn.className = 'secondary sm';
+            revokeBtn.textContent = g.status === 'revoked' ? 'Revoked' : 'Revoke';
+            revokeBtn.disabled = g.status === 'revoked';
+            revokeBtn.style.color = '#ef4444';
+            revokeBtn.addEventListener('click', () => revokeGrant(g.id));
+            row.append(nameEl, badge, revokeBtn);
+            list.appendChild(row);
+          });
+        } catch {
+          const list = $('grants-list');
+          list.textContent = '';
+          const errEl = document.createElement('div');
+          errEl.className = 'mini-note';
+          errEl.style.color = '#ef4444';
+          errEl.textContent = 'Could not load access grants.';
+          list.appendChild(errEl);
+        }
+      }
+
+      async function browseDriveFolders() {
+        const browser = $('folder-browser');
+        const browserList = $('folder-browser-list');
+        browser.style.display = browser.style.display === 'none' ? '' : 'none';
+        if (browser.style.display === 'none') return;
+        browserList.textContent = '';
+        const loading = document.createElement('div');
+        loading.className = 'muted';
+        loading.style.padding = '8px';
+        loading.textContent = 'Loading folders…';
+        browserList.appendChild(loading);
+        try {
+          const data = await api(`/stalls/${enc(stallId)}/drive/folders`);
+          browserList.textContent = '';
+          if (!data.folders?.length) {
+            const empty = document.createElement('div');
+            empty.style.padding = '8px';
+            empty.className = 'muted';
+            empty.textContent = 'No folders found.';
+            browserList.appendChild(empty);
+            return;
+          }
+          data.folders.forEach(f => {
+            const item = document.createElement('div');
+            item.style.cssText = 'padding:8px;cursor:pointer;border-radius:6px;display:flex;align-items:center;gap:8px;';
+            item.textContent = '📂 ' + f.name;
+            item.addEventListener('mouseenter', () => { item.style.background = '#f1f5f9'; });
+            item.addEventListener('mouseleave', () => { item.style.background = ''; });
+            item.addEventListener('click', () => addSharedFolder(f.id, f.name, data.provider));
+            browserList.appendChild(item);
+          });
+        } catch {
+          browserList.textContent = '';
+          const errEl = document.createElement('div');
+          errEl.style.padding = '8px';
+          errEl.style.color = '#ef4444';
+          errEl.textContent = 'Could not load drive folders.';
+          browserList.appendChild(errEl);
+        }
+      }
+
+      async function addSharedFolder(folderId, folderName, provider) {
+        try {
+          await api(`/stalls/${enc(stallId)}/drive/shared-folders`, {
+            method: 'POST',
+            body: { folder_id: folderId, folder_name: folderName, default_access: 'open', allow_download: true, allow_view: true }
+          });
+          $('folder-browser').style.display = 'none';
+          await loadSharedFolders();
+        } catch (err) {
+          alert('Could not add folder: ' + err.message);
+        }
+      }
+
+      async function removeSharedFolder(folderId) {
+        if (!confirm('Remove this shared folder?')) return;
+        try {
+          await api(`/stalls/${enc(stallId)}/drive/shared-folders/${enc(folderId)}`, { method: 'DELETE' });
+          await loadSharedFolders();
+        } catch (err) {
+          alert('Could not remove folder: ' + err.message);
+        }
+      }
+
+      async function revokeGrant(grantId) {
+        if (!confirm('Revoke this attendee\'s document access?')) return;
+        try {
+          await api(`/stalls/${enc(stallId)}/drive/access-grants/${enc(grantId)}/revoke`, { method: 'POST', body: { reason: 'Manual revoke by vendor' } });
+          await loadAccessGrants();
+        } catch (err) {
+          alert('Could not revoke: ' + err.message);
+        }
+      }
+
+      async function connectGoogle() {
+        try {
+          const data = await api(`/stalls/${enc(stallId)}/drive/connect/google`);
+          if (data.auth_url) { location.href = data.auth_url; }
+        } catch (err) {
+          $('drive-error-msg').textContent = 'Could not initiate Google connection: ' + err.message;
+          $('drive-error-msg').style.display = '';
+        }
+      }
+
+      async function connectOneDrive() {
+        try {
+          const data = await api(`/stalls/${enc(stallId)}/drive/connect/onedrive`);
+          if (data.auth_url) { location.href = data.auth_url; }
+        } catch (err) {
+          $('drive-error-msg').textContent = 'Could not initiate OneDrive connection: ' + err.message;
+          $('drive-error-msg').style.display = '';
+        }
+      }
+
+      async function disconnectDrive() {
+        if (!confirm('Disconnect your drive? Shared folder access will be affected.')) return;
+        try {
+          await api(`/stalls/${enc(stallId)}/drive/disconnect`, { method: 'DELETE' });
+          $('drive-connected').style.display = 'none';
+          $('drive-not-connected').style.display = '';
+          $('shared-folders-card').style.display = 'none';
+          $('access-grants-card').style.display = 'none';
+        } catch (err) {
+          alert('Could not disconnect: ' + err.message);
+        }
+      }
+
+      // Wire up buttons
+      $('btn-connect-google').addEventListener('click', connectGoogle);
+      $('btn-connect-onedrive').addEventListener('click', connectOneDrive);
+      $('btn-disconnect-drive').addEventListener('click', disconnectDrive);
+      $('btn-browse-folders').addEventListener('click', browseDriveFolders);
+
+      // Handle successful OAuth redirect back
+      const urlParams = new URLSearchParams(location.search);
+      if (urlParams.get('connected')) {
+        const provider = urlParams.get('connected') === 'google' ? 'Google Drive' : 'OneDrive';
+        const banner = document.createElement('div');
+        banner.className = 'mini-note';
+        banner.style.cssText = 'background:#f0fdf4;color:#16a34a;padding:10px 16px;border-radius:8px;margin:12px 20px 0;';
+        banner.textContent = provider + ' connected successfully!';
+        document.querySelector('main').prepend(banner);
+        setTimeout(() => banner.remove(), 5000);
+        history.replaceState({}, '', location.pathname);
+      }
+      if (urlParams.get('drive_error')) {
+        $('drive-error-msg').textContent = 'Drive connection failed: ' + urlParams.get('drive_error');
+        $('drive-error-msg').style.display = '';
+        history.replaceState({}, '', location.pathname);
+      }
+
+      loadDriveConnection();
       loadAll();
     </script>
   </body>

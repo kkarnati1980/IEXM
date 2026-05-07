@@ -123,7 +123,7 @@ export function createHttpHandler(app, options = {}) {
         ...corsHeaders,
         ...response.headers
       });
-      res.end(JSON.stringify(response.body, null, 2));
+      res.end(response.body != null ? JSON.stringify(response.body, null, 2) : "");
     } catch (error) {
       if (error instanceof PayloadTooLargeError) {
         writeJson(res, 413, { error: error.message }, corsHeaders);

@@ -490,7 +490,29 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   "admin-privacy-audit-log": entry({ permission: "admin.privacy_audit_log.view", roles: platform, scope: "tenant", description: "View privacy audit log entries across all events", sensitivity: "security" }),
   "event-privacy-audit-log": entry({ permission: "organizer.privacy_audit_log.view", roles: organizer, scope: "event", description: "View privacy audit log for own event (no actor identity)", sensitivity: "security" }),
   "admin-privacy-audit-log-export": entry({ permission: "admin.privacy_audit_log.export", roles: platform, scope: "tenant", description: "Export full privacy audit log as CSV", sensitivity: "security" }),
-  "storage-local-download": publicEntry("storage.local.download", "Download a signed local export file (token IS the auth)", "pii")
+  "storage-local-download": publicEntry("storage.local.download", "Download a signed local export file (token IS the auth)", "pii"),
+
+  // Phase 6 — Drive / OneDrive stall document storage
+  "stall-drive-connect-google": entry({ permission: "vendor.drive.connect", roles: vendorOrganizerPlatform, scope: "event_stall", description: "Initiate Google Drive OAuth connection for a stall" }),
+  "stall-drive-connect-onedrive": entry({ permission: "vendor.drive.connect", roles: vendorOrganizerPlatform, scope: "event_stall", description: "Initiate OneDrive OAuth connection for a stall" }),
+  "drive-google-callback": publicEntry("vendor.drive.callback", "Handle Google OAuth callback and store encrypted tokens"),
+  "drive-onedrive-callback": publicEntry("vendor.drive.callback", "Handle OneDrive OAuth callback and store encrypted tokens"),
+  "stall-drive-connection-get": entry({ permission: "vendor.drive.connection.view", roles: vendorOrganizerPlatform, scope: "event_stall", description: "View drive connection status for a stall" }),
+  "stall-drive-disconnect": entry({ permission: "vendor.drive.disconnect", roles: vendorOrganizerPlatform, scope: "event_stall", description: "Disconnect drive storage from a stall" }),
+  "stall-drive-folders-list": entry({ permission: "vendor.drive.folders.browse", roles: vendorOrganizerPlatform, scope: "event_stall", description: "Browse drive folders for selection" }),
+  "stall-drive-shared-folders-create": entry({ permission: "vendor.drive.shared_folders.create", roles: vendorOrganizerPlatform, scope: "event_stall", description: "Share a drive folder with stall attendees" }),
+  "stall-drive-shared-folders-list": entry({ permission: "vendor.drive.shared_folders.view", roles: vendorOrganizerPlatform, scope: "event_stall", description: "List shared folders for a stall" }),
+  "stall-drive-shared-folders-update": entry({ permission: "vendor.drive.shared_folders.update", roles: vendorOrganizerPlatform, scope: "event_stall", description: "Update shared folder access settings" }),
+  "stall-drive-shared-folders-delete": entry({ permission: "vendor.drive.shared_folders.delete", roles: vendorOrganizerPlatform, scope: "event_stall", description: "Archive a shared folder" }),
+  "stall-drive-access-grants-create": entry({ permission: "vendor.drive.access_grants.create", roles: vendorOrganizerPlatform, scope: "event_stall", description: "Grant document access to an attendee" }),
+  "stall-drive-access-grants-list": entry({ permission: "vendor.drive.access_grants.view", roles: vendorOrganizerPlatform, scope: "event_stall", description: "List document access grants for a stall" }),
+  "stall-drive-access-grant-revoke": entry({ permission: "vendor.drive.access_grant.revoke", roles: vendorOrganizerPlatform, scope: "event_stall", description: "Revoke an attendee's document access", sensitivity: "pii" }),
+  "stall-drive-access-grant-suspend": entry({ permission: "vendor.drive.access_grant.suspend", roles: vendorOrganizerPlatform, scope: "event_stall", description: "Temporarily suspend document access", sensitivity: "pii" }),
+  "stall-drive-access-grant-restore": entry({ permission: "vendor.drive.access_grant.restore", roles: vendorOrganizerPlatform, scope: "event_stall", description: "Restore suspended document access", sensitivity: "pii" }),
+  "docs-access-folders": publicEntry("docs.access.folders", "List document folders using an attendee access token", "pii"),
+  "docs-files-list": publicEntry("docs.files.list", "List files in a shared folder using an attendee access token", "pii"),
+  "docs-file-view": publicEntry("docs.file.view", "Get viewer URL for a file using an attendee access token", "pii"),
+  "docs-file-download": publicEntry("docs.file.download", "Get download URL for a file using an attendee access token", "pii")
 });
 
 export function getAccessControlEntry(routeId) {

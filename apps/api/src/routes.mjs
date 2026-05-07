@@ -62,8 +62,10 @@ import { processDSRJob } from "./jobs/dsr-worker.mjs";
 import { processTenantOffboarding } from "./jobs/offboarding-worker.mjs";
 import { validateDownloadToken, readLocalFile } from "./storage/storage-adapter.mjs";
 import { runComplianceCheck } from "./integrations/infra-compliance.mjs";
+import { registerDriveRoutes } from "./routes_drive.mjs";
 
 export function registerRoutes(router) {
+  registerDriveRoutes(router);
   router.addRoute({
     id: "storage-local-download",
     method: "GET",
