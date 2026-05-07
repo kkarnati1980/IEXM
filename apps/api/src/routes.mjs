@@ -11247,7 +11247,12 @@ async function buildExportDownloadPayload(repos, tenantId, eventId, exportReques
     };
   }
 
-  if (exportRequest.export_type === "vendor_leads" || exportRequest.export_type === "sponsor_leads") {
+  if (
+    exportRequest.export_type === "vendor_leads" ||
+    exportRequest.export_type === "vendor_leads_csv" ||
+    exportRequest.export_type === "sponsor_leads" ||
+    exportRequest.export_type === "sponsor_leads_csv"
+  ) {
     return buildLeadExportPayload(repos, tenantId, eventId, exportRequest);
   }
 
@@ -11261,11 +11266,15 @@ async function buildExportDownloadPayload(repos, tenantId, eventId, exportReques
 }
 
 async function buildLeadExportPayload(repos, tenantId, eventId, exportRequest) {
+  const isVendorExport = exportRequest.export_type === "vendor_leads" || exportRequest.export_type === "vendor_leads_csv";
+  const isSponsorExport = exportRequest.export_type === "sponsor_leads" || exportRequest.export_type === "sponsor_leads_csv";
+  const isCsv = exportRequest.export_type.endsWith("_csv");
+
   const eventPolicy = await repos.eventPolicies.findByEventId(tenantId, eventId);
-  if (exportRequest.export_type === "vendor_leads" && !eventPolicy.vendor_exports_enabled) {
+  if (isVendorExport && !eventPolicy.vendor_exports_enabled) {
     throw new HttpError(403, "Vendor exports disabled by event policy");
   }
-  if (exportRequest.export_type === "sponsor_leads" && !eventPolicy.sponsor_pii_enabled) {
+  if (isSponsorExport && !eventPolicy.sponsor_pii_enabled) {
     throw new HttpError(403, "Sponsor PII disabled by event policy");
   }
 
@@ -11302,6 +11311,26 @@ async function buildLeadExportPayload(repos, tenantId, eventId, exportRequest) {
     })
   );
 
+  if (isCsv) {
+    const csvEscape = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+    const headers = ["Name", "Email", "Phone", "Company", "Stall", "Classification", "Consent", "Interaction Time"];
+    const rows = leads.map((lead) => [
+      csvEscape(lead.profile.full_name),
+      csvEscape(lead.profile.email),
+      csvEscape(lead.profile.phone),
+      csvEscape(lead.profile.company_name),
+      csvEscape(lead.stall_name),
+      csvEscape(lead.classification),
+      csvEscape(lead.consent_status),
+      csvEscape(lead.created_at)
+    ].join(","));
+    const csv = [headers.join(","), ...rows].join("\n");
+    return {
+      file_name: `${exportRequest.export_type}-${eventId}.csv`,
+      payload: { csv, row_count: leads.length }
+    };
+  }
+
   return {
     file_name: `${exportRequest.export_type}-${eventId}.json`,
     payload: {
@@ -11310,7 +11339,7 @@ async function buildLeadExportPayload(repos, tenantId, eventId, exportRequest) {
       privacy: {
         personal_data_included: true,
         consent_rule:
-          exportRequest.export_type === "sponsor_leads"
+          isSponsorExport
             ? "Only interactions with vendor_and_sponsor consent are included; sponsor_pii_enabled must remain true at download time."
             : "Only interactions with vendor_only or vendor_and_sponsor consent are included; revoked, declined, and pending interactions are excluded at download time.",
         scope_rule: "Rows are limited to the requesting vendor or sponsor organization when the export is organization-scoped."
@@ -11325,14 +11354,15 @@ function scopedLeadExportStallIds(stalls, exportRequest) {
   if (!organizationId) {
     return new Set(stalls.map((stall) => stall.id));
   }
-  if (exportRequest.export_type === "vendor_leads") {
+  const t = exportRequest.export_type;
+  if (t === "vendor_leads" || t === "vendor_leads_csv") {
     return new Set(
       stalls
         .filter((stall) => stall.vendor_organization_id === organizationId)
         .map((stall) => stall.id)
     );
   }
-  if (exportRequest.export_type === "sponsor_leads") {
+  if (t === "sponsor_leads" || t === "sponsor_leads_csv") {
     return new Set(
       stalls
         .filter((stall) => stall.sponsor_organization_id === organizationId)
@@ -11343,10 +11373,10 @@ function scopedLeadExportStallIds(stalls, exportRequest) {
 }
 
 function leadExportConsentAllowed(interaction, exportType) {
-  if (exportType === "sponsor_leads") {
+  if (exportType === "sponsor_leads" || exportType === "sponsor_leads_csv") {
     return interaction.consent_status === "vendor_and_sponsor";
   }
-  if (exportType === "vendor_leads") {
+  if (exportType === "vendor_leads" || exportType === "vendor_leads_csv") {
     return ["vendor_only", "vendor_and_sponsor"].includes(interaction.consent_status);
   }
   return false;
