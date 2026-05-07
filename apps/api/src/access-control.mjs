@@ -268,6 +268,8 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
     scope: "event_sponsor",
     description: "Publish a sponsor report snapshot"
   }),
+  "events-report-snapshots-list": entry({ permission: "event.report_snapshots.view", roles: [ROLES.organizerAdmin, ROLES.sponsorUser, ROLES.platformAdmin], scope: "event", description: "List report snapshots for an event" }),
+  "events-report-snapshots-compare": entry({ permission: "event.report_snapshots.compare", roles: [ROLES.organizerAdmin, ROLES.sponsorUser, ROLES.platformAdmin], scope: "event", description: "Compare multiple report snapshots for an event", sensitivity: "internal" }),
 
   "organizer-report-freeze-status": entry({ permission: "organizer.report_freeze.view", roles: organizer, scope: "event", description: "View event report-freeze status" }),
   "organizer-report-freeze-trigger": entry({ permission: "organizer.report_freeze.trigger", roles: organizer, scope: "event", description: "Freeze the official event report", sensitivity: "sensitive" }),
@@ -290,6 +292,8 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   "organizer-short-links-list": entry({ permission: "organizer.short_links.view", roles: organizer, scope: "event", description: "View signed short links connected to an event investigation", sensitivity: "sensitive" }),
   "organizer-leaderboard-snapshots": entry({ permission: "organizer.leaderboard_snapshots.view", roles: organizer, scope: "event", description: "View public leaderboard snapshot history" }),
   "organizer-leaderboard-snapshot-create": entry({ permission: "organizer.leaderboard_snapshots.create", roles: organizer, scope: "event", description: "Capture a public no-PII leaderboard snapshot" }),
+  "organizer-event-snapshots-list": entry({ permission: "organizer.event_snapshots.view", roles: organizerOrPlatform, scope: "event", description: "List event report snapshots for the organizer view" }),
+  "organizer-event-snapshots-create": entry({ permission: "organizer.event_snapshots.create", roles: organizerOrPlatform, scope: "event", description: "Create an event report snapshot", sensitivity: "sensitive" }),
   "organizer-compliance-overview": entry({ permission: "organizer.compliance.view", roles: organizer, scope: "event", description: "View compliance overview", sensitivity: "privacy" }),
   "organizer-compliance-report": entry({ permission: "organizer.compliance_report.view", roles: organizer, scope: "event", description: "View compliance operational report", sensitivity: "privacy" }),
   "organizer-compliance-closeout-readiness": entry({ permission: "organizer.compliance_closeout.view", roles: organizer, scope: "event", description: "View compliance closeout readiness", sensitivity: "privacy" }),
@@ -320,6 +324,8 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   "organizer-iot-alerts": entry({ permission: "organizer.iot_alerts.view", roles: organizer, scope: "event", description: "View IoT alerts" }),
   "organizer-iot-runs-trigger": entry({ permission: "organizer.iot_runs.trigger", roles: organizer, scope: "event", description: "Trigger organizer IoT sync", sensitivity: "sensitive" }),
   "organizer-iot-parity-trigger": entry({ permission: "organizer.iot_parity.trigger", roles: organizer, scope: "event", description: "Trigger IoT parity check", sensitivity: "sensitive" }),
+  "devices-iot-runs": entry({ permission: "ops.devices.iot_runs.view", roles: [ROLES.opsUser, ROLES.platformAdmin, ROLES.organizerAdmin], scope: "event", description: "View IoT integration runs via device path" }),
+  "iot-runs-list": entry({ permission: "ops.iot_runs.list", roles: [ROLES.opsUser, ROLES.platformAdmin, ROLES.organizerAdmin], scope: "event", description: "List IoT integration runs via ops path" }),
 
   "admin-iot-runs-trigger": entry({ permission: "admin.iot_runs.trigger", roles: platform, scope: "event", description: "Trigger platform IoT sync", sensitivity: "sensitive" }),
   "admin-iot-cleanup-trigger": entry({ permission: "admin.iot_cleanup.trigger", roles: platform, scope: "event", description: "Run IoT operational cleanup", sensitivity: "sensitive" }),
@@ -385,6 +391,8 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
 
   // Phase 2 — Auth Service Extensions
   "auth-login": publicEntry("auth.login", "Authenticate with email and password", "sensitive"),
+  "auth-mfa-send-otp": publicEntry("auth.mfa.send_otp", "Send a one-time verification code to the user's email", "sensitive"),
+  "auth-mfa-verify-otp": publicEntry("auth.mfa.verify_otp", "Verify an MFA OTP and complete authentication", "sensitive"),
   "auth-invite-info": publicEntry("auth.invite.info", "Retrieve display name and email for a pending invite token"),
   "auth-accept-invite": publicEntry("auth.invite.accept", "Accept an invitation and set password", "sensitive"),
   "auth-forgot-password": publicEntry("auth.password.forgot", "Request a password reset email", "sensitive"),
