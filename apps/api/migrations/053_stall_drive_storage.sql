@@ -94,13 +94,17 @@ ALTER TABLE stall_folder_access ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stall_folder_access_log ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY tenant_isolation_sdc ON stall_drive_connections
-  USING (tenant_id = current_setting('app.current_tenant_id', true));
+  USING (tenant_id = app_current_tenant_id())
+  WITH CHECK (tenant_id = app_current_tenant_id());
 CREATE POLICY tenant_isolation_ssf ON stall_shared_folders
-  USING (tenant_id = current_setting('app.current_tenant_id', true));
+  USING (tenant_id = app_current_tenant_id())
+  WITH CHECK (tenant_id = app_current_tenant_id());
 CREATE POLICY tenant_isolation_sfa ON stall_folder_access
-  USING (tenant_id = current_setting('app.current_tenant_id', true));
+  USING (tenant_id = app_current_tenant_id())
+  WITH CHECK (tenant_id = app_current_tenant_id());
 CREATE POLICY tenant_isolation_sfal ON stall_folder_access_log
-  USING (tenant_id = current_setting('app.current_tenant_id', true));
+  USING (tenant_id = app_current_tenant_id())
+  WITH CHECK (tenant_id = app_current_tenant_id());
 
 GRANT ALL ON stall_drive_connections TO app_runtime;
 GRANT ALL ON stall_shared_folders TO app_runtime;
