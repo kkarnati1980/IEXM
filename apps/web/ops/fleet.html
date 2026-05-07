@@ -4,21 +4,22 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Device Fleet — Codex</title>
+    <link rel="stylesheet" href="/shared-app.css">
     <style>
       :root{
         --ink:#112233;--muted:#5f6f7f;--panel:rgba(255,255,255,0.88);
-        --line:rgba(17,34,51,0.12);--accent:#2d7dd8;--accent-soft:rgba(45,125,216,0.10);
+        --line:rgba(17,34,51,0.12);--accent:#2D6A9F;--accent-soft:rgba(45,106,159,0.10);
         --good:#0f8d63;--warn:#b46c14;--danger:#c03a3a;
       }
       *{box-sizing:border-box;}
-      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--ink);background:radial-gradient(circle at top left,rgba(45,125,216,.12),transparent 26%),linear-gradient(180deg,#f0f4ff,#e8eef9 60%,#dde6f5);}
+      body{margin:0;font-family:"IBM Plex Sans",sans-serif;color:var(--ink);background:radial-gradient(circle at top left,rgba(45,106,159,.12),transparent 26%),linear-gradient(180deg,#f0f4ff,#e8eef9 60%,#dde6f5);}
       .shell{max-width:1400px;margin:0 auto;padding:20px 24px 0;}
       .shell-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px;}
       .shell-title{display:grid;gap:4px;}
       .shell-title strong{font-size:1.15rem;}
       .shell-nav{display:flex;gap:10px;flex-wrap:wrap;}
       .shell-nav a{text-decoration:none;color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:9px 14px;background:rgba(255,255,255,.72);font-size:14px;}
-      .shell-nav a.active{border-color:rgba(45,125,216,.35);background:var(--accent-soft);color:var(--accent);}
+      .shell-nav a.active{border-color:rgba(45,106,159,.35);background:var(--accent-soft);color:var(--accent);}
       main{max-width:1400px;margin:0 auto;padding:0 24px 40px;display:grid;grid-template-columns:1fr 360px;gap:18px;min-height:100vh;}
       .column{display:grid;gap:18px;align-content:start;}
       .card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:18px;box-shadow:0 16px 48px rgba(17,34,51,.06);backdrop-filter:blur(14px);}
@@ -42,21 +43,21 @@
       .section-head p{margin:3px 0 0;color:var(--muted);font-size:13px;}
       .metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:10px;}
       .metric{border-radius:16px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.65));padding:14px 12px;position:relative;overflow:hidden;}
-      .metric::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:linear-gradient(90deg,rgba(45,125,216,.8),rgba(45,125,216,.3));}
+      .metric::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:linear-gradient(90deg,rgba(45,106,159,.8),rgba(45,106,159,.3));}
       .metric span{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);}
       .metric strong{display:block;font-size:1.6rem;margin-top:4px;}
       table{width:100%;border-collapse:collapse;font-size:14px;}
       th{text-align:left;padding:10px 8px;border-bottom:2px solid var(--line);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);}
       td{padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:middle;}
       tbody tr{cursor:pointer;transition:background .1s;}
-      tbody tr:hover{background:rgba(45,125,216,.05);}
-      tbody tr.active{background:rgba(45,125,216,.09);}
+      tbody tr:hover{background:rgba(45,106,159,.05);}
+      tbody tr.active{background:rgba(45,106,159,.09);}
       .tag{display:inline-flex;align-items:center;border-radius:999px;padding:4px 10px;font-size:12px;border:1px solid var(--line);white-space:nowrap;}
       .tag.good{color:var(--good);background:rgba(15,141,99,.08);border-color:rgba(15,141,99,.2);}
       .tag.warn{color:var(--warn);background:rgba(180,108,20,.08);border-color:rgba(180,108,20,.2);}
       .tag.danger{color:var(--danger);background:rgba(192,58,58,.08);border-color:rgba(192,58,58,.2);}
       .tag.muted{color:var(--muted);background:rgba(17,34,51,.05);}
-      .tag.info{color:var(--accent);background:rgba(45,125,216,.08);border-color:rgba(45,125,216,.2);}
+      .tag.info{color:var(--accent);background:rgba(45,106,159,.08);border-color:rgba(45,106,159,.2);}
       .list{display:grid;gap:8px;}
       .item{border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.65);padding:12px;}
       .detail-section{display:grid;gap:6px;margin-bottom:16px;}

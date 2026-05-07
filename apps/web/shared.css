@@ -16,10 +16,12 @@
   --text: #f4f1ea;
   --muted: #b2ac9f;
   --accent: #f3c97d;
+  --accent-dim: rgba(243,201,125,0.12);
   --accent-2: #9fd3c7;
   --good: #9fd3c7;
   --warn: #f3c97d;
   --bad: #ff9f9f;
+  --font: 'IBM Plex Sans', -apple-system, sans-serif;
 }
 
 /* ── Reset ────────────────────────────────────────────────────────────────── */

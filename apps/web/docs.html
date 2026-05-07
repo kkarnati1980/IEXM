@@ -4,52 +4,61 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Documents — Codex</title>
+  <link rel="stylesheet" href="/shared-app.css">
   <style>
+    :root {
+      --accent: #2D6A9F;
+      --accent-soft: rgba(45,106,159,0.10);
+      --ink: #111827;
+      --muted: #6b7280;
+      --panel: #ffffff;
+      --line: #e5e7eb;
+    }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1e293b; min-height: 100vh; }
-    .brand-bar { height: 3px; background: linear-gradient(90deg, #2D6A9F, #3b82f6); }
-    .docs-header { background: #fff; border-bottom: 1px solid #e2e8f0; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .docs-header h1 { font-size: 1.15rem; font-weight: 700; color: #1e293b; }
-    .event-name { font-size: 0.8rem; color: #64748b; margin-top: 2px; }
-    .access-badge { font-size: 0.72rem; background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; border-radius: 20px; padding: 4px 10px; white-space: nowrap; }
+    body { font-family: 'IBM Plex Sans', -apple-system, sans-serif; background: var(--bg, #f5f7fa); color: var(--ink); min-height: 100vh; }
+    .brand-bar { height: 3px; background: linear-gradient(90deg, var(--accent), rgba(45,106,159,.5)); }
+    .docs-header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .docs-header h1 { font-size: 1.15rem; font-weight: 700; color: var(--ink); font-family: 'IBM Plex Sans', sans-serif; }
+    .event-name { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+    .access-badge { font-size: 0.72rem; background: var(--accent-soft); color: var(--accent); border: 1px solid rgba(45,106,159,.2); border-radius: 20px; padding: 4px 10px; white-space: nowrap; }
     .state-page { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; text-align: center; padding: 32px; gap: 12px; }
     .state-icon { font-size: 3rem; }
     .state-page h2 { font-size: 1.4rem; font-weight: 700; }
-    .state-page p { color: #64748b; max-width: 340px; line-height: 1.5; }
+    .state-page p { color: var(--muted); max-width: 340px; line-height: 1.5; }
     .folder-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 20px; }
     @media (min-width: 540px) { .folder-grid { grid-template-columns: repeat(3, 1fr); } }
     @media (min-width: 768px) { .folder-grid { grid-template-columns: repeat(4, 1fr); } }
-    .folder-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px 12px; cursor: pointer; text-align: center; transition: box-shadow .15s, border-color .15s; }
-    .folder-card:hover { box-shadow: 0 4px 16px rgba(45,106,159,.12); border-color: #2D6A9F; }
+    .folder-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 12px; cursor: pointer; text-align: center; transition: box-shadow .15s, border-color .15s; }
+    .folder-card:hover { box-shadow: 0 4px 16px rgba(45,106,159,.12); border-color: var(--accent); }
     .folder-icon { font-size: 2.2rem; margin-bottom: 8px; }
-    .folder-name { font-size: 0.82rem; font-weight: 600; color: #1e293b; word-break: break-word; }
-    .folder-meta { font-size: 0.72rem; color: #94a3b8; margin-top: 4px; }
+    .folder-name { font-size: 0.82rem; font-weight: 600; color: var(--ink); word-break: break-word; }
+    .folder-meta { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
     .file-panel { padding: 0 20px 20px; display: none; }
-    .file-panel-header { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid #e2e8f0; margin-bottom: 12px; }
-    .btn-back { background: none; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 12px; font-size: 0.82rem; cursor: pointer; color: #475569; }
-    .btn-back:hover { background: #f1f5f9; }
+    .file-panel-header { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+    .btn-back { background: none; border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font-size: 0.82rem; cursor: pointer; color: var(--muted); font-family: 'IBM Plex Sans', sans-serif; }
+    .btn-back:hover { background: #f5f7fa; }
     .file-panel-header h2 { font-size: 1rem; font-weight: 700; }
     .file-list { display: flex; flex-direction: column; gap: 6px; }
-    .file-row { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; }
+    .file-row { display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
     .file-icon { font-size: 1.4rem; flex-shrink: 0; }
     .file-info { flex: 1; min-width: 0; }
     .file-name-label { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .file-meta { font-size: 0.72rem; color: #94a3b8; }
+    .file-meta { font-size: 0.72rem; color: var(--muted); }
     .file-actions { display: flex; gap: 6px; flex-shrink: 0; }
-    .btn-action { border: none; border-radius: 6px; padding: 6px 12px; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: opacity .15s; }
-    .btn-view { background: #2D6A9F; color: #fff; }
-    .btn-dl { background: #f1f5f9; color: #1e293b; border: 1px solid #e2e8f0; }
+    .btn-action { border: none; border-radius: 6px; padding: 6px 12px; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: opacity .15s; font-family: 'IBM Plex Sans', sans-serif; }
+    .btn-view { background: var(--accent); color: #fff; }
+    .btn-dl { background: #f5f7fa; color: var(--ink); border: 1px solid var(--line); }
     .btn-action:hover { opacity: .85; }
     .viewer-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 100; flex-direction: column; }
     .viewer-overlay.active { display: flex; }
     .viewer-header { background: #1e293b; color: #fff; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .viewer-filename-label { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .viewer-header-actions { display: flex; gap: 8px; flex-shrink: 0; }
-    .btn-close { background: rgba(255,255,255,.1); border: none; color: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 0.8rem; }
+    .btn-close { background: rgba(255,255,255,.1); border: none; color: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 0.8rem; font-family: 'IBM Plex Sans', sans-serif; }
     .btn-close:hover { background: rgba(255,255,255,.2); }
     .file-iframe { flex: 1; border: none; background: #fff; }
-    .loading { text-align: center; padding: 40px; color: #94a3b8; font-size: 0.9rem; }
-    .empty-state { text-align: center; padding: 40px; color: #94a3b8; }
+    .loading { text-align: center; padding: 40px; color: var(--muted); font-size: 0.9rem; }
+    .empty-state { text-align: center; padding: 40px; color: var(--muted); }
   </style>
 </head>
 <body>

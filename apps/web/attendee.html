@@ -4,14 +4,15 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
     <title>Your Connections — Codex</title>
+    <link rel="stylesheet" href="/shared-app.css">
     <style>
       :root{
         --ink:#112233;--muted:#5f6f7f;--panel:rgba(255,255,255,0.92);
-        --line:rgba(17,34,51,0.12);--accent:#1a56c4;--accent-soft:rgba(26,86,196,0.10);
+        --line:rgba(17,34,51,0.12);--accent:#2D6A9F;--accent-soft:rgba(45,106,159,0.10);
         --good:#0f8d63;--warn:#b46c14;--danger:#c03a3a;
       }
       *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-      html,body{margin:0;min-height:100%;font-family:"IBM Plex Sans",system-ui,sans-serif;color:var(--ink);background:linear-gradient(180deg,#f0f5ff 0%,#e8f0fb 50%,#dde8f6 100%);}
+      html,body{margin:0;min-height:100%;font-family:"IBM Plex Sans",system-ui,sans-serif;color:var(--ink);background:linear-gradient(180deg,#f4f7fa 0%,#ebf0f6 50%,#e3eaf2 100%);}
       /* ── SCREEN SYSTEM ─────────────────────────── */
       .screen{display:none;min-height:100vh;flex-direction:column;animation:fadein .2s ease;}
       .screen.active{display:flex;}
@@ -19,7 +20,7 @@
       /* ── LAYOUT ────────────────────────────────── */
       .page{max-width:480px;margin:0 auto;padding:24px 20px 40px;width:100%;}
       header{text-align:center;padding:32px 20px 20px;}
-      .logo{width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,var(--accent),rgba(26,86,196,.6));display:inline-flex;align-items:center;justify-content:center;color:white;font-size:24px;margin-bottom:12px;}
+      .logo{width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,var(--accent),rgba(45,106,159,.6));display:inline-flex;align-items:center;justify-content:center;color:white;font-size:24px;margin-bottom:12px;}
       header h1{margin:8px 0 4px;font-size:1.5rem;}
       header p{margin:0;color:var(--muted);font-size:15px;}
       /* ── CARDS ─────────────────────────────────── */
@@ -74,7 +75,7 @@
       .alert{border-radius:14px;padding:14px;font-size:14px;margin-bottom:14px;}
       .alert.ok{background:rgba(15,141,99,.1);color:var(--good);}
       .alert.error{background:rgba(192,58,58,.1);color:var(--danger);}
-      .alert.info{background:rgba(26,86,196,.08);color:var(--accent);}
+      .alert.info{background:rgba(45,106,159,.08);color:var(--accent);}
       .alert.warn{background:rgba(180,108,20,.1);color:var(--warn);}
       /* ── BOTTOM NAV ─────────────────────────────── */
       .bottom-nav{position:sticky;bottom:0;background:rgba(255,255,255,.92);backdrop-filter:blur(12px);border-top:1px solid var(--line);display:flex;justify-content:center;gap:0;}
