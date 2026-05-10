@@ -11,14 +11,14 @@ RUN npm ci --workspace=apps/api --workspace=packages/runtime --include-workspace
 # ── Stage 2: Production image ─────────────────────────────
 FROM node:20-alpine AS production
 
-RUN apk add --no-cache dumb-init
+RUN apk add --no-cache dumb-init wget
 
 RUN addgroup -g 1001 -S nodejs && adduser -S codex -u 1001
 
 WORKDIR /app
 
+# npm workspaces hoists everything to root node_modules
 COPY --from=deps --chown=codex:nodejs /app/node_modules ./node_modules
-COPY --from=deps --chown=codex:nodejs /app/apps/api/node_modules ./apps/api/node_modules 2>/dev/null || true
 
 COPY --chown=codex:nodejs apps/api/ ./apps/api/
 COPY --chown=codex:nodejs packages/runtime/ ./packages/runtime/
