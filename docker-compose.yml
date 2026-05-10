@@ -4,7 +4,6 @@
 # Usage: docker compose up -d
 # ─────────────────────────────────────────────────────────
 
-version: '3.9'
 
 services:
 
@@ -20,8 +19,8 @@ services:
       USE_POSTGRES: "true"
       PORT: 3000
       REPOSITORY_BACKEND: postgres
-      DATABASE_URL: postgresql://${POSTGRES_USER:-codex}:${POSTGRES_PASSWORD:-codex_password}@postgres:5432/${POSTGRES_DB:-codex}
-      MIGRATOR_DATABASE_URL: postgresql://${POSTGRES_USER:-codex}:${POSTGRES_PASSWORD:-codex_password}@postgres:5432/${POSTGRES_DB:-codex}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-codex}:${POSTGRES_PASSWORD:-codex_password}@postgres:5432/${POSTGRES_DB:-codex}?sslmode=disable
+      MIGRATOR_DATABASE_URL: postgresql://${POSTGRES_USER:-codex}:${POSTGRES_PASSWORD:-codex_password}@postgres:5432/${POSTGRES_DB:-codex}?sslmode=disable
       DATABASE_SSL: "false"
       DATABASE_RUNTIME_ROLE: app_runtime
       BASE_URL: ${BASE_URL:-http://localhost:3000}

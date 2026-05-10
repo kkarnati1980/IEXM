@@ -1,4 +1,4 @@
-.PHONY: help up dev staging up-nginx down logs logs-api logs-postgres pull migrate psql redis-cli test status health clean
+.PHONY: help up dev staging up-nginx down logs logs-api logs-postgres pull migrate grants psql redis-cli test status health clean
 
 help:
 	@echo "Codex Platform — Docker commands"
@@ -17,6 +17,7 @@ help:
 	@echo "  make test         Run API test suite"
 	@echo "  make status       Show container status + health"
 	@echo "  make health       Check API /health endpoint"
+	@echo "  make grants       Re-apply app_runtime table grants (existing containers)"
 	@echo "  make clean        Remove all containers and volumes (destructive)"
 
 up:
@@ -53,6 +54,15 @@ migrate:
 	  echo "Applying $$f..."; \
 	  psql "$$DATABASE_URL" -f "$$f" 2>/dev/null || true; \
 	done'
+
+grants:
+	docker compose exec -T postgres psql -U codex -d codex <<'SQL'
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO app_runtime;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO app_runtime;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO app_runtime;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO app_runtime;
+SELECT 'Grants applied: ' || count(*) || ' tables' FROM information_schema.tables WHERE table_schema = 'public';
+SQL
 
 psql:
 	docker compose exec postgres psql -U codex -d codex
