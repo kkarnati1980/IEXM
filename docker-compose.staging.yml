@@ -1,0 +1,24 @@
+# ─────────────────────────────────────────────────────────
+# CODEX PLATFORM — Staging Override
+# Uses a specific image tag instead of latest
+# Usage: IMAGE_TAG=sha-abc123 docker compose \
+#          -f docker-compose.yml \
+#          -f docker-compose.staging.yml up -d
+# ─────────────────────────────────────────────────────────
+
+version: '3.9'
+
+services:
+
+  api:
+    image: ghcr.io/kkarnati1980/iexm:${IMAGE_TAG:-main}
+    environment:
+      NODE_ENV: staging
+      BASE_URL: ${STAGING_URL:-http://staging.kiot.io}
+      PLATFORM_BASE_URL: ${STAGING_URL:-http://staging.kiot.io}
+      GOOGLE_OAUTH_REDIRECT_URI: ${STAGING_URL:-http://staging.kiot.io}/auth/drive/google/callback
+      ONEDRIVE_REDIRECT_URI: ${STAGING_URL:-http://staging.kiot.io}/auth/drive/onedrive/callback
+
+  postgres:
+    environment:
+      POSTGRES_DB: codex_staging

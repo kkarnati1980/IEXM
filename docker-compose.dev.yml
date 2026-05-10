@@ -1,0 +1,46 @@
+# ─────────────────────────────────────────────────────────
+# CODEX PLATFORM — Local Development Override
+# Builds from local source instead of pulling from GHCR
+# Usage: docker compose -f docker-compose.yml \
+#                       -f docker-compose.dev.yml up --build
+# ─────────────────────────────────────────────────────────
+
+version: '3.9'
+
+services:
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: production
+    image: codex-api:dev
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: development
+      BASE_URL: http://localhost:3000
+      PLATFORM_BASE_URL: http://localhost:3000
+      GOOGLE_OAUTH_REDIRECT_URI: http://localhost:3000/auth/drive/google/callback
+      ONEDRIVE_REDIRECT_URI: http://localhost:3000/auth/drive/onedrive/callback
+    volumes:
+      - ./apps/api/src:/app/apps/api/src:ro
+      - ./packages/runtime/src:/app/packages/runtime/src:ro
+      - codex_uploads:/app/uploads
+      - codex_exports:/app/exports
+    ports:
+      - "3000:3000"
+      - "9229:9229"
+
+  postgres:
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: codex
+      POSTGRES_PASSWORD: codex_dev_password
+      POSTGRES_DB: codex_dev
+
+  redis:
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"

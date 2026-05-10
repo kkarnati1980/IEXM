@@ -1,18 +1,36 @@
-FROM node:20-alpine
+# ── Stage 1: Install dependencies ────────────────────────
+FROM node:20-alpine AS deps
 WORKDIR /app
 
-# Copy all package manifests so npm can resolve the full workspace graph
 COPY package*.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY packages/runtime/package.json packages/runtime/package.json
 
-RUN npm install
+RUN npm ci --workspace=apps/api --workspace=packages/runtime --include-workspace-root
 
-# Copy source (root .dockerignore excludes node_modules, .env, storage, etc.)
-COPY . .
+# ── Stage 2: Production image ─────────────────────────────
+FROM node:20-alpine AS production
 
-EXPOSE ${PORT:-3000}
+RUN apk add --no-cache dumb-init
+
+RUN addgroup -g 1001 -S nodejs && adduser -S codex -u 1001
+
+WORKDIR /app
+
+COPY --from=deps --chown=codex:nodejs /app/node_modules ./node_modules
+COPY --from=deps --chown=codex:nodejs /app/apps/api/node_modules ./apps/api/node_modules 2>/dev/null || true
+
+COPY --chown=codex:nodejs apps/api/ ./apps/api/
+COPY --chown=codex:nodejs packages/runtime/ ./packages/runtime/
+COPY --chown=codex:nodejs package.json ./
+
 ENV NODE_ENV=production
 ENV USE_POSTGRES=true
+ENV PORT=3000
 
+USER codex
+
+EXPOSE 3000
+
+ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "apps/api/src/server.mjs"]

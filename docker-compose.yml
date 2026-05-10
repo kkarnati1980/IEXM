@@ -1,23 +1,166 @@
-version: "3.9"
+# ─────────────────────────────────────────────────────────
+# CODEX PLATFORM — Production Docker Compose
+# Pulls image from GitHub Container Registry (GHCR)
+# Usage: docker compose up -d
+# ─────────────────────────────────────────────────────────
+
+version: '3.9'
 
 services:
+
+  # ── Codex API ───────────────────────────────────────────
+  api:
+    image: ghcr.io/kkarnati1980/iexm:latest
+    container_name: codex-api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      USE_POSTGRES: "true"
+      PORT: 3000
+      REPOSITORY_BACKEND: postgres
+      DATABASE_URL: postgresql://${POSTGRES_USER:-codex}:${POSTGRES_PASSWORD:-codex_password}@postgres:5432/${POSTGRES_DB:-codex}
+      MIGRATOR_DATABASE_URL: postgresql://${POSTGRES_USER:-codex}:${POSTGRES_PASSWORD:-codex_password}@postgres:5432/${POSTGRES_DB:-codex}
+      DATABASE_SSL: "false"
+      DATABASE_RUNTIME_ROLE: app_runtime
+      BASE_URL: ${BASE_URL:-http://localhost:3000}
+      PLATFORM_BASE_URL: ${PLATFORM_BASE_URL:-http://localhost:3000}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      EXPORT_SECRET: ${EXPORT_SECRET:?EXPORT_SECRET is required}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      SMTP_FROM: ${SMTP_FROM:-noreply@localhost}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Codex Platform}
+      SMTP_PASS: ${SMTP_PASS:-}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-}
+      ONEDRIVE_CLIENT_ID: ${ONEDRIVE_CLIENT_ID:-}
+      ONEDRIVE_CLIENT_SECRET: ${ONEDRIVE_CLIENT_SECRET:-}
+      ONEDRIVE_REDIRECT_URI: ${ONEDRIVE_REDIRECT_URI:-}
+      ONEDRIVE_TENANT_ID: ${ONEDRIVE_TENANT_ID:-common}
+      DRIVE_ENCRYPTION_KEY: ${DRIVE_ENCRYPTION_KEY:-}
+      DRIVE_ACCESS_TOKEN_EXPIRY_DAYS: ${DRIVE_ACCESS_TOKEN_EXPIRY_DAYS:-30}
+      REDIS_URL: redis://redis:6379
+      INFRA_BACKEND: ${INFRA_BACKEND:-mock}
+      S3_REGION: ${S3_REGION:-auto}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_BUCKET: ${R2_BUCKET:-codex-exports}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - codex_uploads:/app/uploads
+      - codex_exports:/app/exports
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - codex-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── PostgreSQL ──────────────────────────────────────────
   postgres:
-    image: postgres:16
-    container_name: pilot-platform-postgres
+    image: postgres:16-alpine
+    container_name: codex-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: pilot_platform
-      POSTGRES_USER: pilot
-      POSTGRES_PASSWORD: pilot
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-codex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-codex_password}
+      POSTGRES_DB: ${POSTGRES_DB:-codex}
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - codex_postgres_data:/var/lib/postgresql/data
+      - ./apps/api/migrations:/docker-entrypoint-initdb.d/migrations:ro
+      - ./scripts/db-init.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pilot -d pilot_platform"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-codex} -d ${POSTGRES_DB:-codex}"]
+      interval: 10s
       timeout: 5s
-      retries: 20
+      retries: 5
+      start_period: 20s
+    networks:
+      - codex-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Redis ───────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: codex-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+    volumes:
+      - codex_redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - codex-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ── Nginx Reverse Proxy (optional) ──────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: codex-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api
+    networks:
+      - codex-network
+    profiles:
+      - nginx
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
-  postgres_data:
+  codex_postgres_data:
+    driver: local
+  codex_redis_data:
+    driver: local
+  codex_uploads:
+    driver: local
+  codex_exports:
+    driver: local
+
+networks:
+  codex-network:
+    driver: bridge
+    name: codex-network
