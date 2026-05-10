@@ -1,44 +1,24 @@
-# ── Stage 1: Install dependencies ──────────────────────────
-FROM node:20-alpine AS deps
+FROM node:20-alpine
 WORKDIR /app
-
-# Copy root package files
-COPY package.json ./
-COPY package-lock.json* ./
-
-# Copy workspace package file
-COPY apps/api/package.json ./apps/api/
-
-# Create minimal web package.json for workspace
-RUN mkdir -p apps/web && echo '{"name":"web","version":"1.0.0"}' > apps/web/package.json
-
-# Install dependencies
-RUN npm ci --workspace=apps/api --ignore-scripts || \
-    npm install --workspace=apps/api --ignore-scripts
-
-# ── Stage 2: Production image ───────────────────────────────
-FROM node:20-alpine AS production
 
 RUN apk add --no-cache dumb-init wget
 
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S codex -u 1001
+# Copy package manifests so npm can resolve the full workspace graph.
+# packages/runtime must be here because it is in package-lock.json's workspace
+# list — omitting it makes npm ci fail with a lockfile mismatch.
+COPY package*.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY packages/runtime/package.json packages/runtime/package.json
 
-WORKDIR /app
+RUN npm ci
 
-# Copy dependencies from deps stage
-COPY --from=deps --chown=codex:nodejs /app/node_modules ./node_modules
-
-# Copy application source
-COPY --chown=codex:nodejs package.json ./
-COPY --chown=codex:nodejs apps/api/ ./apps/api/
-COPY --chown=codex:nodejs apps/web/ ./apps/web/
+# Copy all source after install to keep layer cache effective.
+COPY . .
 
 ENV NODE_ENV=production
 ENV USE_POSTGRES=true
-ENV PORT=3000
+# PORT is injected by Railway at runtime; server.mjs reads process.env.PORT.
 
-USER codex
 EXPOSE 3000
 
 ENTRYPOINT ["dumb-init", "--"]
