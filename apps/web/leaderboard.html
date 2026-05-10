@@ -431,6 +431,8 @@
         if (!resp.ok) throw new Error(payload.error || `${resp.status}`);
         return payload;
       }
+
+      Object.assign(window, { applyConfig, toggleConfig });
     </script>
   </body>
 </html>

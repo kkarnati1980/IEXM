@@ -2033,6 +2033,12 @@
         if (el) el.textContent = val;
       }
 
+      Object.assign(window, {
+        checkReaderRecovery, closeConfigOverlay, closeDiagnostics,
+        dismissInteraction, forceSync, forceSyncAll, goToIdle,
+        refreshConfig, restartAdapter, retryConfig, saveConfigAndBoot, sendHeartbeat
+      });
+
       /* ═══════════════════════════════════════════
          BOOT
       ═══════════════════════════════════════════ */

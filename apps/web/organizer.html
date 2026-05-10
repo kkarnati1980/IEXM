@@ -1422,6 +1422,12 @@
         if(!resp.ok) throw new Error(payload.error||`Request failed with ${resp.status}`);
         return payload;
       }
+
+      Object.assign(window, {
+        approveExport, exportComparison, loadAuditLog, loadExportApprovals,
+        loadFleet, rejectExport, renderHourlyChart, runComparison,
+        saveDataPolicy, switchTab
+      });
     </script>
   </body>
 </html>

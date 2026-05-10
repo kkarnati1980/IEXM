@@ -1278,6 +1278,8 @@
 
       // ── Init ──────────────────────────────────────────────────────────────
 
+      Object.assign(window, { copyText, revokeClient, rotateClientSecret });
+
       loadOverview();
       // Pre-load orgs for user invite flow
       api("/orgs").then((d) => { allOrgs = d.items ?? []; }).catch(() => {});

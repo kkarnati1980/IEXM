@@ -574,6 +574,11 @@
         if (!resp.ok) throw new Error(payload.error || `Request failed ${resp.status}`);
         return payload;
       }
+
+      Object.assign(window, {
+        deleteInteraction, exportContact, goTo, requestDSR,
+        revokeAll, revokeConsent, revokeVendorConsent, saveConsent
+      });
     </script>
   </body>
 </html>

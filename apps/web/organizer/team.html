@@ -359,6 +359,8 @@
         }
       });
 
+      Object.assign(window, { disableUser, enableUser, resendInvite });
+
       loadTeam();
 
       const activeEventId = localStorage.getItem("codex.active_event_id");
