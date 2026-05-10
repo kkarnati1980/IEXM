@@ -1001,7 +1001,12 @@
       async function connectGoogle() {
         try {
           const data = await api(`/stalls/${enc(stallId)}/drive/connect/google`);
-          if (data.auth_url) { location.href = data.auth_url; }
+          if (data.auth_url) {
+            location.href = data.auth_url;
+          } else {
+            $('drive-error-msg').textContent = 'Google Drive is not configured on this server. Contact your administrator.';
+            $('drive-error-msg').style.display = '';
+          }
         } catch (err) {
           $('drive-error-msg').textContent = 'Could not initiate Google connection: ' + err.message;
           $('drive-error-msg').style.display = '';
@@ -1011,7 +1016,12 @@
       async function connectOneDrive() {
         try {
           const data = await api(`/stalls/${enc(stallId)}/drive/connect/onedrive`);
-          if (data.auth_url) { location.href = data.auth_url; }
+          if (data.auth_url) {
+            location.href = data.auth_url;
+          } else {
+            $('drive-error-msg').textContent = 'OneDrive is not configured on this server. Contact your administrator.';
+            $('drive-error-msg').style.display = '';
+          }
         } catch (err) {
           $('drive-error-msg').textContent = 'Could not initiate OneDrive connection: ' + err.message;
           $('drive-error-msg').style.display = '';
@@ -1063,6 +1073,15 @@
         $('drive-error-msg').style.display = '';
         history.replaceState({}, '', location.pathname);
       }
+
+      // Expose functions to window so onclick="" attributes can find them.
+      // <script type="module"> scopes functions to the module — they are NOT
+      // on window by default, which causes onclick handlers to throw ReferenceError.
+      Object.assign(window, {
+        loadAll, requestExport, setScore, pushToCRM, addNote,
+        connectGoogle, connectOneDrive, disconnectDrive,
+        browseFolders, loadSharedFolders, addCRMConnection
+      });
 
       loadDriveConnection();
       loadAll();
