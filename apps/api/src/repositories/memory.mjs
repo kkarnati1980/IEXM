@@ -1619,6 +1619,13 @@ export function createMemoryRepositories(state) {
           r => r.stall_id === stallId && r.tenant_id === tenantId && r.status === 'active'
         ) ?? null
       },
+      async findAllActive(stallId, tenantId) {
+        const seen = new Set()
+        return (state.stallDriveConnections ?? [])
+          .filter(r => r.stall_id === stallId && r.tenant_id === tenantId && r.status === 'active')
+          .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+          .filter(r => { if (seen.has(r.provider)) return false; seen.add(r.provider); return true; })
+      },
       async create(record) {
         if (!state.stallDriveConnections) state.stallDriveConnections = []
         state.stallDriveConnections.push(record)

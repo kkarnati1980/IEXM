@@ -3877,6 +3877,14 @@ export function createPostgresRepositories(db, securityContext = null) {
         )
         return result.rows[0] ?? null
       },
+      async findAllActive(stallId, tenantId) {
+        return many(await execute(
+          `SELECT DISTINCT ON (provider) * FROM stall_drive_connections
+           WHERE stall_id = $1 AND tenant_id = $2 AND status = 'active'
+           ORDER BY provider, created_at DESC`,
+          [stallId, tenantId]
+        ))
+      },
       async create(record) {
         return one(
           await execute(

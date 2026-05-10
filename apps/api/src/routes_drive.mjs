@@ -148,9 +148,9 @@ export function registerDriveRoutes(router) {
         const encAccess = encryptToken(tokens.access_token)
         const encRefresh = tokens.refresh_token ? encryptToken(tokens.refresh_token) : null
 
-        console.log('[google-cb] Step 5: deactivating existing connections')
+        console.log('[google-cb] Step 5: deactivating existing google_drive connections')
         const existing = await repos.stallDriveConnections.findByStall(state.stallId, state.tenantId)
-        for (const conn of existing.filter(c => c.status === 'active')) {
+        for (const conn of existing.filter(c => c.status === 'active' && c.provider === 'google_drive')) {
           await repos.stallDriveConnections.setStatus(conn.id, 'disconnected')
         }
 
@@ -207,7 +207,7 @@ export function registerDriveRoutes(router) {
         const expiresAt = new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000)
 
         const existing = await repos.stallDriveConnections.findByStall(state.stallId, state.tenantId)
-        for (const conn of existing.filter(c => c.status === 'active')) {
+        for (const conn of existing.filter(c => c.status === 'active' && c.provider === 'onedrive')) {
           await repos.stallDriveConnections.setStatus(conn.id, 'disconnected')
         }
 
@@ -266,6 +266,33 @@ export function registerDriveRoutes(router) {
   })
 
   router.addRoute({
+    id: 'stall-drive-connections-list',
+    method: 'GET',
+    path: '/stalls/:stallId/drive/connections',
+    allowedRoles: ['vendor_manager', 'organizer_admin', 'platform_admin'],
+    resolveResources: async ({ repos, principal, params }) => {
+      const stall = await repos.stalls.findById(principal.tenant_id, params.stallId)
+      if (!stall) throw new HttpError(404, 'Stall not found')
+      return { stall }
+    },
+    handler: async ({ repos, resources, principal }) => {
+      const active = await repos.stallDriveConnections.findAllActive(
+        resources.stall.id, principal.tenant_id
+      )
+      const byProvider = Object.fromEntries(active.map(c => [c.provider, c]))
+      const providers = ['google_drive', 'onedrive']
+      return {
+        connections: providers.map(provider => {
+          const c = byProvider[provider]
+          return c
+            ? { provider, connected: true, drive_account_email: c.drive_account_email, status: c.status, connected_at: c.connected_at }
+            : { provider, connected: false }
+        })
+      }
+    }
+  })
+
+  router.addRoute({
     id: 'stall-drive-disconnect',
     method: 'DELETE',
     path: '/stalls/:stallId/drive/disconnect',
@@ -275,12 +302,17 @@ export function registerDriveRoutes(router) {
       if (!stall) throw new HttpError(404, 'Stall not found')
       return { stall }
     },
-    handler: async ({ repos, resources, principal }) => {
-      const conn = await repos.stallDriveConnections.findActive(
-        resources.stall.id, principal.tenant_id
-      )
-      if (!conn) throw new HttpError(404, 'No active connection to disconnect')
-      await repos.stallDriveConnections.setStatus(conn.id, 'disconnected')
+    handler: async ({ repos, resources, principal, query }) => {
+      const provider = query?.provider ?? null
+      const candidates = provider
+        ? (await repos.stallDriveConnections.findAllActive(resources.stall.id, principal.tenant_id))
+            .filter(c => c.provider === provider)
+        : [await repos.stallDriveConnections.findActive(resources.stall.id, principal.tenant_id)]
+      const toDisconnect = candidates.filter(Boolean)
+      if (!toDisconnect.length) throw new HttpError(404, 'No active connection to disconnect')
+      for (const conn of toDisconnect) {
+        await repos.stallDriveConnections.setStatus(conn.id, 'disconnected')
+      }
       return { disconnected: true }
     }
   })

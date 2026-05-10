@@ -499,6 +499,7 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   "drive-google-callback": publicEntry("vendor.drive.callback", "Handle Google OAuth callback and store encrypted tokens"),
   "drive-onedrive-callback": publicEntry("vendor.drive.callback", "Handle OneDrive OAuth callback and store encrypted tokens"),
   "stall-drive-connection-get": entry({ permission: "vendor.drive.connection.view", roles: vendorOrganizerPlatform, scope: "event_stall", description: "View drive connection status for a stall" }),
+  "stall-drive-connections-list": entry({ permission: "vendor.drive.connection.view", roles: vendorOrganizerPlatform, scope: "event_stall", description: "View all provider connection statuses for a stall" }),
   "stall-drive-disconnect": entry({ permission: "vendor.drive.disconnect", roles: vendorOrganizerPlatform, scope: "event_stall", description: "Disconnect drive storage from a stall" }),
   "stall-drive-folders-list": entry({ permission: "vendor.drive.folders.browse", roles: vendorOrganizerPlatform, scope: "event_stall", description: "Browse drive folders for selection" }),
   "stall-drive-shared-folders-create": entry({ permission: "vendor.drive.shared_folders.create", roles: vendorOrganizerPlatform, scope: "event_stall", description: "Share a drive folder with stall attendees" }),
