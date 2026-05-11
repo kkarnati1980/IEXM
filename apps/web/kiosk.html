@@ -1439,17 +1439,10 @@
          Skips device boot entirely. Attendee sees Accept/Decline on the screen.
       ════════════════════════════════════════════════════════════════════════ */
       async function runConsentMode(consentToken, interactionId) {
-        try {
-          const apiBase = params.get("apiBase") || localStorage.getItem("kiosk_api_base") || "http://127.0.0.1:3000";
-          const r = await fetch(`${apiBase}/interactions/${encodeURIComponent(interactionId)}/detail`, {
-            headers: { authorization: `Bearer ${consentToken}` }
-          });
-          if (r.ok) {
-            const d = await r.json();
-            if (d.stall_name) document.getElementById("cm-stall-name").textContent = d.stall_name;
-            if (d.attendee_name) document.getElementById("cm-greeting").textContent = `Welcome, ${d.attendee_name}!`;
-          }
-        } catch (_e) { /* non-blocking — consent screen still works without preview data */ }
+        // Clear "Loading…" immediately — the detail endpoint requires staff auth
+        // and will 403 with an attendee session token, so never show the loading state
+        const stallEl = document.getElementById("cm-stall-name");
+        if (stallEl) stallEl.textContent = "";
       }
 
       async function handleConsentAccept() {
@@ -1459,9 +1452,12 @@
         const _p = new URLSearchParams(location.search);
         const _token = _p.get("consent_token");
         const _iid = _p.get("interaction_id");
-        const apiBase = _p.get("apiBase") || localStorage.getItem("kiosk_api_base") || "http://127.0.0.1:3000";
+        // Use location.origin as fallback — consent mode skips the boot sequence
+        // where apiBase would normally be stored in localStorage, and the page is
+        // always served by the same origin as the API on Railway/Pi.
+        const _apiBase = _p.get("apiBase") || location.origin;
         try {
-          const r = await fetch(`${apiBase}/consents/capture`, {
+          const r = await fetch(`${_apiBase}/consents/capture`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -1474,7 +1470,13 @@
           if (r.ok) {
             btn.textContent = "✓ Thank you!";
             btn.style.background = "#16a34a";
-            setTimeout(() => { window.location.href = "/kiosk.html"; }, 3000);
+            const declineBtn = document.getElementById("cm-decline");
+            if (declineBtn) declineBtn.hidden = true;
+            const stallEl = document.getElementById("cm-stall-name");
+            if (stallEl) stallEl.textContent = "Your details have been shared. See you at the stall!";
+            setTimeout(() => {
+              try { window.close(); } catch (_e) {}
+            }, 3000);
           } else {
             btn.disabled = false;
             btn.textContent = "✓ Yes, share details";
@@ -1487,13 +1489,13 @@
 
       async function handleConsentDecline() {
         const btn = document.getElementById("cm-decline");
-        btn.disabled = true;
+        if (btn) { btn.disabled = true; btn.textContent = "Noted…"; }
         const _p = new URLSearchParams(location.search);
         const _token = _p.get("consent_token");
         const _iid = _p.get("interaction_id");
-        const apiBase = _p.get("apiBase") || localStorage.getItem("kiosk_api_base") || "http://127.0.0.1:3000";
+        const _apiBase = _p.get("apiBase") || location.origin;
         try {
-          await fetch(`${apiBase}/consents/capture`, {
+          await fetch(`${_apiBase}/consents/capture`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -1504,7 +1506,20 @@
             })
           });
         } catch (_e) { /* non-blocking */ }
-        setTimeout(() => { window.location.href = "/kiosk.html"; }, 2000);
+        // Show thank-you using existing DOM elements — no redirect to avoid CONFIG_ERROR
+        const greetingEl = document.getElementById("cm-greeting");
+        const stallEl    = document.getElementById("cm-stall-name");
+        const acceptBtn  = document.getElementById("cm-accept");
+        if (greetingEl) greetingEl.textContent = "No problem!";
+        if (stallEl)    stallEl.textContent    = "Your visit has been anonymously recorded.";
+        if (acceptBtn)  acceptBtn.hidden        = true;
+        if (btn)        btn.hidden              = true;
+        setTimeout(() => {
+          try { window.close(); } catch (_e) {}
+          // Fallback if window.close() is blocked
+          if (greetingEl) greetingEl.textContent = "You may close this window.";
+          if (stallEl)    stallEl.textContent    = "";
+        }, 3000);
       }
 
       async function boot() {
