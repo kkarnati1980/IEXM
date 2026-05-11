@@ -1101,28 +1101,37 @@
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
                   height:100%;padding:40px;text-align:center;background:#0a0e1a;color:#f4f1ea;
                   font-family:'IBM Plex Sans',sans-serif;">
-        <div style="font-size:52px;margin-bottom:20px;">👋</div>
-        <h2 id="cm-greeting" style="font-size:30px;font-weight:700;margin:0 0 8px;color:#f4f1ea;">Welcome!</h2>
-        <p id="cm-stall-name" style="font-size:16px;color:rgba(244,241,234,0.55);margin:0 0 32px;">Loading…</p>
-        <p style="font-size:18px;color:#f4f1ea;margin:0 0 36px;max-width:480px;line-height:1.6;">
-          Do you agree to share your contact details with this exhibitor?
-        </p>
-        <div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center;">
-          <button id="cm-accept" onclick="handleConsentAccept()"
-            style="padding:16px 48px;background:#22c55e;color:#fff;border:none;border-radius:12px;
-                   font-size:18px;font-weight:600;cursor:pointer;font-family:inherit;min-width:180px;">
-            ✓ Yes, share details
-          </button>
-          <button id="cm-decline" onclick="handleConsentDecline()"
-            style="padding:16px 48px;background:transparent;color:rgba(244,241,234,0.6);
-                   border:2px solid rgba(244,241,234,0.25);border-radius:12px;
-                   font-size:18px;cursor:pointer;font-family:inherit;min-width:180px;">
-            ✗ No thanks
-          </button>
+        <!-- Question state — entire block hidden after Accept/Decline -->
+        <div id="consent-question">
+          <div style="font-size:52px;margin-bottom:20px;">👋</div>
+          <h2 id="cm-greeting" style="font-size:30px;font-weight:700;margin:0 0 8px;color:#f4f1ea;">Welcome!</h2>
+          <p id="cm-stall-name" style="font-size:16px;color:rgba(244,241,234,0.55);margin:0 0 32px;"></p>
+          <p style="font-size:18px;color:#f4f1ea;margin:0 0 36px;max-width:480px;line-height:1.6;">
+            Do you agree to share your contact details with this exhibitor?
+          </p>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center;">
+            <button id="cm-accept" onclick="handleConsentAccept()"
+              style="padding:16px 48px;background:#22c55e;color:#fff;border:none;border-radius:12px;
+                     font-size:18px;font-weight:600;cursor:pointer;font-family:inherit;min-width:180px;">
+              ✓ Yes, share details
+            </button>
+            <button id="cm-decline" onclick="handleConsentDecline()"
+              style="padding:16px 48px;background:transparent;color:rgba(244,241,234,0.6);
+                     border:2px solid rgba(244,241,234,0.25);border-radius:12px;
+                     font-size:18px;cursor:pointer;font-family:inherit;min-width:180px;">
+              ✗ No thanks
+            </button>
+          </div>
+          <p style="margin-top:28px;font-size:13px;color:rgba(244,241,234,0.35);">
+            Your anonymised visit is always recorded for event analytics.
+          </p>
         </div>
-        <p style="margin-top:28px;font-size:13px;color:rgba(244,241,234,0.35);">
-          Your anonymised visit is always recorded for event analytics.
-        </p>
+        <!-- Done state — revealed after Accept/Decline, text set by JS -->
+        <div id="consent-done" hidden>
+          <div id="consent-done-icon" style="font-size:80px;margin-bottom:24px;">✅</div>
+          <h2 id="consent-done-heading" style="font-size:36px;font-weight:700;margin:0 0 12px;color:#f4f1ea;"></h2>
+          <p id="consent-done-sub" style="font-size:18px;color:rgba(244,241,234,0.6);margin:0;"></p>
+        </div>
       </div>
     </div>
 
@@ -1468,20 +1477,16 @@
             })
           });
           if (r.ok) {
-            btn.textContent = "✓ Thank you!";
-            btn.style.background = "#16a34a";
-            const declineBtn = document.getElementById("cm-decline");
-            if (declineBtn) declineBtn.hidden = true;
-            const greetingEl = document.getElementById("cm-greeting");
-            const stallEl    = document.getElementById("cm-stall-name");
-            if (stallEl) stallEl.textContent = "Your details have been shared.";
+            document.getElementById("consent-question").hidden        = true;
+            document.getElementById("consent-done-icon").textContent    = "✅";
+            document.getElementById("consent-done-heading").textContent = "Thank you!";
+            document.getElementById("consent-done-sub").textContent     = "Your details have been shared.";
+            document.getElementById("consent-done").hidden              = false;
             setTimeout(() => {
               try { window.close(); } catch (_e) {}
-              // Fallback — window.close() is blocked in browsers not opened by script
               setTimeout(() => {
-                if (greetingEl) greetingEl.textContent = "All done!";
-                if (stallEl)    stallEl.textContent    = "You may close this window.";
-                btn.hidden = true;
+                document.getElementById("consent-done-heading").textContent = "All done!";
+                document.getElementById("consent-done-sub").textContent     = "You may close this window.";
               }, 500);
             }, 3000);
           } else {
@@ -1513,20 +1518,16 @@
             })
           });
         } catch (_e) { /* non-blocking */ }
-        // Show thank-you using existing DOM elements — no redirect to avoid CONFIG_ERROR
-        const greetingEl = document.getElementById("cm-greeting");
-        const stallEl    = document.getElementById("cm-stall-name");
-        const acceptBtn  = document.getElementById("cm-accept");
-        if (greetingEl) greetingEl.textContent = "No problem!";
-        if (stallEl)    stallEl.textContent    = "Your visit has been anonymously recorded.";
-        if (acceptBtn)  acceptBtn.hidden        = true;
-        if (btn)        btn.hidden              = true;
+        document.getElementById("consent-question").hidden        = true;
+        document.getElementById("consent-done-icon").textContent    = "👋";
+        document.getElementById("consent-done-heading").textContent = "No problem!";
+        document.getElementById("consent-done-sub").textContent     = "Your visit has been anonymously recorded.";
+        document.getElementById("consent-done").hidden              = false;
         setTimeout(() => {
           try { window.close(); } catch (_e) {}
-          // Fallback — window.close() is blocked in browsers not opened by script
           setTimeout(() => {
-            if (greetingEl) greetingEl.textContent = "All done!";
-            if (stallEl)    stallEl.textContent    = "You may close this window.";
+            document.getElementById("consent-done-heading").textContent = "All done!";
+            document.getElementById("consent-done-sub").textContent     = "You may close this window.";
           }, 500);
         }, 3000);
       }
