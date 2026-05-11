@@ -158,6 +158,13 @@
             <div class="detail-field"><label>Last seen</label><span id="dp-last-seen">—</span></div>
           </div>
 
+          <div class="detail-section" id="detail-nfc">
+            <h4>NFC Reader</h4>
+            <div class="detail-field"><label>Status</label><span id="dp-nfc-status" class="tag muted">—</span></div>
+            <div class="detail-field" id="dp-nfc-model-row" hidden><label>Model</label><span id="dp-nfc-model">—</span></div>
+            <div class="detail-field" id="dp-nfc-fw-row" hidden><label>Firmware</label><span id="dp-nfc-firmware">—</span></div>
+          </div>
+
           <div class="detail-section">
             <h4>Assignment</h4>
             <div id="assignment-detail" class="list"><div class="item muted">Select a device.</div></div>
@@ -283,6 +290,13 @@
         $("dp-status").textContent    = d.status || "unknown";
         $("dp-last-seen").textContent = fmtDate(d.last_seen_at || d.last_heartbeat_at || d.config_lease_expires_at);
 
+        // Reset NFC section to loading state
+        const nfcStatusEl = $("dp-nfc-status");
+        nfcStatusEl.className   = "tag muted";
+        nfcStatusEl.textContent = "Loading…";
+        $("dp-nfc-model-row").hidden = true;
+        $("dp-nfc-fw-row").hidden    = true;
+
         const ad = $("assignment-detail"); ad.innerHTML = "";
         if (d.event_id)  addItem(ad, `Event: ${d.event_id}`);
         if (d.stall_id)  addItem(ad, `Stall: ${d.stall_id}`);
@@ -297,6 +311,24 @@
         if (!d.last_interaction_at) addItem(act, "No recorded interactions.");
 
         syncUrl();
+
+        // Fetch device detail to display NFC reader info
+        api(`/devices/${d.id}`).then(({ nfc_reader: r }) => {
+          if (r) {
+            nfcStatusEl.className   = "tag good";
+            nfcStatusEl.textContent = "Connected";
+            $("dp-nfc-model").textContent    = r.model || "ACR122U";
+            $("dp-nfc-firmware").textContent = r.firmware_version || "—";
+            $("dp-nfc-model-row").hidden = false;
+            $("dp-nfc-fw-row").hidden    = false;
+          } else {
+            nfcStatusEl.className   = "tag muted";
+            nfcStatusEl.textContent = "Not registered";
+          }
+        }).catch(() => {
+          nfcStatusEl.className   = "tag warn";
+          nfcStatusEl.textContent = "Unavailable";
+        });
       }
 
       async function loadIotRuns(eid) {
