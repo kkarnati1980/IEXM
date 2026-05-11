@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { nextId } from "../store.mjs";
 import { HttpError } from "../http-error.mjs";
 
-export async function ingestTapEvent({ repos, body, resources, cloudReceivedAt = null }) {
+export async function ingestTapEvent({ repos, body, resources, cloudReceivedAt = null, attendeeId = null }) {
   if (resources.assignment && (resources.assignment.event_id !== body.event_id || resources.assignment.stall_id !== body.stall_id)) {
     throw new HttpError(403, "Tap event/stall must match active device assignment");
   }
@@ -59,7 +59,7 @@ export async function ingestTapEvent({ repos, body, resources, cloudReceivedAt =
         event_id: resources.event.id,
         stall_id: resources.stall.id,
         tap_event_id: createdTap.id,
-        attendee_id: null,
+        attendee_id: attendeeId,
         captured_by_user_id: null,
         status: "consent_required",
         consent_status: "pending",
@@ -73,7 +73,8 @@ export async function ingestTapEvent({ repos, body, resources, cloudReceivedAt =
         stallId: resources.stall.id,
         interactionId: interaction.id,
         tenantId: resources.event.tenant_id,
-        eventId: resources.event.id
+        eventId: resources.event.id,
+        attendeeId
       });
 
       return {
@@ -108,7 +109,7 @@ export async function ingestTapEvent({ repos, body, resources, cloudReceivedAt =
   });
 }
 
-async function autoGrantDocumentAccess(repos, { stallId, interactionId, tenantId, eventId }) {
+async function autoGrantDocumentAccess(repos, { stallId, interactionId, tenantId, eventId, attendeeId = null }) {
   try {
     const folders = await repos.stallSharedFolders.listActive(stallId, tenantId);
     const openFolders = folders.filter(f => f.default_access === "open" && f.status === "active");
@@ -126,7 +127,7 @@ async function autoGrantDocumentAccess(repos, { stallId, interactionId, tenantId
         stall_id: stallId,
         event_id: eventId,
         folder_id: folder.id,
-        attendee_id: null,
+        attendee_id: attendeeId,
         interaction_id: interactionId,
         access_token: accessToken,
         access_token_expires_at: expiresAt,

@@ -8299,6 +8299,135 @@ export function registerRoutes(router) {
     }
   });
 
+  // POST /interactions/nfc-tap — Pi 5 + ACR122U NFC tap ingestion
+  // Pi sends raw NFC UID; server SHA-256 hashes it, looks up or creates attendee,
+  // then calls ingestTapEvent(). Returns consent_url for kiosk.html consent mode.
+  router.addRoute({
+    id: "interactions-nfc-tap",
+    method: "POST",
+    path: "/interactions/nfc-tap",
+    allowedRoles: ["device_principal"],
+    validate: (body) => {
+      required(body, ["nfc_uid", "device_id", "event_id", "stall_id", "local_event_id", "occurred_at"]);
+      return body;
+    },
+    resolveResources: async ({ repos, principal, body }) => {
+      const device = await repos.devices.findById(principal.tenant_id, body.device_id);
+      const assignment = await repos.deviceAssignments.findActiveByDeviceId(principal.tenant_id, device.id);
+      const event = await repos.events.findById(principal.tenant_id, body.event_id);
+      const stall = await repos.stalls.findById(principal.tenant_id, body.stall_id);
+      const eventPolicy = await repos.eventPolicies.findByEventId(principal.tenant_id, event.id);
+      return { device, assignment, event, stall, eventPolicy };
+    },
+    handler: async ({ state, repos, body, resources }) => {
+      const tenantId = resources.event.tenant_id;
+      const nfcUidHash = createHash("sha256")
+        .update(String(body.nfc_uid).toLowerCase().trim())
+        .digest("hex");
+
+      let attendee = await repos.attendees.findByNfcUidHash(tenantId, nfcUidHash);
+      let isNewAttendee = false;
+
+      if (!attendee) {
+        isNewAttendee = true;
+        const newAttendeeId = nextId("attendee");
+        attendee = await repos.attendees.create({
+          id: newAttendeeId,
+          tenant_id: tenantId,
+          created_at: new Date().toISOString()
+        });
+        await repos.attendees.setNfcUidHash(tenantId, newAttendeeId, nfcUidHash);
+        attendee.nfc_uid_hash = nfcUidHash;
+      }
+
+      const nfcBody = {
+        ...body,
+        tap_type: "card_uid",
+        reader_uid: nfcUidHash
+      };
+
+      const interactionResult = await ingestTapEvent({
+        repos,
+        body: nfcBody,
+        resources,
+        attendeeId: attendee.id
+      });
+      const interaction = interactionResult.interaction;
+
+      const attendeeSessionToken = createAttendeeSessionToken(
+        buildAttendeeSessionPayload(interaction, tenantId),
+        state.sessionSecret
+      );
+
+      const customerShortLink = await createShortLinkRecord({
+        repos,
+        tenantId,
+        targetType: "attendee_session",
+        targetId: interaction.id,
+        targetPayload: {
+          interaction_id: interaction.id,
+          session_token: attendeeSessionToken,
+          target_url: `/attendee.html?interactionId=${encodeURIComponent(interaction.id)}&token=${encodeURIComponent(attendeeSessionToken)}`
+        },
+        expiresAt: inHours(24)
+      });
+
+      const baseUrl = process.env.BASE_URL ?? "";
+      const consentUrl = `${baseUrl}/kiosk.html?consent_token=${encodeURIComponent(attendeeSessionToken)}&interaction_id=${encodeURIComponent(interaction.id)}`;
+
+      return {
+        result: interactionResult.mode,
+        interaction_id: interaction.id,
+        tap_event_id: interactionResult.tapEvent.id,
+        attendee_id: attendee.id,
+        nfc_uid_hash: nfcUidHash,
+        is_new_attendee: isNewAttendee,
+        consent_status: interaction.consent_status,
+        attendee_session_token: attendeeSessionToken,
+        customer_short_link: customerShortLink.short_link_url,
+        customer_short_link_expires_at: customerShortLink.expires_at,
+        consent_url: consentUrl
+      };
+    },
+    statusCode: 201,
+    auditEventType: "interaction.nfc_tap.created"
+  });
+
+  // PUT /attendees/:attendeeId/nfc-tag — link NFC card UID to a known attendee
+  router.addRoute({
+    id: "attendees-set-nfc-tag",
+    method: "PUT",
+    path: "/attendees/:attendeeId/nfc-tag",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    validate: (body) => {
+      required(body, ["nfc_uid"]);
+      return body;
+    },
+    handler: async ({ repos, body, params, principal }) => {
+      const tenantId = principal.tenant_id;
+      await repos.attendees.findById(tenantId, params.attendeeId);
+      const nfcUidHash = createHash("sha256")
+        .update(String(body.nfc_uid).toLowerCase().trim())
+        .digest("hex");
+      try {
+        await repos.attendees.setNfcUidHash(tenantId, params.attendeeId, nfcUidHash);
+      } catch (err) {
+        if (err.code === "23505" || (err.message && err.message.includes("unique"))) {
+          throw new HttpError(409, "This NFC tag is already linked to another attendee", {
+            code: "NFC_TAG_ALREADY_REGISTERED"
+          });
+        }
+        throw err;
+      }
+      return {
+        attendee_id: params.attendeeId,
+        nfc_uid_hash: nfcUidHash,
+        message: "NFC tag linked to attendee"
+      };
+    },
+    auditEventType: "attendee.nfc_tag.set"
+  });
+
 }
 
 async function resolveDeviceCredentialResources({ repos, principal, params }) {

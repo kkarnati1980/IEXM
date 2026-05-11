@@ -1096,6 +1096,36 @@
       </div>
     </div>
 
+    <!-- ── SCREEN: CONSENT MODE (Pi 5 NFC tap) ──────────────────────────── -->
+    <div id="screen-consent-mode" class="screen">
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+                  height:100%;padding:40px;text-align:center;background:#0a0e1a;color:#f4f1ea;
+                  font-family:'IBM Plex Sans',sans-serif;">
+        <div style="font-size:52px;margin-bottom:20px;">👋</div>
+        <h2 id="cm-greeting" style="font-size:30px;font-weight:700;margin:0 0 8px;color:#f4f1ea;">Welcome!</h2>
+        <p id="cm-stall-name" style="font-size:16px;color:rgba(244,241,234,0.55);margin:0 0 32px;">Loading…</p>
+        <p style="font-size:18px;color:#f4f1ea;margin:0 0 36px;max-width:480px;line-height:1.6;">
+          Do you agree to share your contact details with this exhibitor?
+        </p>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center;">
+          <button id="cm-accept" onclick="handleConsentAccept()"
+            style="padding:16px 48px;background:#22c55e;color:#fff;border:none;border-radius:12px;
+                   font-size:18px;font-weight:600;cursor:pointer;font-family:inherit;min-width:180px;">
+            ✓ Yes, share details
+          </button>
+          <button id="cm-decline" onclick="handleConsentDecline()"
+            style="padding:16px 48px;background:transparent;color:rgba(244,241,234,0.6);
+                   border:2px solid rgba(244,241,234,0.25);border-radius:12px;
+                   font-size:18px;cursor:pointer;font-family:inherit;min-width:180px;">
+            ✗ No thanks
+          </button>
+        </div>
+        <p style="margin-top:28px;font-size:13px;color:rgba(244,241,234,0.35);">
+          Your anonymised visit is always recorded for event analytics.
+        </p>
+      </div>
+    </div>
+
     <script type="module">
       /* ═══════════════════════════════════════════
          STATE MACHINE (inline — mirrors packages/runtime)
@@ -1112,11 +1142,12 @@
         INTERACTION_EXCEPTION: "INTERACTION_EXCEPTION",
         SYNCING_BACKGROUND: "SYNCING_BACKGROUND",
         READER_ERROR: "READER_ERROR",
-        DIAGNOSTICS: "DIAGNOSTICS"
+        DIAGNOSTICS: "DIAGNOSTICS",
+        CONSENT_MODE: "CONSENT_MODE"
       });
 
       const ALLOWED_TRANSITIONS = {
-        [KIOSK_STATES.BOOTING]: [KIOSK_STATES.CONFIG_LOADING],
+        [KIOSK_STATES.BOOTING]: [KIOSK_STATES.CONFIG_LOADING, KIOSK_STATES.CONSENT_MODE],
         [KIOSK_STATES.CONFIG_LOADING]: [KIOSK_STATES.IDLE, KIOSK_STATES.OFFLINE_IDLE, KIOSK_STATES.CONFIG_ERROR, KIOSK_STATES.LOCKED_UNASSIGNED],
         [KIOSK_STATES.IDLE]: [KIOSK_STATES.TAP_READING, KIOSK_STATES.READER_ERROR, KIOSK_STATES.DIAGNOSTICS, KIOSK_STATES.SYNCING_BACKGROUND, KIOSK_STATES.OFFLINE_IDLE],
         [KIOSK_STATES.OFFLINE_IDLE]: [KIOSK_STATES.TAP_READING, KIOSK_STATES.DIAGNOSTICS, KIOSK_STATES.READER_ERROR, KIOSK_STATES.SYNCING_BACKGROUND],
@@ -1127,7 +1158,8 @@
         [KIOSK_STATES.SYNCING_BACKGROUND]: [KIOSK_STATES.IDLE, KIOSK_STATES.OFFLINE_IDLE],
         [KIOSK_STATES.DIAGNOSTICS]: [KIOSK_STATES.IDLE, KIOSK_STATES.OFFLINE_IDLE],
         [KIOSK_STATES.CONFIG_ERROR]: [KIOSK_STATES.CONFIG_LOADING],
-        [KIOSK_STATES.LOCKED_UNASSIGNED]: [KIOSK_STATES.CONFIG_LOADING]
+        [KIOSK_STATES.LOCKED_UNASSIGNED]: [KIOSK_STATES.CONFIG_LOADING],
+        [KIOSK_STATES.CONSENT_MODE]: [KIOSK_STATES.IDLE]
       };
 
       /* ═══════════════════════════════════════════
@@ -1304,7 +1336,8 @@
         [KIOSK_STATES.INTERACTION_EXCEPTION]:  "screen-exception",
         [KIOSK_STATES.SYNCING_BACKGROUND]:     "screen-idle",
         [KIOSK_STATES.READER_ERROR]:           "screen-reader-error",
-        [KIOSK_STATES.DIAGNOSTICS]:            "screen-diagnostics"
+        [KIOSK_STATES.DIAGNOSTICS]:            "screen-diagnostics",
+        [KIOSK_STATES.CONSENT_MODE]:           "screen-consent-mode"
       };
 
       function transition(toState) {
@@ -1401,7 +1434,89 @@
         document.getElementById("boot-bar").style.width = pct + "%";
       }
 
+      /* ── NFC CONSENT MODE (Pi 5) ─────────────────────────────────────────
+         Called when kiosk.html is opened with ?consent_token=&interaction_id=
+         Skips device boot entirely. Attendee sees Accept/Decline on the screen.
+      ════════════════════════════════════════════════════════════════════════ */
+      async function runConsentMode(consentToken, interactionId) {
+        try {
+          const apiBase = params.get("apiBase") || localStorage.getItem("kiosk_api_base") || "http://127.0.0.1:3000";
+          const r = await fetch(`${apiBase}/interactions/${encodeURIComponent(interactionId)}/detail`, {
+            headers: { authorization: `Bearer ${consentToken}` }
+          });
+          if (r.ok) {
+            const d = await r.json();
+            if (d.stall_name) document.getElementById("cm-stall-name").textContent = d.stall_name;
+            if (d.attendee_name) document.getElementById("cm-greeting").textContent = `Welcome, ${d.attendee_name}!`;
+          }
+        } catch (_e) { /* non-blocking — consent screen still works without preview data */ }
+      }
+
+      async function handleConsentAccept() {
+        const btn = document.getElementById("cm-accept");
+        btn.disabled = true;
+        btn.textContent = "Saving…";
+        const _p = new URLSearchParams(location.search);
+        const _token = _p.get("consent_token");
+        const _iid = _p.get("interaction_id");
+        const apiBase = _p.get("apiBase") || localStorage.getItem("kiosk_api_base") || "http://127.0.0.1:3000";
+        try {
+          const r = await fetch(`${apiBase}/consents/capture`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              session_token: _token,
+              interaction_id: _iid,
+              vendor_release_allowed: true,
+              sponsor_release_allowed: false
+            })
+          });
+          if (r.ok) {
+            btn.textContent = "✓ Thank you!";
+            btn.style.background = "#16a34a";
+            setTimeout(() => { window.location.href = "/kiosk.html"; }, 3000);
+          } else {
+            btn.disabled = false;
+            btn.textContent = "✓ Yes, share details";
+          }
+        } catch (_e) {
+          btn.disabled = false;
+          btn.textContent = "✓ Yes, share details";
+        }
+      }
+
+      async function handleConsentDecline() {
+        const btn = document.getElementById("cm-decline");
+        btn.disabled = true;
+        const _p = new URLSearchParams(location.search);
+        const _token = _p.get("consent_token");
+        const _iid = _p.get("interaction_id");
+        const apiBase = _p.get("apiBase") || localStorage.getItem("kiosk_api_base") || "http://127.0.0.1:3000";
+        try {
+          await fetch(`${apiBase}/consents/capture`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              session_token: _token,
+              interaction_id: _iid,
+              vendor_release_allowed: false,
+              sponsor_release_allowed: false
+            })
+          });
+        } catch (_e) { /* non-blocking */ }
+        setTimeout(() => { window.location.href = "/kiosk.html"; }, 2000);
+      }
+
       async function boot() {
+        // Pi 5 NFC consent mode — skip device boot entirely
+        const _consentToken = params.get("consent_token");
+        const _consentInteractionId = params.get("interaction_id");
+        if (_consentToken && _consentInteractionId) {
+          transition(KIOSK_STATES.CONSENT_MODE);
+          await runConsentMode(_consentToken, _consentInteractionId);
+          return;
+        }
+
         renderState();
         updateConnBadge();
         setBootStatus("Initialising local services…", 10);
@@ -2036,6 +2151,7 @@
       Object.assign(window, {
         checkReaderRecovery, closeConfigOverlay, closeDiagnostics,
         dismissInteraction, forceSync, forceSyncAll, goToIdle,
+        handleConsentAccept, handleConsentDecline,
         refreshConfig, restartAdapter, retryConfig, saveConfigAndBoot, sendHeartbeat
       });
 

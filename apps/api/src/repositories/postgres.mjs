@@ -858,6 +858,24 @@ export function createPostgresRepositories(db, securityContext = null) {
           await execute("UPDATE attendees SET tenant_id=$2 WHERE id=$1 RETURNING *", [record.id, record.tenant_id]),
           "Attendee"
         );
+      },
+      async findByNfcUidHash(tenantId, hash) {
+        return maybeOne(
+          await execute(
+            `SELECT a.*, ap.full_name, ap.email, ap.phone, ap.company_name
+             FROM attendees a
+             LEFT JOIN attendee_profiles ap ON ap.attendee_id = a.id
+             WHERE a.nfc_uid_hash = $1 AND a.tenant_id = $2
+             LIMIT 1`,
+            [hash, tenantId]
+          )
+        );
+      },
+      async setNfcUidHash(tenantId, id, hash) {
+        await execute(
+          "UPDATE attendees SET nfc_uid_hash = $3 WHERE id = $1 AND tenant_id = $2",
+          [id, tenantId, hash]
+        );
       }
     },
     attendeeProfiles: {
@@ -3703,10 +3721,50 @@ export function createPostgresRepositories(db, securityContext = null) {
       }
     },
     nfcReaders: {
-      async create(record) { return record; },
-      async findById(_tenantId, _id) { return null; },
-      async findByDevice(_tenantId, _deviceId) { return null; },
-      async update(record) { return record; }
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO nfc_readers
+             (id, tenant_id, device_id, model, firmware_version, created_at, updated_at)
+             VALUES ($1,$2,$3,$4,$5,now(),now()) RETURNING *`,
+            [record.id, record.tenant_id, record.device_id,
+             record.model ?? "ACR122U", record.firmware_version ?? null]
+          ),
+          "NFC reader"
+        );
+      },
+      async findById(tenantId, id) {
+        return maybeOne(
+          await execute(
+            "SELECT * FROM nfc_readers WHERE id = $1 AND tenant_id = $2",
+            [id, tenantId]
+          )
+        );
+      },
+      async findByDevice(tenantId, deviceId) {
+        return maybeOne(
+          await execute(
+            `SELECT * FROM nfc_readers
+             WHERE device_id = $1 AND tenant_id = $2
+             ORDER BY created_at DESC LIMIT 1`,
+            [deviceId, tenantId]
+          )
+        );
+      },
+      async update(record) {
+        return maybeOne(
+          await execute(
+            `UPDATE nfc_readers
+             SET model = COALESCE($3, model),
+                 firmware_version = COALESCE($4, firmware_version),
+                 updated_at = now()
+             WHERE id = $1 AND tenant_id = $2
+             RETURNING *`,
+            [record.id, record.tenant_id,
+             record.model ?? null, record.firmware_version ?? null]
+          )
+        );
+      }
     },
     privacyAuditLogs: {
       async create(record) {

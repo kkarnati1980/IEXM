@@ -110,6 +110,20 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
     description: "Ingest a physical tap interaction",
     sensitivity: "pii"
   }),
+  "interactions-nfc-tap": entry({
+    permission: "interaction.nfc_tap.create",
+    roles: device,
+    scope: "assigned_device",
+    description: "Ingest NFC card tap and pre-resolve attendee identity on Pi 5",
+    sensitivity: "pii"
+  }),
+  "attendees-set-nfc-tag": entry({
+    permission: "attendee.nfc_tag.set",
+    roles: organizerOrPlatform,
+    scope: "tenant",
+    description: "Register NFC card UID hash to an attendee record",
+    sensitivity: "pii"
+  }),
   "device-sync": entry({
     permission: "device.sync.record",
     roles: device,

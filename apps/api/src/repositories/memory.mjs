@@ -454,6 +454,17 @@ export function createMemoryRepositories(state) {
       },
       async listByTenant(tenantId) {
         return state.attendees.filter((entry) => entry.tenant_id === tenantId);
+      },
+      async findByNfcUidHash(tenantId, hash) {
+        return state.attendees.find(
+          (entry) => entry.tenant_id === tenantId && entry.nfc_uid_hash === hash
+        ) ?? null;
+      },
+      async setNfcUidHash(tenantId, id, hash) {
+        const attendee = state.attendees.find(
+          (entry) => entry.id === id && entry.tenant_id === tenantId
+        );
+        if (attendee) attendee.nfc_uid_hash = hash;
       }
     },
     attendeeProfiles: {
