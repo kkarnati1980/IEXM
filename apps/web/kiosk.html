@@ -1472,10 +1472,17 @@
             btn.style.background = "#16a34a";
             const declineBtn = document.getElementById("cm-decline");
             if (declineBtn) declineBtn.hidden = true;
-            const stallEl = document.getElementById("cm-stall-name");
-            if (stallEl) stallEl.textContent = "Your details have been shared. See you at the stall!";
+            const greetingEl = document.getElementById("cm-greeting");
+            const stallEl    = document.getElementById("cm-stall-name");
+            if (stallEl) stallEl.textContent = "Your details have been shared.";
             setTimeout(() => {
               try { window.close(); } catch (_e) {}
+              // Fallback — window.close() is blocked in browsers not opened by script
+              setTimeout(() => {
+                if (greetingEl) greetingEl.textContent = "All done!";
+                if (stallEl)    stallEl.textContent    = "You may close this window.";
+                btn.hidden = true;
+              }, 500);
             }, 3000);
           } else {
             btn.disabled = false;
@@ -1516,9 +1523,11 @@
         if (btn)        btn.hidden              = true;
         setTimeout(() => {
           try { window.close(); } catch (_e) {}
-          // Fallback if window.close() is blocked
-          if (greetingEl) greetingEl.textContent = "You may close this window.";
-          if (stallEl)    stallEl.textContent    = "";
+          // Fallback — window.close() is blocked in browsers not opened by script
+          setTimeout(() => {
+            if (greetingEl) greetingEl.textContent = "All done!";
+            if (stallEl)    stallEl.textContent    = "You may close this window.";
+          }, 500);
         }, 3000);
       }
 
