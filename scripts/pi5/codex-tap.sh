@@ -1,10 +1,11 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
 # Codex Platform — NFC Tap Handler
-# Raspberry Pi 5 + ACR122U USB NFC Reader + HDMI Display
+# Raspberry Pi 5 + ACR122U USB NFC Reader + tablet over WiFi
 #
 # PREREQUISITES:
-#   sudo apt install libnfc-bin chromium-browser
+#   sudo apt install libnfc-bin
+#   node kiosk-server.js   # push server on port 8080
 #
 # DEVICE TOKEN:
 #   Provision via admin panel → Devices → <device> → Credentials
@@ -34,6 +35,7 @@ QUEUE_FILE="/var/log/codex-queue.csv"
 DEBOUNCE_SECONDS=3                     # ignore same card within N sec
 HEARTBEAT_INTERVAL=300                 # seconds between heartbeats (5 min)
 TOKEN_REFRESH_INTERVAL=3000            # seconds before re-check token (50 min)
+KIOSK_SERVER_PORT=8080                 # port kiosk-server.js listens on
 # ───────────────────────────────────────────────────────────
 
 GREEN='\033[0;32m'
@@ -79,28 +81,29 @@ post_nfc_tap() {
     }" 2>/dev/null
 }
 
-# ── Open consent screen on HDMI display ───────────────────
+# ── Push consent URL to tablet via kiosk server ───────────
 open_consent_screen() {
   local CONSENT_URL="$1"
 
-  # Kill any existing consent window
-  pkill -f "chromium.*consent_token" 2>/dev/null
-  sleep 0.3
+  local PUSH_RESPONSE
+  PUSH_RESPONSE=$(curl -s --max-time 5 \
+    -X POST "http://localhost:${KIOSK_SERVER_PORT}/push" \
+    -H "Content-Type: application/json" \
+    -d "{\"consent_url\": \"$CONSENT_URL\"}" \
+    2>/dev/null)
 
-  DISPLAY="$DISPLAY_NUM" \
-  XAUTHORITY="/home/kiot/.Xauthority" \
-  chromium-browser \
-    --kiosk \
-    --noerrdialogs \
-    --disable-infobars \
-    --no-first-run \
-    --disable-translate \
-    --disable-session-crashed-bubble \
-    --disable-restore-session-state \
-    --app="$CONSENT_URL" \
-    2>/dev/null &
+  local PUSHED
+  PUSHED=$(echo "$PUSH_RESPONSE" | \
+    python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('pushed',0))" \
+    2>/dev/null)
 
-  log "Opened: $CONSENT_URL"
+  if [ "${PUSHED:-0}" -gt 0 ]; then
+    log "Pushed consent URL to $PUSHED tablet(s)"
+  else
+    warn "No tablets connected — consent URL logged below"
+    warn "$CONSENT_URL"
+    info "Tablet URL: http://$(hostname -I | cut -d' ' -f1):${KIOSK_SERVER_PORT}"
+  fi
 }
 
 # ── Queue failed tap for offline retry ────────────────────

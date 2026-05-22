@@ -1,0 +1,18 @@
+[Unit]
+Description=Codex Platform Kiosk Push Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kiot
+WorkingDirectory=/home/kiot
+ExecStart=/usr/bin/node /home/kiot/kiosk-server.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=codex-kiosk
+
+[Install]
+WantedBy=multi-user.target
