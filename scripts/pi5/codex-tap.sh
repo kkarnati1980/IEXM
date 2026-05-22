@@ -16,16 +16,16 @@
 #             local_queue_depth, battery_level
 #
 # INSTALL:
-#   cp codex-tap.sh /home/pi/codex-tap.sh
-#   chmod +x /home/pi/codex-tap.sh
-#   nano /home/pi/codex-tap.sh   # edit CONFIG section
+#   cp codex-tap.sh /home/kiot/codex-tap.sh
+#   chmod +x /home/kiot/codex-tap.sh
+#   nano /home/kiot/codex-tap.sh   # edit CONFIG section
 #   sudo systemctl start codex-nfc
 # ═══════════════════════════════════════════════════════════
 
 # ── CONFIG — edit these values for each Pi ─────────────────
 API_BASE="https://codex-api-production-064f.up.railway.app"
-DEVICE_TOKEN="your-bearer-token-here"  # from /credentials/provision
-DEVICE_ID="device-kiosk-01"            # must match device in Codex DB
+DEVICE_TOKEN="dvc_KNeSfluQ0uDdFTtxctHsoYDrHEeOfvFK"  # from /credentials/provision
+DEVICE_ID="device-ie-01"            # must match device in Codex DB
 EVENT_ID="event-indiaexpo"             # active event ID
 STALL_ID="stall-ie-a1"                 # assigned stall ID
 DISPLAY_NUM=":0"                       # HDMI display (usually :0)
@@ -49,21 +49,13 @@ info() { echo -e "${BLUE}[$(date '+%H:%M:%S')] [info]${NC} $1"   | tee -a "$LOG_
 
 # ── Read NFC UID from ACR122U ──────────────────────────────
 read_nfc_uid() {
-  local UID_RAW
-
-  # Primary: nfc-poll from libnfc-bin (most reliable with ACR122U)
-  UID_RAW=$(timeout 2 nfc-poll 2>/dev/null \
-    | grep -oP "UID \(NFCID[^)]+\):\s+\K[\da-fA-F ]+" \
-    | tr -d ' ' | head -1)
-
-  # Fallback: nfc-list
-  if [ -z "$UID_RAW" ]; then
-    UID_RAW=$(timeout 2 nfc-list 2>/dev/null \
-      | grep -oP "UID \(NFCID[^)]+\):\s+\K[\da-fA-F ]+" \
-      | tr -d ' ' | head -1)
-  fi
-
-  echo "$UID_RAW"
+  local RAW
+  RAW=$(nfc-list -v 2>/dev/null | \
+    grep "UID (NFCID1):" | \
+    sed 's/.*UID (NFCID1): //' | \
+    tr -d ' ' | \
+    head -1)
+  echo "$RAW"
 }
 
 # ── POST tap to Codex API ──────────────────────────────────
@@ -96,7 +88,7 @@ open_consent_screen() {
   sleep 0.3
 
   DISPLAY="$DISPLAY_NUM" \
-  XAUTHORITY="/home/pi/.Xauthority" \
+  XAUTHORITY="/home/kiot/.Xauthority" \
   chromium-browser \
     --kiosk \
     --noerrdialogs \
@@ -226,32 +218,34 @@ main() {
     fi
 
     # Read NFC UID
-    local UID
-    UID=$(read_nfc_uid)
+    local NFC_UID
+    NFC_UID=$(read_nfc_uid)
 
-    if [ -n "$UID" ]; then
+    if [ -n "$NFC_UID" ]; then
       local TIME_SINCE_LAST=$((CURRENT_TIME - LAST_TAP_TIME))
 
       # Debounce: skip same card tapped within DEBOUNCE_SECONDS
-      if [ "$UID" != "$LAST_UID" ] || [ "$TIME_SINCE_LAST" -gt "$DEBOUNCE_SECONDS" ]; then
-        log "Tap: UID=$UID"
-        LAST_UID="$UID"
+      if [ "$NFC_UID" != "$LAST_UID" ] || [ "$TIME_SINCE_LAST" -gt "$DEBOUNCE_SECONDS" ]; then
+        log "Tap: NFC_UID=$NFC_UID"
+        LAST_UID="$NFC_UID"
         LAST_TAP_TIME=$CURRENT_TIME
 
-        local RESPONSE
-        RESPONSE=$(post_nfc_tap "$UID")
+        RESPONSE=""
+        RESPONSE=$(post_nfc_tap "$NFC_UID")
 
-        local INTERACTION_ID CONSENT_URL IS_NEW
-        INTERACTION_ID=$(echo "$RESPONSE" | grep -o '"interaction_id":"[^"]*"' | cut -d'"' -f4)
-        CONSENT_URL=$(echo "$RESPONSE"    | grep -o '"consent_url":"[^"]*"'    | cut -d'"' -f4)
-        IS_NEW=$(echo "$RESPONSE"         | grep -o '"is_new_attendee":[^,}]*' | cut -d':' -f2)
+        INTERACTION_ID=""; CONSENT_URL=""; IS_NEW=""
+        INTERACTION_ID=$(echo "$RESPONSE" | python3 -c "import sys,json,re; d=json.loads(sys.stdin.read()); print(d.get('interaction_id',''))" 2>/dev/null)
+        CONSENT_URL=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('consent_url',''))" 2>/dev/null)
+        IS_NEW=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(str(d.get('is_new_attendee',False)).lower())" 2>/dev/null)
 
-        if [ -n "$INTERACTION_ID" ] && [ -n "$CONSENT_URL" ]; then
+        if echo "$RESPONSE" | grep -q "result"; then
           log "  interaction_id=$INTERACTION_ID  new=$IS_NEW"
-          open_consent_screen "$CONSENT_URL"
+          if [ -n "$CONSENT_URL" ]; then
+            open_consent_screen "$CONSENT_URL"
+          fi
         else
           err "API error — queuing tap: $RESPONSE"
-          queue_tap "$UID"
+          queue_tap "$NFC_UID"
         fi
       fi
     fi
