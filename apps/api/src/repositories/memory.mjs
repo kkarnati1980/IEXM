@@ -465,6 +465,12 @@ export function createMemoryRepositories(state) {
           (entry) => entry.id === id && entry.tenant_id === tenantId
         );
         if (attendee) attendee.nfc_uid_hash = hash;
+      },
+      async clearNfcUidHash(tenantId, id) {
+        const attendee = state.attendees.find(
+          (entry) => entry.id === id && entry.tenant_id === tenantId
+        );
+        if (attendee) attendee.nfc_uid_hash = null;
       }
     },
     attendeeProfiles: {

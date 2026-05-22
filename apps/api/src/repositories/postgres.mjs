@@ -876,6 +876,12 @@ export function createPostgresRepositories(db, securityContext = null) {
           "UPDATE attendees SET nfc_uid_hash = $3 WHERE id = $1 AND tenant_id = $2",
           [id, tenantId, hash]
         );
+      },
+      async clearNfcUidHash(tenantId, id) {
+        await execute(
+          "UPDATE attendees SET nfc_uid_hash = NULL WHERE id = $1 AND tenant_id = $2",
+          [id, tenantId]
+        );
       }
     },
     attendeeProfiles: {

@@ -124,6 +124,13 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
     description: "Register NFC card UID hash to an attendee record",
     sensitivity: "pii"
   }),
+  "attendees-clear-nfc-tag": entry({
+    permission: "attendee.nfc_tag.clear",
+    roles: organizerOrPlatform,
+    scope: "tenant",
+    description: "Unlink NFC card UID from an attendee record",
+    sensitivity: "pii"
+  }),
   "device-sync": entry({
     permission: "device.sync.record",
     roles: device,

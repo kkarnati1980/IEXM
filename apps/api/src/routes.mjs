@@ -8394,6 +8394,7 @@ export function registerRoutes(router) {
   });
 
   // PUT /attendees/:attendeeId/nfc-tag — link NFC card UID to a known attendee
+  // platform_admin may pass force:true to steal a tag from another attendee
   router.addRoute({
     id: "attendees-set-nfc-tag",
     method: "PUT",
@@ -8409,11 +8410,21 @@ export function registerRoutes(router) {
       const nfcUidHash = createHash("sha256")
         .update(String(body.nfc_uid).toLowerCase().trim())
         .digest("hex");
+
+      const force = body.force === true && principal.role === "platform_admin";
+
+      if (force) {
+        const existing = await repos.attendees.findByNfcUidHash(tenantId, nfcUidHash);
+        if (existing && existing.id !== params.attendeeId) {
+          await repos.attendees.clearNfcUidHash(tenantId, existing.id);
+        }
+      }
+
       try {
         await repos.attendees.setNfcUidHash(tenantId, params.attendeeId, nfcUidHash);
       } catch (err) {
         if (err.code === "23505" || (err.message && err.message.includes("unique"))) {
-          throw new HttpError(409, "This NFC tag is already linked to another attendee", {
+          throw new HttpError(409, "This NFC tag is already linked to another attendee. Use force:true as platform_admin to override.", {
             code: "NFC_TAG_ALREADY_REGISTERED"
           });
         }
@@ -8426,6 +8437,22 @@ export function registerRoutes(router) {
       };
     },
     auditEventType: "attendee.nfc_tag.set"
+  });
+
+  // DELETE /attendees/:attendeeId/nfc-tag — unlink a card from an attendee
+  router.addRoute({
+    id: "attendees-clear-nfc-tag",
+    method: "DELETE",
+    path: "/attendees/:attendeeId/nfc-tag",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const tenantId = principal.tenant_id;
+      await repos.attendees.findById(tenantId, params.attendeeId);
+      await repos.attendees.clearNfcUidHash(tenantId, params.attendeeId);
+      return { attendee_id: params.attendeeId, message: "NFC tag unlinked" };
+    },
+    statusCode: 200,
+    auditEventType: "attendee.nfc_tag.cleared"
   });
 
 }
