@@ -1132,6 +1132,13 @@ export function registerRoutes(router) {
       const interaction = await repos.interactions.findById(session.tenant_id, session.interaction_id);
       const event = await repos.events.findById(session.tenant_id, interaction.event_id);
       const eventPolicy = await repos.eventPolicies.findByEventId(session.tenant_id, event.id);
+      const stall = await repos.stalls.findById(session.tenant_id, interaction.stall_id);
+      const vendorOrg = stall.vendor_organization_id
+        ? await repos.organizations.findById(session.tenant_id, stall.vendor_organization_id)
+        : null;
+      if (!vendorOrg?.name) {
+        throw new HttpError(422, "Exhibitor not consent-ready");
+      }
       return {
         session,
         interaction,
@@ -1326,7 +1333,10 @@ export function registerRoutes(router) {
       const event = await repos.events.findById(session.tenant_id, interaction.event_id);
       const stall = await repos.stalls.findById(session.tenant_id, interaction.stall_id);
       const eventPolicy = await repos.eventPolicies.findByEventId(session.tenant_id, event.id);
-      return { session, interaction, event, stall, eventPolicy };
+      const vendorOrg = stall.vendor_organization_id
+        ? await repos.organizations.findById(session.tenant_id, stall.vendor_organization_id)
+        : null;
+      return { session, interaction, event, stall, eventPolicy, vendorOrg };
     },
     handler: async ({ repos, resources }) => {
       const interaction = resources.interaction;
@@ -1382,6 +1392,7 @@ export function registerRoutes(router) {
           stall_id: resources.stall.id,
           stall_name: resources.stall.name,
           stall_code: resources.stall.code,
+          vendor_company_name: resources.vendorOrg?.name ?? null,
           consent_status: interaction.consent_status,
           status: interaction.status,
           created_at: interaction.created_at
@@ -1508,7 +1519,7 @@ export function registerRoutes(router) {
     id: "stall-leads",
     method: "GET",
     path: "/stalls/:stallId/leads",
-    allowedRoles: ["vendor_manager", "organizer_admin", "platform_admin"],
+    allowedRoles: ["vendor_manager", "platform_admin"],
     resolveResources: async ({ repos, principal, params }) => {
       const stall = await repos.stalls.findById(principal.tenant_id, params.stallId);
       const event = await repos.events.findById(principal.tenant_id, stall.event_id);

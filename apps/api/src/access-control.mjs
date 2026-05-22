@@ -141,7 +141,7 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
 
   "stall-leads": entry({
     permission: "vendor.leads.view",
-    roles: vendorOrganizerPlatform,
+    roles: [ROLES.vendorManager, ROLES.platformAdmin],
     scope: "event_stall",
     description: "View consent-aware stall lead list",
     sensitivity: "pii"

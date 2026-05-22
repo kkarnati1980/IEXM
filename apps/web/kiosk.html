@@ -1113,12 +1113,12 @@
             <p style="font-size:13px;font-weight:600;color:rgba(244,241,234,0.5);
                       text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">Share my details with</p>
             <label style="display:flex;align-items:center;gap:12px;cursor:pointer;margin-bottom:10px;">
-              <input type="checkbox" id="cm-vendor-release" checked
+              <input type="checkbox" id="cm-vendor-release"
                 style="width:20px;height:20px;accent-color:#22c55e;cursor:pointer;flex-shrink:0;">
-              <span style="font-size:16px;color:#f4f1ea;">This exhibitor</span>
+              <span id="cm-company-name" style="font-size:16px;color:#f4f1ea;">This exhibitor</span>
             </label>
             <label style="display:flex;align-items:center;gap:12px;cursor:pointer;">
-              <input type="checkbox" id="cm-sponsor-release" checked
+              <input type="checkbox" id="cm-sponsor-release"
                 style="width:20px;height:20px;accent-color:#22c55e;cursor:pointer;flex-shrink:0;">
               <span style="font-size:16px;color:#f4f1ea;">Event sponsors</span>
             </label>
@@ -1132,19 +1132,19 @@
             <div style="display:flex;flex-wrap:wrap;gap:10px;">
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;
                             background:rgba(255,255,255,0.08);border-radius:8px;padding:10px 14px;">
-                <input type="checkbox" id="cm-ch-email" checked
+                <input type="checkbox" id="cm-ch-email"
                   style="width:18px;height:18px;accent-color:#22c55e;cursor:pointer;">
                 <span style="font-size:15px;color:#f4f1ea;">Email</span>
               </label>
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;
                             background:rgba(255,255,255,0.08);border-radius:8px;padding:10px 14px;">
-                <input type="checkbox" id="cm-ch-sms" checked
+                <input type="checkbox" id="cm-ch-sms"
                   style="width:18px;height:18px;accent-color:#22c55e;cursor:pointer;">
                 <span style="font-size:15px;color:#f4f1ea;">SMS</span>
               </label>
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;
                             background:rgba(255,255,255,0.08);border-radius:8px;padding:10px 14px;">
-                <input type="checkbox" id="cm-ch-whatsapp" checked
+                <input type="checkbox" id="cm-ch-whatsapp"
                   style="width:18px;height:18px;accent-color:#22c55e;cursor:pointer;">
                 <span style="font-size:15px;color:#f4f1ea;">WhatsApp</span>
               </label>
@@ -1152,9 +1152,10 @@
           </div>
 
           <div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center;">
-            <button id="cm-accept" onclick="handleConsentAccept()"
+            <button id="cm-accept" onclick="handleConsentAccept()" disabled
               style="padding:16px 32px;background:#22c55e;color:#fff;border:none;border-radius:12px;
-                     font-size:17px;font-weight:600;cursor:pointer;font-family:inherit;min-width:200px;">
+                     font-size:17px;font-weight:600;cursor:pointer;font-family:inherit;min-width:200px;
+                     opacity:0.45;">
               ✓ Yes, share selected details
             </button>
             <button id="cm-decline" onclick="handleConsentDecline()"
@@ -1490,10 +1491,46 @@
          Skips device boot entirely. Attendee sees Accept/Decline on the screen.
       ════════════════════════════════════════════════════════════════════════ */
       async function runConsentMode(consentToken, interactionId) {
-        // Clear "Loading…" immediately — the detail endpoint requires staff auth
-        // and will 403 with an attendee session token, so never show the loading state
         const stallEl = document.getElementById("cm-stall-name");
         if (stallEl) stallEl.textContent = "";
+
+        // CR-06 §10.3: enable accept button only after first checkbox interaction
+        const _acceptBtn = document.getElementById("cm-accept");
+        const _cbIds = ["cm-vendor-release", "cm-sponsor-release",
+                        "cm-ch-email", "cm-ch-sms", "cm-ch-whatsapp"];
+        _cbIds.forEach(function(id) {
+          const cb = document.getElementById(id);
+          if (cb) cb.addEventListener("change", function() {
+            if (_acceptBtn) {
+              const anyChecked = _cbIds.some(function(cid) {
+                const el = document.getElementById(cid);
+                return el && el.checked;
+              });
+              _acceptBtn.disabled = !anyChecked;
+              _acceptBtn.style.opacity = anyChecked ? "1" : "0.45";
+            }
+          });
+        });
+
+        // CR-02: fetch vendor company name from attendee session endpoint
+        try {
+          const _apiBase = new URLSearchParams(location.search).get("apiBase") || location.origin;
+          const r = await fetch(
+            `${_apiBase}/attendee/session/${interactionId}?token=${encodeURIComponent(consentToken)}`
+          );
+          if (r.ok) {
+            const data = await r.json();
+            const companyName = data.current_connection?.vendor_company_name;
+            if (companyName) {
+              const nameEl = document.getElementById("cm-company-name");
+              if (nameEl) nameEl.textContent = companyName;
+              if (stallEl) stallEl.textContent = data.current_connection?.stall_name || "";
+            }
+          }
+          // Non-ok (incl. 422 "Exhibitor not consent-ready") — leave fallback text
+        } catch (_e) {
+          // Network failure — leave "This exhibitor" fallback text
+        }
       }
 
       async function handleConsentAccept() {
@@ -1507,12 +1544,12 @@
         // where apiBase would normally be stored in localStorage, and the page is
         // always served by the same origin as the API on Railway/Pi.
         const _apiBase = _p.get("apiBase") || location.origin;
-        const _vendor  = document.getElementById("cm-vendor-release")?.checked  ?? true;
-        const _sponsor = document.getElementById("cm-sponsor-release")?.checked ?? true;
+        const _vendor  = document.getElementById("cm-vendor-release")?.checked  ?? false;
+        const _sponsor = document.getElementById("cm-sponsor-release")?.checked ?? false;
         const _channels = {
-          email:    document.getElementById("cm-ch-email")?.checked    ?? true,
-          sms:      document.getElementById("cm-ch-sms")?.checked      ?? true,
-          whatsapp: document.getElementById("cm-ch-whatsapp")?.checked ?? true
+          email:    document.getElementById("cm-ch-email")?.checked    ?? false,
+          sms:      document.getElementById("cm-ch-sms")?.checked      ?? false,
+          whatsapp: document.getElementById("cm-ch-whatsapp")?.checked ?? false
         };
         try {
           const r = await fetch(`${_apiBase}/consents/capture`, {
