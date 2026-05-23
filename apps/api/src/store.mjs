@@ -314,7 +314,15 @@ export function createSeedState() {
     ],
     consentSnapshots: [],
     consentAttributeChanges: [],
-    appConfig: null,
+    appConfig: {
+      tenant_id: tenant.id,
+      deployment_region: "IN",
+      is_cross_border_transfer: false,
+      data_controller_name: "Demo Tenant",
+      grievance_officer_email: "grievance@kiot.io",
+      retention_period_days: 365,
+      updated_at: now
+    },
     communicationChannelConsents: [],
     communicationSuppressions: [],
     interactionNotes: [],
