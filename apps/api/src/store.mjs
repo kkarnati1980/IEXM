@@ -298,7 +298,20 @@ export function createSeedState() {
     incidents: [],
     consents: [],
     consentEvents: [],
-    consentVersions: [],
+    consentVersions: [
+      {
+        id: "cv-v1-demo",
+        tenant_id: tenant.id,
+        version_number: 1,
+        effective_from: now,
+        retention_period_days: 365,
+        grievance_officer_email: "grievance@kiot.io",
+        data_residency_zones: ["IN"],
+        is_cross_border_transfer: false,
+        created_by_user_id: null,
+        created_at: now
+      }
+    ],
     consentSnapshots: [],
     consentAttributeChanges: [],
     appConfig: null,

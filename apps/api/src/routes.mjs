@@ -1124,6 +1124,9 @@ export function registerRoutes(router) {
       if (typeof body.vendor_release_allowed !== "boolean" || typeof body.sponsor_release_allowed !== "boolean") {
         throw new HttpError(400, "Consent choices must be explicit booleans");
       }
+      if (body.organizer_release_allowed !== undefined && typeof body.organizer_release_allowed !== "boolean") {
+        throw new HttpError(400, "organizer_release_allowed must be a boolean");
+      }
       validateCommunicationChannelConsentChoices(body.communication_channel_consents);
       return body;
     },
@@ -1175,14 +1178,31 @@ export function registerRoutes(router) {
         interaction.status = consentStatus === "declined" ? "anonymized" : "active";
         await txRepos.interactions.update(interaction);
 
+        const organizerRelease = Boolean(body.organizer_release_allowed ?? false);
+        const consentVersion = await txRepos.consentVersions.findLatestByTenant(interaction.tenant_id).catch(() => null);
+
         await txRepos.consents.upsert({
           interaction_id: interaction.id,
           tenant_id: interaction.tenant_id,
           attendee_id: attendee.id,
           vendor_release_allowed: Boolean(body.vendor_release_allowed),
           sponsor_release_allowed: Boolean(body.sponsor_release_allowed),
+          organizer_release_allowed: organizerRelease,
+          consent_version_id: consentVersion?.id ?? null,
           revoked_at: null,
           updated_at: new Date().toISOString()
+        });
+
+        await txRepos.consentSnapshots.create({
+          id: nextId("csnap"),
+          tenant_id: interaction.tenant_id,
+          interaction_id: interaction.id,
+          consent_version_id: consentVersion?.id ?? null,
+          vendor_release_allowed: Boolean(body.vendor_release_allowed),
+          sponsor_release_allowed: Boolean(body.sponsor_release_allowed),
+          organizer_release_allowed: organizerRelease,
+          captured_at: new Date().toISOString(),
+          locale: buildConsentEvidence({ body, headers: {} }).locale
         });
 
         await txRepos.consentEvents.create({
