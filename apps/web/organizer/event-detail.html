@@ -77,6 +77,7 @@
       #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--good);color:#0a1f1b;padding:12px 20px;border-radius:14px;font-weight:600;font-size:14px;opacity:0;transition:opacity 0.2s;z-index:9999;pointer-events:none;}
       #toast.show{opacity:1;}
     </style>
+  <script src="../vendor/xlsx.min.js"></script>
   </head>
   <body>
     <div class="shell">
@@ -105,6 +106,7 @@
         <button class="tab-btn" data-tab="team">Team</button>
         <button class="tab-btn" data-tab="devices">Devices</button>
         <button class="tab-btn" data-tab="audit">Audit</button>
+        <button class="tab-btn" data-tab="attendees">👥 Attendees</button>
       </div>
 
       <!-- Overview Tab -->
@@ -279,6 +281,123 @@
           </table>
         </div>
       </div>
+      <!-- Attendees Tab — P1 -->
+      <div id="tab-attendees" class="tab-content">
+
+        <!-- C1: Attendee list -->
+        <div class="card">
+          <div class="section-head">
+            <h3 style="margin:0">Attendee Roster</h3>
+            <button class="secondary" onclick="loadAttendees()">↻ Refresh</button>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0;">
+            <input id="att-search" type="text" placeholder="Search name, email, company…"
+              oninput="filterAttendees()"
+              style="flex:2;min-width:180px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);font:inherit;">
+            <select id="att-filter-pass" onchange="filterAttendees()"
+              style="flex:1;min-width:130px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);font:inherit;">
+              <option value="">All pass types</option>
+            </select>
+            <select id="att-filter-source" onchange="filterAttendees()"
+              style="flex:1;min-width:130px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);font:inherit;">
+              <option value="">All sources</option>
+              <option value="nfc_tap">NFC tap</option>
+              <option value="walk_in">Walk-in</option>
+              <option value="bulk_import">Bulk import</option>
+              <option value="import">Import</option>
+            </select>
+          </div>
+          <div id="att-list-container">
+            <div class="empty">Load attendees to begin.</div>
+          </div>
+        </div>
+
+        <!-- C2: Walk-in registration -->
+        <div class="card">
+          <h3 style="margin:0 0 14px">Register Walk-in Attendee</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:560px;">
+            <div>
+              <label class="muted" style="font-size:12px;display:block;margin-bottom:4px;">Full name *</label>
+              <input id="wi-name" type="text" placeholder="Jane Smith"
+                style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--line);font:inherit;box-sizing:border-box;">
+            </div>
+            <div>
+              <label class="muted" style="font-size:12px;display:block;margin-bottom:4px;">Email</label>
+              <input id="wi-email" type="email" placeholder="jane@example.com"
+                style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--line);font:inherit;box-sizing:border-box;">
+            </div>
+            <div>
+              <label class="muted" style="font-size:12px;display:block;margin-bottom:4px;">Phone</label>
+              <input id="wi-phone" type="tel" placeholder="+91 9876543210"
+                style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--line);font:inherit;box-sizing:border-box;">
+            </div>
+            <div>
+              <label class="muted" style="font-size:12px;display:block;margin-bottom:4px;">Company</label>
+              <input id="wi-company" type="text" placeholder="Acme Corp"
+                style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--line);font:inherit;box-sizing:border-box;">
+            </div>
+            <div>
+              <label class="muted" style="font-size:12px;display:block;margin-bottom:4px;">Pass type</label>
+              <select id="wi-pass-type"
+                style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);font:inherit;box-sizing:border-box;">
+                <option value="">No pass type</option>
+              </select>
+            </div>
+          </div>
+          <button class="primary" style="margin-top:14px;" onclick="registerWalkIn()">Register attendee</button>
+          <div id="wi-result" style="margin-top:10px;font-size:13px;"></div>
+        </div>
+
+        <!-- C3: NFC tag assignment -->
+        <div class="card">
+          <h3 style="margin:0 0 14px">NFC Tag Assignment</h3>
+          <div style="max-width:480px;">
+            <input id="nfc-search" type="text" placeholder="Search attendee by name or email…"
+              oninput="filterAttendeeForNfc()"
+              style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--line);font:inherit;box-sizing:border-box;margin-bottom:8px;">
+            <div id="nfc-attendee-list"
+              style="max-height:180px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;margin-bottom:12px;"></div>
+            <div id="nfc-selected-card" style="display:none;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:10px;">
+              <div id="nfc-selected-info" style="margin-bottom:10px;"></div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <input id="nfc-uid-input" type="text" placeholder="NFC UID e.g. 04A3B2C1"
+                  style="flex:1;min-width:140px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);font:inherit;">
+                <button class="primary" onclick="assignNfcTag()">Assign</button>
+                <button id="nfc-unassign-btn" class="secondary" style="display:none;" onclick="unassignNfcTag()">Unassign</button>
+              </div>
+              <p class="muted" style="font-size:12px;margin:8px 0 0;">📡 Hardware scan mode — coming in P2</p>
+            </div>
+            <div id="nfc-assign-result" style="font-size:13px;"></div>
+          </div>
+        </div>
+
+        <!-- B4: Bulk import -->
+        <div class="card">
+          <h3 style="margin:0 0 8px">Bulk Import Attendees</h3>
+          <p class="muted" style="font-size:13px;margin:0 0 14px;">Download the template, fill in data, then upload. Accepts .xlsx and .csv.</p>
+          <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+            <button class="secondary" onclick="downloadTemplateXlsx()">⬇ XLSX template</button>
+            <button class="secondary" onclick="downloadTemplateCsv()">⬇ CSV template</button>
+          </div>
+          <div id="import-drop-zone"
+            ondragover="event.preventDefault()"
+            ondrop="handleImportDrop(event)"
+            onclick="document.getElementById('import-file-input').click()"
+            style="border:2px dashed var(--line);border-radius:12px;padding:36px;text-align:center;cursor:pointer;margin-bottom:12px;">
+            <div style="font-size:28px;margin-bottom:6px;">📁</div>
+            <div class="muted" style="font-size:14px;">Drag &amp; drop XLSX/CSV here, or click to browse</div>
+          </div>
+          <input id="import-file-input" type="file" accept=".xlsx,.csv" style="display:none;"
+            onchange="handleImportFile(this.files[0])">
+          <div id="import-preview" style="display:none;margin-bottom:12px;">
+            <div id="import-preview-table"></div>
+            <div id="import-row-count" class="muted" style="font-size:13px;margin-top:6px;"></div>
+            <button class="primary" id="import-confirm-btn" style="margin-top:10px;" onclick="confirmImport()">Import rows</button>
+          </div>
+          <div id="import-result" style="font-size:13px;"></div>
+        </div>
+
+      </div>
     </main>
 
     <div id="toast"></div>
@@ -344,7 +463,8 @@
             policy: loadPolicy,
             team: loadTeam,
             devices: loadDevices,
-            audit: loadAudit
+            audit: loadAudit,
+            attendees: loadAttendees
           };
           loaders[name]?.();
         }
@@ -731,6 +851,325 @@
           showStatus("audit-status", err.message, "error");
         }
       }
+
+      // ── Attendees ─────────────────────────────────────────────────────────────
+
+      let _allAttendees = [];
+      let _nfcSelectedId = null;
+      let _importRows = [];
+
+      async function _loadPassTypes() {
+        try {
+          const data = await api(`/organizer/events/${encodeURIComponent(eventId)}/pass-types`);
+          const pts = data.pass_types ?? data ?? [];
+          for (const sel of [document.getElementById("att-filter-pass"), document.getElementById("wi-pass-type")]) {
+            if (!sel) continue;
+            while (sel.options.length > 1) sel.remove(1);
+            pts.forEach(pt => sel.add(new Option(pt.name, pt.id)));
+          }
+        } catch { /* optional */ }
+      }
+
+      async function _loadAttendeeList() {
+        const container = document.getElementById("att-list-container");
+        container.textContent = "";
+        try {
+          const data = await api(`/organizer/events/${encodeURIComponent(eventId)}/attendees`);
+          _allAttendees = data.attendees ?? data ?? [];
+          _renderAttendees(_allAttendees);
+        } catch (err) {
+          const d = document.createElement("div");
+          d.className = "empty";
+          d.textContent = "Failed to load: " + err.message;
+          container.appendChild(d);
+        }
+      }
+
+      async function loadAttendees() {
+        await Promise.all([_loadPassTypes(), _loadAttendeeList()]);
+      }
+
+      function filterAttendees() {
+        const q = (document.getElementById("att-search")?.value ?? "").toLowerCase();
+        const passF = document.getElementById("att-filter-pass")?.value ?? "";
+        const srcF = document.getElementById("att-filter-source")?.value ?? "";
+        const filtered = _allAttendees.filter(a => {
+          if (q && !["name","email","company"].some(k => (a[k] ?? "").toLowerCase().includes(q))) return false;
+          if (passF && a.pass_type_id !== passF) return false;
+          if (srcF && a.registration_source !== srcF) return false;
+          return true;
+        });
+        _renderAttendees(filtered);
+      }
+
+      function _renderAttendees(list) {
+        const container = document.getElementById("att-list-container");
+        container.textContent = "";
+        if (list.length === 0) {
+          const d = document.createElement("div");
+          d.className = "empty";
+          d.textContent = "No attendees found.";
+          container.appendChild(d);
+          return;
+        }
+        const tbl = document.createElement("table");
+        const hrow = tbl.createTHead().insertRow();
+        for (const h of ["Name", "Email", "Company", "Pass Type", "Source", "NFC"]) {
+          const th = document.createElement("th");
+          th.textContent = h;
+          hrow.appendChild(th);
+        }
+        const tbody = tbl.createTBody();
+        list.slice(0, 200).forEach(a => {
+          const row = tbody.insertRow();
+          row.insertCell().textContent = a.name ?? "—";
+          const ec = row.insertCell();
+          ec.textContent = a.email ?? "—";
+          ec.style.fontSize = "13px";
+          row.insertCell().textContent = a.company ?? "—";
+          const pc = row.insertCell();
+          if (a.pass_type_name) {
+            const badge = document.createElement("span");
+            badge.className = "badge";
+            if (a.pass_type_colour) badge.style.borderColor = a.pass_type_colour;
+            badge.textContent = a.pass_type_name;
+            pc.appendChild(badge);
+          } else { pc.textContent = "—"; }
+          const sc = row.insertCell();
+          sc.textContent = a.registration_source ?? "—";
+          sc.style.fontSize = "12px";
+          const nc = row.insertCell();
+          if (a.nfc_uid) {
+            const code = document.createElement("code");
+            code.style.fontSize = "11px";
+            code.textContent = a.nfc_uid;
+            nc.appendChild(code);
+          } else { nc.textContent = "—"; }
+        });
+        container.appendChild(tbl);
+      }
+
+      async function registerWalkIn() {
+        const name = document.getElementById("wi-name")?.value?.trim();
+        if (!name) { toast("Name is required"); return; }
+        const resultEl = document.getElementById("wi-result");
+        resultEl.textContent = "Registering…";
+        try {
+          await api(`/organizer/events/${encodeURIComponent(eventId)}/attendees`, {
+            method: "POST",
+            body: {
+              name,
+              email: document.getElementById("wi-email")?.value?.trim() || undefined,
+              phone: document.getElementById("wi-phone")?.value?.trim() || undefined,
+              company: document.getElementById("wi-company")?.value?.trim() || undefined,
+              pass_type_id: document.getElementById("wi-pass-type")?.value || undefined,
+              registration_source: "walk_in"
+            }
+          });
+          toast("Attendee registered");
+          resultEl.textContent = "";
+          ["wi-name","wi-email","wi-phone","wi-company"].forEach(id => { document.getElementById(id).value = ""; });
+          _loadAttendeeList();
+        } catch (err) {
+          resultEl.textContent = "Error: " + err.message;
+        }
+      }
+
+      function filterAttendeeForNfc() {
+        const q = (document.getElementById("nfc-search")?.value ?? "").toLowerCase();
+        const container = document.getElementById("nfc-attendee-list");
+        container.textContent = "";
+        if (!q) return;
+        _allAttendees.filter(a =>
+          (a.name ?? "").toLowerCase().includes(q) || (a.email ?? "").toLowerCase().includes(q)
+        ).slice(0, 20).forEach(a => {
+          const item = document.createElement("div");
+          item.style.cssText = "padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px;";
+          item.addEventListener("mouseover", () => { item.style.background = "var(--accent-soft)"; });
+          item.addEventListener("mouseout", () => { item.style.background = ""; });
+          const ns = document.createElement("span");
+          ns.textContent = a.name ?? "—";
+          const es = document.createElement("span");
+          es.className = "muted";
+          es.style.cssText = "font-size:12px;margin-left:8px;";
+          es.textContent = a.email ?? "";
+          item.appendChild(ns);
+          item.appendChild(es);
+          item.addEventListener("click", () => _selectNfcAtt(a.id));
+          container.appendChild(item);
+        });
+      }
+
+      function _selectNfcAtt(id) {
+        _nfcSelectedId = id;
+        const a = _allAttendees.find(x => x.id === id);
+        if (!a) return;
+        document.getElementById("nfc-selected-card").style.display = "block";
+        const info = document.getElementById("nfc-selected-info");
+        info.textContent = "";
+        const strong = document.createElement("strong");
+        strong.textContent = a.name ?? "—";
+        const es = document.createElement("span");
+        es.className = "muted";
+        es.style.cssText = "font-size:13px;margin-left:8px;";
+        es.textContent = a.email ?? "";
+        info.appendChild(strong);
+        info.appendChild(es);
+        document.getElementById("nfc-uid-input").value = a.nfc_uid ?? "";
+        document.getElementById("nfc-unassign-btn").style.display = a.nfc_uid ? "inline-flex" : "none";
+        document.getElementById("nfc-attendee-list").textContent = "";
+        document.getElementById("nfc-search").value = "";
+      }
+
+      async function assignNfcTag() {
+        if (!_nfcSelectedId) return;
+        const uid = document.getElementById("nfc-uid-input")?.value?.trim();
+        if (!uid) { toast("Enter NFC UID"); return; }
+        const resultEl = document.getElementById("nfc-assign-result");
+        resultEl.textContent = "Assigning…";
+        try {
+          await api(`/attendees/${encodeURIComponent(_nfcSelectedId)}/nfc-tag`, { method: "PUT", body: { nfc_uid: uid } });
+          toast("NFC tag assigned");
+          resultEl.textContent = "";
+          document.getElementById("nfc-selected-card").style.display = "none";
+          _nfcSelectedId = null;
+          _loadAttendeeList();
+        } catch (err) { resultEl.textContent = "Error: " + err.message; }
+      }
+
+      async function unassignNfcTag() {
+        if (!_nfcSelectedId) return;
+        const resultEl = document.getElementById("nfc-assign-result");
+        resultEl.textContent = "Unassigning…";
+        try {
+          await api(`/attendees/${encodeURIComponent(_nfcSelectedId)}/nfc-tag`, { method: "DELETE" });
+          toast("NFC tag removed");
+          resultEl.textContent = "";
+          document.getElementById("nfc-selected-card").style.display = "none";
+          _nfcSelectedId = null;
+          _loadAttendeeList();
+        } catch (err) { resultEl.textContent = "Error: " + err.message; }
+      }
+
+      function downloadTemplateXlsx() {
+        if (typeof XLSX === "undefined") { toast("XLSX library not loaded"); return; }
+        const headers = ["name","email","phone","company","pass_type_name"];
+        const ws = XLSX.utils.aoa_to_sheet([headers, ["Jane Smith","jane@example.com","+1 555 0100","Acme Corp","General"]]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Attendees");
+        XLSX.writeFile(wb, "attendee-import-template.xlsx");
+      }
+
+      function downloadTemplateCsv() {
+        const rows = [["name","email","phone","company","pass_type_name"],["Jane Smith","jane@example.com","+1 555 0100","Acme Corp","General"]];
+        const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+        const a = document.createElement("a");
+        a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
+        a.download = "attendee-import-template.csv";
+        a.click();
+      }
+
+      function handleImportDrop(event) {
+        event.preventDefault();
+        const file = event.dataTransfer?.files?.[0];
+        if (file) handleImportFile(file);
+      }
+
+      function handleImportFile(file) {
+        if (!file) return;
+        const isCsv = file.name.endsWith(".csv");
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            let rows;
+            if (isCsv) {
+              const lines = e.target.result.split(/\r?\n/).filter(l => l.trim());
+              const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g,"").trim());
+              rows = lines.slice(1).map(line => {
+                const vals = line.split(",").map(v => v.replace(/^"|"$/g,"").trim());
+                const obj = {};
+                headers.forEach((h, i) => { obj[h] = vals[i] ?? ""; });
+                return obj;
+              });
+            } else {
+              if (typeof XLSX === "undefined") { toast("XLSX library not loaded"); return; }
+              const wb = XLSX.read(e.target.result, { type: "array" });
+              rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+            }
+            _importRows = rows.filter(r => r.name || r.Name);
+            _showImportPreview(_importRows);
+          } catch (err) {
+            document.getElementById("import-result").textContent = "Parse error: " + err.message;
+          }
+        };
+        if (isCsv) reader.readAsText(file);
+        else reader.readAsArrayBuffer(file);
+      }
+
+      function _showImportPreview(rows) {
+        const preview = document.getElementById("import-preview");
+        const tableContainer = document.getElementById("import-preview-table");
+        tableContainer.textContent = "";
+        if (rows.length === 0) {
+          preview.style.display = "none";
+          document.getElementById("import-result").textContent = "No valid rows found (name column required).";
+          return;
+        }
+        const cols = ["name","email","phone","company","pass_type_name"];
+        const tbl = document.createElement("table");
+        const hrow = tbl.createTHead().insertRow();
+        cols.forEach(h => { const th = document.createElement("th"); th.textContent = h; hrow.appendChild(th); });
+        const tbody = tbl.createTBody();
+        rows.slice(0, 10).forEach(r => {
+          const row = tbody.insertRow();
+          cols.forEach(h => {
+            const cell = row.insertCell();
+            cell.textContent = r[h] ?? r[h.charAt(0).toUpperCase() + h.slice(1)] ?? "";
+            cell.style.fontSize = "13px";
+          });
+        });
+        tableContainer.appendChild(tbl);
+        document.getElementById("import-row-count").textContent =
+          `${rows.length} row(s) ready${rows.length > 10 ? " (showing first 10)" : ""}`;
+        preview.style.display = "block";
+      }
+
+      async function confirmImport() {
+        if (!_importRows.length) return;
+        const btn = document.getElementById("import-confirm-btn");
+        btn.disabled = true;
+        btn.textContent = "Importing…";
+        const resultEl = document.getElementById("import-result");
+        resultEl.textContent = "";
+        try {
+          const attendees = _importRows.map(r => ({
+            name: r.name || r.Name || "",
+            email: r.email || r.Email || undefined,
+            phone: r.phone || r.Phone || undefined,
+            company: r.company || r.Company || undefined,
+            pass_type_name: r.pass_type_name || r["Pass Type"] || undefined,
+          }));
+          const res = await api(`/organizer/events/${encodeURIComponent(eventId)}/attendees/import`, {
+            method: "POST", body: { attendees }
+          });
+          toast(`Imported ${res.imported ?? res.count ?? attendees.length} attendees`);
+          document.getElementById("import-preview").style.display = "none";
+          _importRows = [];
+          _loadAttendeeList();
+        } catch (err) {
+          resultEl.textContent = "Import failed: " + err.message;
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Import rows";
+        }
+      }
+
+      Object.assign(window, {
+        loadAttendees, filterAttendees, registerWalkIn,
+        filterAttendeeForNfc, assignNfcTag, unassignNfcTag,
+        downloadTemplateXlsx, downloadTemplateCsv,
+        handleImportDrop, handleImportFile, confirmImport
+      });
 
       loadOverview();
       if (eventId) checkBreakGlassAlerts({ apiBase, token, eventId }).catch(() => {});
