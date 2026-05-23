@@ -161,6 +161,9 @@
               <option value="pushed">CRM pushed</option>
               <option value="not_pushed">Not pushed</option>
             </select>
+            <select id="filter-pass-type" onchange="applyFilters()">
+              <option value="">All pass types</option>
+            </select>
             <input id="filter-search" placeholder="Search name / company…" oninput="applyFilters()" type="text">
           </div>
           <div style="overflow-x:auto;">
@@ -170,6 +173,7 @@
                   <th>Time</th>
                   <th>Name</th>
                   <th>Company</th>
+                  <th>Pass</th>
                   <th>Score</th>
                   <th>Consent</th>
                   <th>CRM</th>
@@ -177,7 +181,7 @@
                 </tr>
               </thead>
               <tbody id="lead-rows">
-                <tr><td colspan="7" class="muted" style="text-align:center;padding:24px;">Load leads to populate inbox.</td></tr>
+                <tr><td colspan="8" class="muted" style="text-align:center;padding:24px;">Load leads to populate inbox.</td></tr>
               </tbody>
             </table>
           </div>
@@ -426,6 +430,7 @@
           ]);
           ALL_LEADS = (leadsResp.items || leadsResp.leads || []).map(normalizeLead);
           renderMetrics(metricsResp);
+          populatePassTypeFilter();
           applyFilters();
           renderExports(exportsResp.items || []);
           renderCRMConnections(crmResp.items || []);
@@ -465,10 +470,25 @@
       }
 
       /* ── LEAD TABLE ──────────────────────────────── */
+      function populatePassTypeFilter() {
+        const sel = $("filter-pass-type");
+        const existing = new Set(Array.from(sel.options).map(o => o.value).filter(Boolean));
+        for (const lead of ALL_LEADS) {
+          if (lead.pass_type_name && !existing.has(lead.pass_type_name)) {
+            existing.add(lead.pass_type_name);
+            const opt = document.createElement("option");
+            opt.value = lead.pass_type_name;
+            opt.textContent = lead.pass_type_name;
+            sel.appendChild(opt);
+          }
+        }
+      }
+
       function applyFilters() {
         const score   = $("filter-score").value;
         const consent = $("filter-consent").value;
         const crm     = $("filter-crm").value;
+        const passTypeF = $("filter-pass-type").value;
         const search  = $("filter-search").value.toLowerCase();
         PAGE = 0;
 
@@ -479,6 +499,7 @@
           if (consent === "anonymous"  && l.vendor_release_allowed)  return false;
           if (crm === "pushed"     && !l.crm_pushed)  return false;
           if (crm === "not_pushed" &&  l.crm_pushed)  return false;
+          if (passTypeF && l.pass_type_name !== passTypeF) return false;
           if (search) {
             const name    = (l.display_name  || "").toLowerCase();
             const company = (l.company_name  || "").toLowerCase();
@@ -501,7 +522,7 @@
             : ALL_LEADS.length === 0
               ? "No interactions recorded at this stall yet."
               : "No leads match current filters.";
-          tbody.innerHTML = `<tr><td colspan="7" class="muted" style="text-align:center;padding:24px;">${esc(msg)}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="8" class="muted" style="text-align:center;padding:24px;">${esc(msg)}</td></tr>`;
           renderPagination();
           return;
         }
@@ -516,10 +537,16 @@
 
           const tr = document.createElement("tr");
           tr.className = SELECTED?.id === lead.id ? "active" : "";
+          const passName = lead.pass_type_name ? esc(lead.pass_type_name) : null;
+          const passColour = lead.pass_type_colour ? esc(lead.pass_type_colour) : '#6B7280';
+          const passBadge = passName
+            ? `<span style="font-size:11px;font-weight:600;padding:2px 7px;border-radius:6px;background:${passColour}22;color:${passColour};border:1px solid ${passColour}44;">${passName}</span>`
+            : '<span style="color:var(--muted);font-size:11px;">—</span>';
           tr.innerHTML = `
             <td class="muted" style="white-space:nowrap;">${fmtTime(lead.occurred_at || lead.created_at)}</td>
             <td>${displayName}</td>
             <td>${company}</td>
+            <td>${passBadge}</td>
             <td><span class="tag ${score}">${score}</span></td>
             <td><span class="tag ${consented ? "good" : "muted"}">${consented ? "Yes" : "No"}</span></td>
             <td><span class="tag ${lead.crm_pushed ? "good" : "muted"}">${crmState}</span></td>
