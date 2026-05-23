@@ -323,6 +323,8 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   "organizer-dsr-list": entry({ permission: "organizer.dsr.view", roles: organizer, scope: "event", description: "List data subject requests", sensitivity: "privacy" }),
   "organizer-dsr-create": entry({ permission: "organizer.dsr.create", roles: organizer, scope: "event", description: "Create a data subject request", sensitivity: "privacy" }),
   "organizer-dsr-complete": entry({ permission: "organizer.dsr.complete", roles: organizer, scope: "event", description: "Complete a data subject request", sensitivity: "privacy" }),
+  "organizer-pass-types-list": entry({ permission: "organizer.pass_types.view", roles: organizerOrPlatform, scope: "event", description: "List pass types for an event", sensitivity: "internal" }),
+  "organizer-pass-types-create": entry({ permission: "organizer.pass_types.create", roles: organizerOrPlatform, scope: "event", description: "Create a pass type for an event", sensitivity: "sensitive" }),
   "organizer-downstream-deletion-confirm": entry({ permission: "organizer.downstream_deletion.confirm", roles: organizer, scope: "event", description: "Confirm a downstream deletion", sensitivity: "privacy" }),
   "organizer-downstream-deletion-dispatch": entry({ permission: "organizer.downstream_deletion.dispatch", roles: organizer, scope: "event", description: "Dispatch a downstream deletion", sensitivity: "privacy" }),
   "organizer-retention-run": entry({ permission: "organizer.retention.run", roles: organizer, scope: "event", description: "Run retention preview or apply", sensitivity: "privacy" }),

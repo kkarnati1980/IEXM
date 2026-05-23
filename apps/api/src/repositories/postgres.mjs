@@ -916,6 +916,50 @@ export function createPostgresRepositories(db, securityContext = null) {
         );
       }
     },
+    passTypes: {
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO pass_types
+               (id, tenant_id, event_id, name, code, colour_hex,
+                nfc_behaviour, vendor_visible, quantity_issued, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+            [record.id, record.tenant_id, record.event_id,
+             record.name, record.code,
+             record.colour_hex ?? "#6B7280",
+             record.nfc_behaviour ?? "consent",
+             record.vendor_visible ?? true,
+             record.quantity_issued ?? 0,
+             record.created_at]
+          ),
+          "PassType"
+        );
+      },
+      async findById(tenantId, id) {
+        return one(
+          await execute(
+            "SELECT * FROM pass_types WHERE tenant_id = $1 AND id = $2",
+            [tenantId, id]
+          ),
+          "PassType"
+        );
+      },
+      async findByIdOrNull(tenantId, id) {
+        const result = await execute(
+          "SELECT * FROM pass_types WHERE tenant_id = $1 AND id = $2",
+          [tenantId, id]
+        );
+        return result.rows[0] ?? null;
+      },
+      async listByEvent(tenantId, eventId) {
+        return many(
+          await execute(
+            "SELECT * FROM pass_types WHERE tenant_id = $1 AND event_id = $2 ORDER BY name ASC",
+            [tenantId, eventId]
+          )
+        );
+      }
+    },
     tapEvents: {
       async findByIdempotencyKey(tenantId, deviceId, localEventId) {
         const result = await execute(
@@ -1118,6 +1162,109 @@ export function createPostgresRepositories(db, securityContext = null) {
              ORDER BY created_at ASC`,
             [tenantId, interactionId]
           )
+        );
+      }
+    },
+    consentVersions: {
+      async findLatestByTenant(tenantId) {
+        const result = await execute(
+          "SELECT * FROM consent_versions WHERE tenant_id = $1 ORDER BY version_number DESC LIMIT 1",
+          [tenantId]
+        );
+        return result.rows[0] ?? null;
+      },
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO consent_versions
+               (id, tenant_id, version_number, version_label,
+                retention_period_days, grievance_officer_email,
+                grievance_officer_name, data_residency_disclosure,
+                effective_from, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+            [record.id, record.tenant_id, record.version_number,
+             record.version_label, record.retention_period_days,
+             record.grievance_officer_email, record.grievance_officer_name,
+             record.data_residency_disclosure,
+             record.effective_from, record.created_at]
+          ),
+          "ConsentVersion"
+        );
+      }
+    },
+    consentSnapshots: {
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO consent_snapshots
+               (id, tenant_id, interaction_id, attendee_id,
+                vendor_release_allowed, sponsor_release_allowed,
+                organizer_release_allowed, age_confirmed_18_plus,
+                communication_channels, consent_version_id,
+                trigger_action, captured_ip)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+             RETURNING *`,
+            [record.id, record.tenant_id, record.interaction_id,
+             record.attendee_id,
+             record.vendor_release_allowed, record.sponsor_release_allowed,
+             record.organizer_release_allowed ?? false,
+             record.age_confirmed_18_plus ?? false,
+             JSON.stringify(record.communication_channels ?? {}),
+             record.consent_version_id ?? null,
+             record.trigger_action, record.captured_ip ?? null]
+          ),
+          "ConsentSnapshot"
+        );
+      }
+    },
+    consentAttributeChanges: {
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO consent_attribute_changes
+               (id, tenant_id, interaction_id, attribute_name,
+                old_value, new_value, changed_by_ip)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+            [record.id, record.tenant_id, record.interaction_id,
+             record.attribute_name, record.old_value ?? null,
+             record.new_value, record.changed_by_ip ?? null]
+          ),
+          "ConsentAttributeChange"
+        );
+      }
+    },
+    appConfig: {
+      async findByTenant(tenantId) {
+        const result = await execute(
+          "SELECT * FROM app_config WHERE tenant_id = $1",
+          [tenantId]
+        );
+        return result.rows[0] ?? null;
+      },
+      async upsert(record) {
+        return one(
+          await execute(
+            `INSERT INTO app_config
+               (tenant_id, deployment_region, is_cross_border_transfer,
+                data_controller_name, grievance_officer_email,
+                grievance_officer_phone, retention_period_days, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+             ON CONFLICT (tenant_id) DO UPDATE SET
+               deployment_region = EXCLUDED.deployment_region,
+               is_cross_border_transfer = EXCLUDED.is_cross_border_transfer,
+               data_controller_name = EXCLUDED.data_controller_name,
+               grievance_officer_email = EXCLUDED.grievance_officer_email,
+               grievance_officer_phone = EXCLUDED.grievance_officer_phone,
+               retention_period_days = EXCLUDED.retention_period_days,
+               updated_at = EXCLUDED.updated_at
+             RETURNING *`,
+            [record.tenant_id, record.deployment_region,
+             record.is_cross_border_transfer,
+             record.data_controller_name, record.grievance_officer_email,
+             record.grievance_officer_phone ?? null,
+             record.retention_period_days, record.updated_at]
+          ),
+          "AppConfig"
         );
       }
     },

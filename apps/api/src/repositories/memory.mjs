@@ -487,6 +487,29 @@ export function createMemoryRepositories(state) {
         return record;
       }
     },
+    passTypes: {
+      async create(record) {
+        const existing = state.passTypes.find(
+          (pt) => pt.event_id === record.event_id && pt.code === record.code
+        );
+        if (existing) throw new HttpError(409, `Pass type code '${record.code}' already exists for this event`);
+        state.passTypes.push(record);
+        return record;
+      },
+      async findById(tenantId, id) {
+        const pt = state.passTypes.find((pt) => pt.tenant_id === tenantId && pt.id === id);
+        if (!pt) throw new HttpError(404, "Pass type not found");
+        return pt;
+      },
+      async findByIdOrNull(tenantId, id) {
+        return state.passTypes.find((pt) => pt.tenant_id === tenantId && pt.id === id) ?? null;
+      },
+      async listByEvent(tenantId, eventId) {
+        return state.passTypes
+          .filter((pt) => pt.tenant_id === tenantId && pt.event_id === eventId)
+          .sort((a, b) => a.name.localeCompare(b.name));
+      }
+    },
     tapEvents: {
       async findByIdempotencyKey(tenantId, deviceId, localEventId) {
         return state.tapEvents.find(
@@ -557,6 +580,39 @@ export function createMemoryRepositories(state) {
         return state.consentEvents
           .filter((entry) => entry.tenant_id === tenantId && entry.interaction_id === interactionId)
           .sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at));
+      }
+    },
+    consentVersions: {
+      async findLatestByTenant(tenantId) {
+        const versions = state.consentVersions
+          .filter((v) => v.tenant_id === tenantId)
+          .sort((a, b) => b.version_number - a.version_number);
+        return versions[0] ?? null;
+      },
+      async create(record) {
+        state.consentVersions.push(record);
+        return record;
+      }
+    },
+    consentSnapshots: {
+      async create(record) {
+        state.consentSnapshots.push(record);
+        return record;
+      }
+    },
+    consentAttributeChanges: {
+      async create(record) {
+        state.consentAttributeChanges.push(record);
+        return record;
+      }
+    },
+    appConfig: {
+      async findByTenant(tenantId) {
+        return state.appConfig?.tenant_id === tenantId ? state.appConfig : null;
+      },
+      async upsert(record) {
+        state.appConfig = record;
+        return record;
       }
     },
     communicationChannelConsents: {

@@ -2867,6 +2867,54 @@ export function registerRoutes(router) {
     auditEventType: "organizer.dsr.completed"
   });
 
+  // P0 A1/A5 — GET /organizer/events/:eventId/pass-types
+  router.addRoute({
+    id: "organizer-pass-types-list",
+    method: "GET",
+    path: "/organizer/events/:eventId/pass-types",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const tenantId = principal.tenant_id;
+      await repos.events.findById(tenantId, params.eventId);
+      return repos.passTypes.listByEvent(tenantId, params.eventId);
+    },
+    auditEventType: "organizer.pass_types.list"
+  });
+
+  // P0 A1/A5 — POST /organizer/events/:eventId/pass-types
+  router.addRoute({
+    id: "organizer-pass-types-create",
+    method: "POST",
+    path: "/organizer/events/:eventId/pass-types",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    validate: (body) => {
+      required(body, ["name", "code", "nfc_behaviour"]);
+      const validBehaviours = ["consent", "skip", "access_only"];
+      if (!validBehaviours.includes(body.nfc_behaviour)) {
+        throw new HttpError(400, `nfc_behaviour must be one of: ${validBehaviours.join(", ")}`);
+      }
+      return body;
+    },
+    handler: async ({ repos, params, body, principal }) => {
+      const tenantId = principal.tenant_id;
+      await repos.events.findById(tenantId, params.eventId);
+      return repos.passTypes.create({
+        id: nextId("pt"),
+        tenant_id: tenantId,
+        event_id: params.eventId,
+        name: body.name,
+        code: body.code.toLowerCase().replace(/\s+/g, "_"),
+        colour_hex: body.colour_hex ?? "#6B7280",
+        nfc_behaviour: body.nfc_behaviour,
+        vendor_visible: body.vendor_visible ?? true,
+        quantity_issued: 0,
+        created_at: new Date().toISOString()
+      });
+    },
+    statusCode: 201,
+    auditEventType: "organizer.pass_types.create"
+  });
+
   router.addRoute({
     id: "organizer-downstream-deletion-confirm",
     method: "POST",

@@ -280,12 +280,28 @@ export function createSeedState() {
     brandingAssets: [],
     attendees: [],
     attendeeProfiles: [],
+    passTypes: [
+      { id:"pt-vip",       tenant_id:tenant.id, event_id:event.id, name:"VIP",             code:"vip",       colour_hex:"#F59E0B", nfc_behaviour:"consent",     vendor_visible:true,  quantity_issued:0, created_at:now },
+      { id:"pt-general",   tenant_id:tenant.id, event_id:event.id, name:"General",         code:"general",   colour_hex:"#6B7280", nfc_behaviour:"consent",     vendor_visible:true,  quantity_issued:0, created_at:now },
+      { id:"pt-speaker",   tenant_id:tenant.id, event_id:event.id, name:"Speaker",         code:"speaker",   colour_hex:"#8B5CF6", nfc_behaviour:"skip",        vendor_visible:false, quantity_issued:0, created_at:now },
+      { id:"pt-media",     tenant_id:tenant.id, event_id:event.id, name:"Media",           code:"media",     colour_hex:"#EC4899", nfc_behaviour:"consent",     vendor_visible:true,  quantity_issued:0, created_at:now },
+      { id:"pt-vendor",    tenant_id:tenant.id, event_id:event.id, name:"Vendor Staff",    code:"vendor",    colour_hex:"#3B82F6", nfc_behaviour:"skip",        vendor_visible:false, quantity_issued:0, created_at:now },
+      { id:"pt-sponsor",   tenant_id:tenant.id, event_id:event.id, name:"Sponsor Staff",   code:"sponsor",   colour_hex:"#10B981", nfc_behaviour:"skip",        vendor_visible:false, quantity_issued:0, created_at:now },
+      { id:"pt-org",       tenant_id:tenant.id, event_id:event.id, name:"Organiser Staff", code:"org",       colour_hex:"#EF4444", nfc_behaviour:"skip",        vendor_visible:false, quantity_issued:0, created_at:now },
+      { id:"pt-volunteer", tenant_id:tenant.id, event_id:event.id, name:"Volunteer",       code:"volunteer", colour_hex:"#F97316", nfc_behaviour:"access_only", vendor_visible:false, quantity_issued:0, created_at:now },
+      { id:"pt-press",     tenant_id:tenant.id, event_id:event.id, name:"Press",           code:"press",     colour_hex:"#06B6D4", nfc_behaviour:"consent",     vendor_visible:true,  quantity_issued:0, created_at:now },
+      { id:"pt-exhibitor", tenant_id:tenant.id, event_id:event.id, name:"Exhibitor",       code:"exhibitor", colour_hex:"#84CC16", nfc_behaviour:"access_only", vendor_visible:false, quantity_issued:0, created_at:now }
+    ],
     tapEvents: [],
     interactions: [],
     heartbeats: [],
     incidents: [],
     consents: [],
     consentEvents: [],
+    consentVersions: [],
+    consentSnapshots: [],
+    consentAttributeChanges: [],
+    appConfig: null,
     communicationChannelConsents: [],
     communicationSuppressions: [],
     interactionNotes: [],
@@ -443,6 +459,45 @@ export function applyDemoSampleData(state) {
   state.interactions.push(...interactions);
   state.consents.push(...consents);
   state.consentEvents.push(...consentEvents);
+
+  // P0: Seed 10 pass types for demo event
+  state.passTypes.push(
+    { id:"pt-vip",       tenant_id:tenantId, event_id:eventId, name:"VIP",             code:"vip",       colour_hex:"#F59E0B", nfc_behaviour:"consent",     vendor_visible:true,  quantity_issued:0, created_at:now },
+    { id:"pt-general",   tenant_id:tenantId, event_id:eventId, name:"General",         code:"general",   colour_hex:"#6B7280", nfc_behaviour:"consent",     vendor_visible:true,  quantity_issued:0, created_at:now },
+    { id:"pt-speaker",   tenant_id:tenantId, event_id:eventId, name:"Speaker",         code:"speaker",   colour_hex:"#8B5CF6", nfc_behaviour:"skip",        vendor_visible:false, quantity_issued:0, created_at:now },
+    { id:"pt-media",     tenant_id:tenantId, event_id:eventId, name:"Media",           code:"media",     colour_hex:"#EC4899", nfc_behaviour:"consent",     vendor_visible:true,  quantity_issued:0, created_at:now },
+    { id:"pt-vendor",    tenant_id:tenantId, event_id:eventId, name:"Vendor Staff",    code:"vendor",    colour_hex:"#3B82F6", nfc_behaviour:"skip",        vendor_visible:false, quantity_issued:0, created_at:now },
+    { id:"pt-sponsor",   tenant_id:tenantId, event_id:eventId, name:"Sponsor Staff",   code:"sponsor",   colour_hex:"#10B981", nfc_behaviour:"skip",        vendor_visible:false, quantity_issued:0, created_at:now },
+    { id:"pt-org",       tenant_id:tenantId, event_id:eventId, name:"Organiser Staff", code:"org",       colour_hex:"#EF4444", nfc_behaviour:"skip",        vendor_visible:false, quantity_issued:0, created_at:now },
+    { id:"pt-volunteer", tenant_id:tenantId, event_id:eventId, name:"Volunteer",       code:"volunteer", colour_hex:"#F97316", nfc_behaviour:"access_only", vendor_visible:false, quantity_issued:0, created_at:now },
+    { id:"pt-press",     tenant_id:tenantId, event_id:eventId, name:"Press",           code:"press",     colour_hex:"#06B6D4", nfc_behaviour:"consent",     vendor_visible:true,  quantity_issued:0, created_at:now },
+    { id:"pt-exhibitor", tenant_id:tenantId, event_id:eventId, name:"Exhibitor",       code:"exhibitor", colour_hex:"#84CC16", nfc_behaviour:"access_only", vendor_visible:false, quantity_issued:0, created_at:now }
+  );
+
+  // P0: Seed consent version v1
+  state.consentVersions.push({
+    id: "cv-v1-demo",
+    tenant_id: tenantId,
+    version_number: 1,
+    version_label: "Standard Consent v1",
+    retention_period_days: 365,
+    grievance_officer_email: "grievance@kiot.io",
+    grievance_officer_name: "Data Protection Officer",
+    data_residency_disclosure: "Your data is stored on servers located in India.",
+    effective_from: now,
+    created_at: now
+  });
+
+  // P0: Seed app_config
+  state.appConfig = {
+    tenant_id: tenantId,
+    deployment_region: "in",
+    is_cross_border_transfer: false,
+    data_controller_name: "KIOT Platform",
+    grievance_officer_email: "grievance@kiot.io",
+    retention_period_days: 365,
+    updated_at: now
+  };
 }
 
 export function nextId(prefix) {
