@@ -855,6 +855,7 @@
       // ── Attendees ─────────────────────────────────────────────────────────────
 
       let _allAttendees = [];
+      let _passTypesById = {};
       let _nfcSelectedId = null;
       let _importRows = [];
 
@@ -862,6 +863,7 @@
         try {
           const data = await api(`/organizer/events/${encodeURIComponent(eventId)}/pass-types`);
           const pts = data.pass_types ?? data ?? [];
+          _passTypesById = Object.fromEntries(pts.map(pt => [pt.id, pt]));
           for (const sel of [document.getElementById("att-filter-pass"), document.getElementById("wi-pass-type")]) {
             if (!sel) continue;
             while (sel.options.length > 1) sel.remove(1);
@@ -894,7 +896,7 @@
         const passF = document.getElementById("att-filter-pass")?.value ?? "";
         const srcF = document.getElementById("att-filter-source")?.value ?? "";
         const filtered = _allAttendees.filter(a => {
-          if (q && !["name","email","company"].some(k => (a[k] ?? "").toLowerCase().includes(q))) return false;
+          if (q && ![(a.profile?.full_name ?? ""), (a.profile?.email ?? ""), (a.profile?.company_name ?? "")].some(v => v.toLowerCase().includes(q))) return false;
           if (passF && a.pass_type_id !== passF) return false;
           if (srcF && a.registration_source !== srcF) return false;
           return true;
@@ -922,27 +924,28 @@
         const tbody = tbl.createTBody();
         list.slice(0, 200).forEach(a => {
           const row = tbody.insertRow();
-          row.insertCell().textContent = a.name ?? "—";
+          row.insertCell().textContent = a.profile?.full_name ?? "—";
           const ec = row.insertCell();
-          ec.textContent = a.email ?? "—";
+          ec.textContent = a.profile?.email ?? "—";
           ec.style.fontSize = "13px";
-          row.insertCell().textContent = a.company ?? "—";
+          row.insertCell().textContent = a.profile?.company_name ?? "—";
           const pc = row.insertCell();
-          if (a.pass_type_name) {
+          const pt = _passTypesById[a.pass_type_id];
+          if (pt) {
             const badge = document.createElement("span");
             badge.className = "badge";
-            if (a.pass_type_colour) badge.style.borderColor = a.pass_type_colour;
-            badge.textContent = a.pass_type_name;
+            if (pt.colour_hex) badge.style.borderColor = pt.colour_hex;
+            badge.textContent = pt.name;
             pc.appendChild(badge);
           } else { pc.textContent = "—"; }
           const sc = row.insertCell();
           sc.textContent = a.registration_source ?? "—";
           sc.style.fontSize = "12px";
           const nc = row.insertCell();
-          if (a.nfc_uid) {
+          if (a.nfc_uid_hash) {
             const code = document.createElement("code");
             code.style.fontSize = "11px";
-            code.textContent = a.nfc_uid;
+            code.textContent = a.nfc_uid_hash.slice(0, 8) + "…";
             nc.appendChild(code);
           } else { nc.textContent = "—"; }
         });
@@ -981,18 +984,18 @@
         container.textContent = "";
         if (!q) return;
         _allAttendees.filter(a =>
-          (a.name ?? "").toLowerCase().includes(q) || (a.email ?? "").toLowerCase().includes(q)
+          (a.profile?.full_name ?? "").toLowerCase().includes(q) || (a.profile?.email ?? "").toLowerCase().includes(q)
         ).slice(0, 20).forEach(a => {
           const item = document.createElement("div");
           item.style.cssText = "padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px;";
           item.addEventListener("mouseover", () => { item.style.background = "var(--accent-soft)"; });
           item.addEventListener("mouseout", () => { item.style.background = ""; });
           const ns = document.createElement("span");
-          ns.textContent = a.name ?? "—";
+          ns.textContent = a.profile?.full_name ?? "—";
           const es = document.createElement("span");
           es.className = "muted";
           es.style.cssText = "font-size:12px;margin-left:8px;";
-          es.textContent = a.email ?? "";
+          es.textContent = a.profile?.email ?? "";
           item.appendChild(ns);
           item.appendChild(es);
           item.addEventListener("click", () => _selectNfcAtt(a.id));
@@ -1008,15 +1011,15 @@
         const info = document.getElementById("nfc-selected-info");
         info.textContent = "";
         const strong = document.createElement("strong");
-        strong.textContent = a.name ?? "—";
+        strong.textContent = a.profile?.full_name ?? "—";
         const es = document.createElement("span");
         es.className = "muted";
         es.style.cssText = "font-size:13px;margin-left:8px;";
-        es.textContent = a.email ?? "";
+        es.textContent = a.profile?.email ?? "";
         info.appendChild(strong);
         info.appendChild(es);
-        document.getElementById("nfc-uid-input").value = a.nfc_uid ?? "";
-        document.getElementById("nfc-unassign-btn").style.display = a.nfc_uid ? "inline-flex" : "none";
+        document.getElementById("nfc-uid-input").value = "";
+        document.getElementById("nfc-unassign-btn").style.display = a.nfc_uid_hash ? "inline-flex" : "none";
         document.getElementById("nfc-attendee-list").textContent = "";
         document.getElementById("nfc-search").value = "";
       }
