@@ -1261,21 +1261,19 @@ export function createPostgresRepositories(db, securityContext = null) {
             `INSERT INTO app_config
                (tenant_id, deployment_region, is_cross_border_transfer,
                 data_controller_name, grievance_officer_email,
-                grievance_officer_phone, retention_period_days, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+                retention_period_days, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)
              ON CONFLICT (tenant_id) DO UPDATE SET
                deployment_region = EXCLUDED.deployment_region,
                is_cross_border_transfer = EXCLUDED.is_cross_border_transfer,
                data_controller_name = EXCLUDED.data_controller_name,
                grievance_officer_email = EXCLUDED.grievance_officer_email,
-               grievance_officer_phone = EXCLUDED.grievance_officer_phone,
                retention_period_days = EXCLUDED.retention_period_days,
                updated_at = EXCLUDED.updated_at
              RETURNING *`,
             [record.tenant_id, record.deployment_region,
              record.is_cross_border_transfer,
              record.data_controller_name, record.grievance_officer_email,
-             record.grievance_officer_phone ?? null,
              record.retention_period_days, record.updated_at]
           ),
           "AppConfig"

@@ -1539,6 +1539,7 @@
           const cb = document.getElementById(id);
           if (cb) cb.addEventListener("change", _updateAcceptBtn);
         });
+        _updateAcceptBtn();
 
         // CR-02: fetch vendor company name from attendee session endpoint
         try {
