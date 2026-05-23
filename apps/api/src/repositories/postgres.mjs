@@ -1190,16 +1190,19 @@ export function createPostgresRepositories(db, securityContext = null) {
         return one(
           await execute(
             `INSERT INTO consent_versions
-               (id, tenant_id, version_number, version_label,
+               (id, tenant_id, version_number, effective_from,
                 retention_period_days, grievance_officer_email,
-                grievance_officer_name, data_residency_disclosure,
-                effective_from, created_at)
+                data_residency_zones, is_cross_border_transfer,
+                created_by_user_id, created_at)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
             [record.id, record.tenant_id, record.version_number,
-             record.version_label, record.retention_period_days,
-             record.grievance_officer_email, record.grievance_officer_name,
-             record.data_residency_disclosure,
-             record.effective_from, record.created_at]
+             record.effective_from ?? new Date().toISOString(),
+             record.retention_period_days,
+             record.grievance_officer_email,
+             record.data_residency_zones ?? [],
+             record.is_cross_border_transfer ?? false,
+             record.created_by_user_id ?? null,
+             record.created_at ?? new Date().toISOString()]
           ),
           "ConsentVersion"
         );
@@ -1210,21 +1213,17 @@ export function createPostgresRepositories(db, securityContext = null) {
         return one(
           await execute(
             `INSERT INTO consent_snapshots
-               (id, tenant_id, interaction_id, attendee_id,
+               (id, tenant_id, interaction_id, consent_version_id,
                 vendor_release_allowed, sponsor_release_allowed,
-                organizer_release_allowed, age_confirmed_18_plus,
-                communication_channels, consent_version_id,
-                trigger_action, captured_ip)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+                organizer_release_allowed, captured_at, locale)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
              RETURNING *`,
             [record.id, record.tenant_id, record.interaction_id,
-             record.attendee_id,
+             record.consent_version_id ?? null,
              record.vendor_release_allowed, record.sponsor_release_allowed,
              record.organizer_release_allowed ?? false,
-             record.age_confirmed_18_plus ?? false,
-             JSON.stringify(record.communication_channels ?? {}),
-             record.consent_version_id ?? null,
-             record.trigger_action, record.captured_ip ?? null]
+             record.captured_at ?? new Date().toISOString(),
+             record.locale ?? 'en']
           ),
           "ConsentSnapshot"
         );
@@ -1235,12 +1234,14 @@ export function createPostgresRepositories(db, securityContext = null) {
         return one(
           await execute(
             `INSERT INTO consent_attribute_changes
-               (id, tenant_id, interaction_id, attribute_name,
-                old_value, new_value, changed_by_ip)
-             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+               (id, tenant_id, interaction_id, changed_by_user_id,
+                changed_at, attribute, old_value, new_value)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
             [record.id, record.tenant_id, record.interaction_id,
-             record.attribute_name, record.old_value ?? null,
-             record.new_value, record.changed_by_ip ?? null]
+             record.changed_by_user_id ?? null,
+             record.changed_at ?? new Date().toISOString(),
+             record.attribute, record.old_value ?? null,
+             record.new_value]
           ),
           "ConsentAttributeChange"
         );

@@ -190,5 +190,50 @@ export async function seedDemoData(db) {
         ]
       );
     }
+
+    for (const cv of seed.consentVersions ?? []) {
+      await tx.query(
+        `INSERT INTO consent_versions (
+          id, tenant_id, version_number, effective_from,
+          retention_period_days, grievance_officer_email,
+          data_residency_zones, is_cross_border_transfer,
+          created_by_user_id, created_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        ON CONFLICT (id) DO NOTHING`,
+        [
+          cv.id,
+          cv.tenant_id,
+          cv.version_number,
+          cv.effective_from,
+          cv.retention_period_days,
+          cv.grievance_officer_email,
+          cv.data_residency_zones ?? [],
+          cv.is_cross_border_transfer ?? false,
+          cv.created_by_user_id ?? null,
+          cv.created_at
+        ]
+      );
+    }
+
+    if (seed.appConfig) {
+      const ac = seed.appConfig;
+      await tx.query(
+        `INSERT INTO app_config (
+          tenant_id, deployment_region, is_cross_border_transfer,
+          data_controller_name, grievance_officer_email,
+          retention_period_days, updated_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT (tenant_id) DO NOTHING`,
+        [
+          ac.tenant_id,
+          ac.deployment_region,
+          ac.is_cross_border_transfer ?? false,
+          ac.data_controller_name,
+          ac.grievance_officer_email,
+          ac.retention_period_days,
+          ac.updated_at
+        ]
+      );
+    }
   });
 }
