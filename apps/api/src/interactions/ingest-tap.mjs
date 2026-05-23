@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { nextId } from "../store.mjs";
 import { HttpError } from "../http-error.mjs";
 
-export async function ingestTapEvent({ repos, body, resources, cloudReceivedAt = null, attendeeId = null }) {
+export async function ingestTapEvent({ repos, body, resources, cloudReceivedAt = null, attendeeId = null, initialConsentStatus = "pending" }) {
   if (resources.assignment && (resources.assignment.event_id !== body.event_id || resources.assignment.stall_id !== body.stall_id)) {
     throw new HttpError(403, "Tap event/stall must match active device assignment");
   }
@@ -61,8 +61,8 @@ export async function ingestTapEvent({ repos, body, resources, cloudReceivedAt =
         tap_event_id: createdTap.id,
         attendee_id: attendeeId,
         captured_by_user_id: null,
-        status: "consent_required",
-        consent_status: "pending",
+        status: initialConsentStatus === "staff_exempt" ? "active" : "consent_required",
+        consent_status: initialConsentStatus,
         classification: "cold",
         sponsor_click_count: 0,
         created_at: now,

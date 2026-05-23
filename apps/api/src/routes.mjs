@@ -8448,10 +8448,28 @@ export function registerRoutes(router) {
         attendee = await repos.attendees.create({
           id: newAttendeeId,
           tenant_id: tenantId,
+          event_id: body.event_id,
+          registration_source: "import",
+          age_confirmed_18_plus: false,
           created_at: new Date().toISOString()
         });
         await repos.attendees.setNfcUidHash(tenantId, newAttendeeId, nfcUidHash);
         attendee.nfc_uid_hash = nfcUidHash;
+      }
+
+      const passType = attendee.pass_type_id
+        ? await repos.passTypes.findByIdOrNull(tenantId, attendee.pass_type_id)
+        : null;
+      const nfcBehaviour = passType?.nfc_behaviour ?? "consent";
+
+      if (nfcBehaviour === "skip") {
+        return {
+          result: "access_granted",
+          attendee_id: attendee.id,
+          nfc_uid_hash: nfcUidHash,
+          is_new_attendee: isNewAttendee,
+          consent_url: null
+        };
       }
 
       const nfcBody = {
@@ -8464,7 +8482,8 @@ export function registerRoutes(router) {
         repos,
         body: nfcBody,
         resources,
-        attendeeId: attendee.id
+        attendeeId: attendee.id,
+        initialConsentStatus: nfcBehaviour === "access_only" ? "staff_exempt" : "pending"
       });
       const interaction = interactionResult.interaction;
 
