@@ -363,6 +363,8 @@ export function createSeedState() {
     pentestFindings: [],
     apiClients: [],
     nfcReaders: [],
+    nfcTagBatches: [],
+    nfcTagBatchUids: [],
     privacyAuditLogs: [],
     tenantOffboardingJobs: [],
     sessionSecret: "pilot-attendee-session-secret",

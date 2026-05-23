@@ -3002,6 +3002,178 @@ export function registerRoutes(router) {
   });
 
   router.addRoute({
+    id: "organizer-attendees-import",
+    method: "POST",
+    path: "/organizer/events/:eventId/attendees/import",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    validate: (body) => {
+      if (!Array.isArray(body.rows) || !body.rows.length) {
+        throw new HttpError(400, "rows must be a non-empty array");
+      }
+      for (const [i, row] of body.rows.entries()) {
+        if (!row.full_name || typeof row.full_name !== "string") {
+          throw new HttpError(400, `rows[${i}].full_name is required`);
+        }
+      }
+      return body;
+    },
+    handler: async ({ repos, params, body, principal }) => {
+      const tenantId = principal.tenant_id;
+      await repos.events.findById(tenantId, params.eventId);
+      const now = new Date().toISOString();
+      const results = [];
+      for (const row of body.rows) {
+        const attendeeId = nextId("att");
+        const attendee = await repos.attendees.create({
+          id: attendeeId,
+          tenant_id: tenantId,
+          event_id: params.eventId,
+          pass_type_id: row.pass_type_id ?? null,
+          registration_source: "bulk_import",
+          nfc_batch_id: null,
+          age_confirmed_18_plus: false,
+          created_at: now
+        });
+        const profile = await repos.attendeeProfiles.upsert({
+          attendee_id: attendeeId,
+          full_name: row.full_name,
+          email: row.email ?? null,
+          phone: row.phone ?? null,
+          company_name: row.company_name ?? null,
+          updated_at: now
+        });
+        results.push({ ...attendee, profile });
+      }
+      return { imported: results.length, attendees: results };
+    },
+    statusCode: 201,
+    auditEventType: "organizer.attendees.import"
+  });
+
+  router.addRoute({
+    id: "organizer-nfc-batches-create",
+    method: "POST",
+    path: "/organizer/events/:eventId/nfc-batches",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    validate: (body) => {
+      required(body, ["label", "quantity"]);
+      if (typeof body.quantity !== "number" || body.quantity < 0) {
+        throw new HttpError(400, "quantity must be a non-negative number");
+      }
+      return body;
+    },
+    handler: async ({ repos, params, body, principal }) => {
+      const tenantId = principal.tenant_id;
+      await repos.events.findById(tenantId, params.eventId);
+      const now = new Date().toISOString();
+      return repos.nfcTagBatches.create({
+        id: nextId("nfcb"),
+        tenant_id: tenantId,
+        event_id: params.eventId,
+        label: body.label,
+        pass_type_id: body.pass_type_id ?? null,
+        quantity: body.quantity,
+        issued_by_user_id: principal.user_id ?? null,
+        issued_at: now,
+        created_at: now
+      });
+    },
+    statusCode: 201,
+    auditEventType: "organizer.nfc_batch.create"
+  });
+
+  router.addRoute({
+    id: "organizer-nfc-batches-list",
+    method: "GET",
+    path: "/organizer/events/:eventId/nfc-batches",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const tenantId = principal.tenant_id;
+      await repos.events.findById(tenantId, params.eventId);
+      return repos.nfcTagBatches.list(tenantId, params.eventId);
+    },
+    auditEventType: "organizer.nfc_batches.list"
+  });
+
+  router.addRoute({
+    id: "organizer-nfc-batch-uids-add",
+    method: "POST",
+    path: "/organizer/events/:eventId/nfc-batches/:batchId/uids",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    validate: (body) => {
+      if (!Array.isArray(body.uids) || !body.uids.length) {
+        throw new HttpError(400, "uids must be a non-empty array of strings");
+      }
+      return body;
+    },
+    handler: async ({ repos, params, body, principal }) => {
+      const tenantId = principal.tenant_id;
+      const batch = await repos.nfcTagBatches.findById(tenantId, params.batchId);
+      if (!batch || batch.event_id !== params.eventId) {
+        throw new HttpError(404, "NFC tag batch not found");
+      }
+      const now = new Date().toISOString();
+      const records = body.uids.map((uid) => ({
+        id: nextId("nfcuid"),
+        tenant_id: tenantId,
+        batch_id: params.batchId,
+        nfc_uid: uid,
+        status: "pre_registered",
+        assigned_to_attendee_id: null,
+        created_at: now
+      }));
+      const added = await repos.nfcTagBatchUids.addMany(records);
+      return { added: added.length, uids: added };
+    },
+    statusCode: 201,
+    auditEventType: "organizer.nfc_batch_uids.add"
+  });
+
+  router.addRoute({
+    id: "organizer-import-staff-assign",
+    method: "POST",
+    path: "/organizer/events/:eventId/import-staff",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    validate: (body) => {
+      required(body, ["user_id"]);
+      return body;
+    },
+    handler: async ({ repos, params, body, principal }) => {
+      const tenantId = principal.tenant_id;
+      await repos.events.findById(tenantId, params.eventId);
+      await repos.users.findById(tenantId, body.user_id);
+      const now = new Date().toISOString();
+      return repos.userRoleAssignments.create({
+        id: nextId("ura"),
+        tenant_id: tenantId,
+        user_id: body.user_id,
+        role: "organizer_import_staff",
+        event_id: params.eventId,
+        stall_ids: [],
+        sponsor_package_id: null,
+        assigned_by_user_id: principal.user_id,
+        created_at: now
+      });
+    },
+    statusCode: 201,
+    auditEventType: "organizer.import_staff.assign"
+  });
+
+  router.addRoute({
+    id: "organizer-import-staff-revoke",
+    method: "DELETE",
+    path: "/organizer/events/:eventId/import-staff/:userId",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const tenantId = principal.tenant_id;
+      await repos.events.findById(tenantId, params.eventId);
+      await repos.userRoleAssignments.deleteByUserAndRole(tenantId, params.userId, "organizer_import_staff");
+      return { ok: true };
+    },
+    auditEventType: "organizer.import_staff.revoke"
+  });
+
+  router.addRoute({
     id: "organizer-downstream-deletion-confirm",
     method: "POST",
     path: "/organizer/events/:eventId/downstream-deletions/:recordId",

@@ -14,7 +14,8 @@ export function enforceRoleScope(ctx) {
     throw new HttpError(401, "Authentication required");
   }
 
-  if (!route.allowedRoles.includes(principal.role)) {
+  const principalRoles = principal.roles ?? [principal.role];
+  if (!route.allowedRoles.some((r) => principalRoles.includes(r))) {
     throw new HttpError(403, "Role not permitted");
   }
 

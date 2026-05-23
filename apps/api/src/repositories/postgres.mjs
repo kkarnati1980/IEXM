@@ -3827,6 +3827,12 @@ export function createPostgresRepositories(db, securityContext = null) {
           await execute("DELETE FROM user_role_assignments WHERE tenant_id=$1 AND id=$2 RETURNING *", [tenantId, id]),
           "User role assignment"
         );
+      },
+      async deleteByUserAndRole(tenantId, userId, role) {
+        await execute(
+          "DELETE FROM user_role_assignments WHERE tenant_id=$1 AND user_id=$2 AND role=$3",
+          [tenantId, userId, role]
+        );
       }
     },
     apiClients: {
@@ -4310,6 +4316,78 @@ export function createPostgresRepositories(db, securityContext = null) {
           ),
           'StallFolderAccessLog'
         )
+      }
+    },
+
+    nfcTagBatches: {
+      async create(record) {
+        return one(
+          await execute(
+            `INSERT INTO nfc_tag_batches (
+              id, tenant_id, event_id, label, pass_type_id, quantity,
+              issued_by_user_id, issued_at, created_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+            [
+              record.id, record.tenant_id, record.event_id, record.label,
+              record.pass_type_id ?? null, record.quantity ?? 0,
+              record.issued_by_user_id ?? null,
+              record.issued_at ?? new Date().toISOString(),
+              record.created_at ?? new Date().toISOString()
+            ]
+          ),
+          "NFC tag batch"
+        );
+      },
+      async list(tenantId, eventId) {
+        return many(await execute(
+          `SELECT b.*, pt.name AS pass_type_name, pt.colour_hex AS pass_type_colour,
+                  COUNT(u.id)::int AS uid_count
+           FROM nfc_tag_batches b
+           LEFT JOIN pass_types pt ON pt.id = b.pass_type_id
+           LEFT JOIN nfc_tag_batch_uids u ON u.batch_id = b.id
+           WHERE b.tenant_id = $1 AND b.event_id = $2
+           GROUP BY b.id, pt.name, pt.colour_hex
+           ORDER BY b.created_at DESC`,
+          [tenantId, eventId]
+        ));
+      },
+      async findById(tenantId, id) {
+        return maybeOne(
+          await execute(
+            "SELECT * FROM nfc_tag_batches WHERE tenant_id=$1 AND id=$2",
+            [tenantId, id]
+          )
+        );
+      }
+    },
+
+    nfcTagBatchUids: {
+      async addMany(records) {
+        if (!records.length) return [];
+        const values = records.map((_, i) => {
+          const base = i * 5;
+          return `($${base+1},$${base+2},$${base+3},$${base+4},$${base+5})`;
+        }).join(",");
+        const params = records.flatMap((r) => [
+          r.id, r.tenant_id, r.batch_id, r.nfc_uid, r.created_at ?? new Date().toISOString()
+        ]);
+        return many(await execute(
+          `INSERT INTO nfc_tag_batch_uids (id, tenant_id, batch_id, nfc_uid, created_at)
+           VALUES ${values} RETURNING *`,
+          params
+        ));
+      },
+      async listByBatch(tenantId, batchId) {
+        return many(await execute(
+          "SELECT * FROM nfc_tag_batch_uids WHERE tenant_id=$1 AND batch_id=$2 ORDER BY created_at",
+          [tenantId, batchId]
+        ));
+      },
+      async findByUid(tenantId, nfcUid) {
+        return maybeOne(await execute(
+          "SELECT * FROM nfc_tag_batch_uids WHERE tenant_id=$1 AND nfc_uid=$2",
+          [tenantId, nfcUid]
+        ));
       }
     }
   };

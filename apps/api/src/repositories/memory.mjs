@@ -340,6 +340,12 @@ export function createMemoryRepositories(state) {
         if (index === -1) throw new HttpError(404, "User role assignment not found");
         const [deleted] = state.userRoleAssignments.splice(index, 1);
         return deleted;
+      },
+      async deleteByUserAndRole(tenantId, userId, role) {
+        const index = state.userRoleAssignments.findIndex(
+          (entry) => entry.tenant_id === tenantId && entry.user_id === userId && entry.role === role
+        );
+        if (index !== -1) state.userRoleAssignments.splice(index, 1);
       }
     },
     deviceCredentials: {
@@ -1793,7 +1799,39 @@ export function createMemoryRepositories(state) {
         state.stallFolderAccessLog.push(entry)
         return entry
       }
-    }
+    },
+
+    nfcTagBatches: {
+      async create(record) {
+        if (!state.nfcTagBatches) state.nfcTagBatches = [];
+        state.nfcTagBatches.push(record);
+        return record;
+      },
+      async list(tenantId, eventId) {
+        return (state.nfcTagBatches ?? [])
+          .filter((b) => b.tenant_id === tenantId && b.event_id === eventId)
+          .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+      },
+      async findById(tenantId, id) {
+        return (state.nfcTagBatches ?? []).find((b) => b.tenant_id === tenantId && b.id === id) ?? null;
+      }
+    },
+
+    nfcTagBatchUids: {
+      async addMany(records) {
+        if (!state.nfcTagBatchUids) state.nfcTagBatchUids = [];
+        state.nfcTagBatchUids.push(...records);
+        return records;
+      },
+      async listByBatch(tenantId, batchId) {
+        return (state.nfcTagBatchUids ?? [])
+          .filter((u) => u.tenant_id === tenantId && u.batch_id === batchId);
+      },
+      async findByUid(tenantId, nfcUid) {
+        return (state.nfcTagBatchUids ?? []).find((u) => u.tenant_id === tenantId && u.nfc_uid === nfcUid) ?? null;
+      }
+    },
+
   };
 
   return repos;
