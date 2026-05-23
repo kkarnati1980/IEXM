@@ -2916,6 +2916,61 @@ export function registerRoutes(router) {
   });
 
   router.addRoute({
+    id: "organizer-attendees-list",
+    method: "GET",
+    path: "/organizer/events/:eventId/attendees",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    handler: async ({ repos, params, principal }) => {
+      const tenantId = principal.tenant_id;
+      await repos.events.findById(tenantId, params.eventId);
+      const attendees = await repos.attendees.listByEvent(tenantId, params.eventId);
+      const profiles = await Promise.all(
+        attendees.map((a) => repos.attendeeProfiles.findByAttendeeId(a.id))
+      );
+      return attendees.map((a, i) => ({ ...a, profile: profiles[i] ?? null }));
+    },
+    auditEventType: "organizer.attendees.list"
+  });
+
+  router.addRoute({
+    id: "organizer-attendees-create",
+    method: "POST",
+    path: "/organizer/events/:eventId/attendees",
+    allowedRoles: ["organizer_admin", "platform_admin"],
+    validate: (body) => {
+      required(body, ["full_name"]);
+      return body;
+    },
+    handler: async ({ repos, params, body, principal }) => {
+      const tenantId = principal.tenant_id;
+      await repos.events.findById(tenantId, params.eventId);
+      const now = new Date().toISOString();
+      const attendeeId = nextId("att");
+      const attendee = await repos.attendees.create({
+        id: attendeeId,
+        tenant_id: tenantId,
+        event_id: params.eventId,
+        pass_type_id: body.pass_type_id ?? null,
+        registration_source: "walk_in",
+        nfc_batch_id: body.nfc_batch_id ?? null,
+        age_confirmed_18_plus: body.age_confirmed_18_plus ?? false,
+        created_at: now
+      });
+      const profile = await repos.attendeeProfiles.upsert({
+        attendee_id: attendeeId,
+        full_name: body.full_name,
+        email: body.email ?? null,
+        phone: body.phone ?? null,
+        company_name: body.company_name ?? null,
+        updated_at: now
+      });
+      return { ...attendee, profile };
+    },
+    statusCode: 201,
+    auditEventType: "organizer.attendees.create"
+  });
+
+  router.addRoute({
     id: "organizer-downstream-deletion-confirm",
     method: "POST",
     path: "/organizer/events/:eventId/downstream-deletions/:recordId",
