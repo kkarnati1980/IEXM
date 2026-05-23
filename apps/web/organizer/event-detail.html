@@ -958,7 +958,7 @@
           await api(`/organizer/events/${encodeURIComponent(eventId)}/attendees`, {
             method: "POST",
             body: {
-              name,
+              full_name: name,
               email: document.getElementById("wi-email")?.value?.trim() || undefined,
               phone: document.getElementById("wi-phone")?.value?.trim() || undefined,
               company: document.getElementById("wi-company")?.value?.trim() || undefined,

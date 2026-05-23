@@ -2969,6 +2969,7 @@ export function registerRoutes(router) {
     path: "/organizer/events/:eventId/attendees",
     allowedRoles: ["organizer_admin", "platform_admin"],
     validate: (body) => {
+      if (body.name && !body.full_name) body.full_name = body.name;
       required(body, ["full_name"]);
       return body;
     },
