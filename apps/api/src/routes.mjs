@@ -1367,8 +1367,13 @@ export function registerRoutes(router) {
         (await repos.consents.findByInteractionId(interaction.tenant_id, interaction.id)) ?? {
           vendor_release_allowed: false,
           sponsor_release_allowed: false,
+          organizer_release_allowed: false,
           revoked_at: null
         };
+      const [consentVersion, appCfg] = await Promise.all([
+        repos.consentVersions.findLatestByTenant(interaction.tenant_id).catch(() => null),
+        repos.appConfig.findByTenant(interaction.tenant_id).catch(() => null)
+      ]);
       const consentEvents = typeof repos.consentEvents.listByInteraction === "function"
         ? await repos.consentEvents.listByInteraction(interaction.tenant_id, interaction.id)
         : [];
@@ -1424,6 +1429,12 @@ export function registerRoutes(router) {
         communication_suppressions: communicationSuppressions,
         wallet_passes: walletPasses.map(serializeWalletPass),
         connections: connections.sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at)),
+        consent_config: {
+          retention_period_days: consentVersion?.retention_period_days ?? appCfg?.retention_period_days ?? 365,
+          grievance_officer_email: consentVersion?.grievance_officer_email ?? appCfg?.grievance_officer_email ?? null,
+          data_residency_zone: appCfg?.deployment_region ?? "global",
+          is_cross_border_transfer: appCfg?.is_cross_border_transfer ?? false
+        },
         privacy: {
           sponsor_pii_enabled: resources.eventPolicy.sponsor_pii_enabled,
           vendor_exports_enabled: resources.eventPolicy.vendor_exports_enabled,

@@ -1117,10 +1117,25 @@
                 style="width:20px;height:20px;accent-color:#22c55e;cursor:pointer;flex-shrink:0;">
               <span id="cm-company-name" style="font-size:16px;color:#f4f1ea;">This exhibitor</span>
             </label>
-            <label style="display:flex;align-items:center;gap:12px;cursor:pointer;">
+            <label style="display:flex;align-items:center;gap:12px;cursor:pointer;margin-bottom:10px;">
               <input type="checkbox" id="cm-sponsor-release"
                 style="width:20px;height:20px;accent-color:#22c55e;cursor:pointer;flex-shrink:0;">
               <span style="font-size:16px;color:#f4f1ea;">Event sponsors</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:12px;cursor:pointer;">
+              <input type="checkbox" id="cm-organizer-release"
+                style="width:20px;height:20px;accent-color:#22c55e;cursor:pointer;flex-shrink:0;">
+              <span style="font-size:16px;color:#f4f1ea;">Event organiser</span>
+            </label>
+          </div>
+
+          <!-- Age gate (B8) -->
+          <div style="background:rgba(255,220,100,0.08);border:1px solid rgba(255,220,100,0.2);
+                      border-radius:14px;padding:16px 24px;max-width:480px;width:100%;margin:0 auto 20px;text-align:left;">
+            <label style="display:flex;align-items:center;gap:12px;cursor:pointer;">
+              <input type="checkbox" id="cm-age-gate"
+                style="width:20px;height:20px;accent-color:#f59e0b;cursor:pointer;flex-shrink:0;">
+              <span style="font-size:15px;color:#f4f1ea;font-weight:500;">I confirm I am 18 years of age or older</span>
             </label>
           </div>
 
@@ -1168,6 +1183,16 @@
           <p style="margin-top:20px;font-size:12px;color:rgba(244,241,234,0.35);">
             Your anonymised visit is always recorded for event analytics.
           </p>
+
+          <!-- Disclosure footer (B9-B11) -->
+          <div id="cm-disclosure-footer"
+               style="margin-top:24px;padding:16px 20px;background:rgba(255,255,255,0.04);
+                      border-radius:12px;max-width:480px;width:100%;text-align:left;
+                      font-size:11px;color:rgba(244,241,234,0.4);line-height:1.7;">
+            <p id="cm-retention-disclosure" style="margin:0 0 4px;">Data retained for up to 365 days from event close.</p>
+            <p id="cm-residency-disclosure" style="margin:0 0 4px;">Data stored in region: Global.</p>
+            <p id="cm-grievance-disclosure" style="margin:0;">Privacy concerns? Contact: <span id="cm-grievance-email">privacy@event.com</span></p>
+          </div>
         </div>
         <!-- Done state — revealed after Accept/Decline, text set by JS -->
         <div id="consent-done" hidden>
@@ -1494,22 +1519,25 @@
         const stallEl = document.getElementById("cm-stall-name");
         if (stallEl) stallEl.textContent = "";
 
-        // CR-06 §10.3: enable accept button only after first checkbox interaction
+        // CR-06 §10.3: enable accept button only after age gate checked + at least one other checkbox
         const _acceptBtn = document.getElementById("cm-accept");
-        const _cbIds = ["cm-vendor-release", "cm-sponsor-release",
-                        "cm-ch-email", "cm-ch-sms", "cm-ch-whatsapp"];
+        const _sharingIds = ["cm-vendor-release", "cm-sponsor-release", "cm-organizer-release",
+                             "cm-ch-email", "cm-ch-sms", "cm-ch-whatsapp"];
+        const _cbIds = [..._sharingIds, "cm-age-gate"];
+        function _updateAcceptBtn() {
+          if (!_acceptBtn) return;
+          const ageGateChecked = document.getElementById("cm-age-gate")?.checked ?? false;
+          const anySharing = _sharingIds.some(function(cid) {
+            const el = document.getElementById(cid);
+            return el && el.checked;
+          });
+          const canAccept = ageGateChecked && anySharing;
+          _acceptBtn.disabled = !canAccept;
+          _acceptBtn.style.opacity = canAccept ? "1" : "0.45";
+        }
         _cbIds.forEach(function(id) {
           const cb = document.getElementById(id);
-          if (cb) cb.addEventListener("change", function() {
-            if (_acceptBtn) {
-              const anyChecked = _cbIds.some(function(cid) {
-                const el = document.getElementById(cid);
-                return el && el.checked;
-              });
-              _acceptBtn.disabled = !anyChecked;
-              _acceptBtn.style.opacity = anyChecked ? "1" : "0.45";
-            }
-          });
+          if (cb) cb.addEventListener("change", _updateAcceptBtn);
         });
 
         // CR-02: fetch vendor company name from attendee session endpoint
@@ -1525,6 +1553,24 @@
               const nameEl = document.getElementById("cm-company-name");
               if (nameEl) nameEl.textContent = companyName;
               if (stallEl) stallEl.textContent = data.current_connection?.stall_name || "";
+            }
+            // B9-B11: populate disclosure footer from consent_config
+            const cfg = data.consent_config;
+            if (cfg) {
+              const retEl = document.getElementById("cm-retention-disclosure");
+              const resEl = document.getElementById("cm-residency-disclosure");
+              const grievEl = document.getElementById("cm-grievance-email");
+              if (retEl && cfg.retention_period_days) {
+                retEl.textContent = `Data retained for up to ${cfg.retention_period_days} days from event close.`;
+              }
+              if (resEl) {
+                const zone = cfg.data_residency_zone || "Global";
+                const xborder = cfg.is_cross_border_transfer ? " Cross-border transfer may occur." : "";
+                resEl.textContent = `Data stored in region: ${zone}.${xborder}`;
+              }
+              if (grievEl && cfg.grievance_officer_email) {
+                grievEl.textContent = cfg.grievance_officer_email;
+              }
             }
           }
           // Non-ok (incl. 422 "Exhibitor not consent-ready") — leave fallback text
@@ -1544,8 +1590,10 @@
         // where apiBase would normally be stored in localStorage, and the page is
         // always served by the same origin as the API on Railway/Pi.
         const _apiBase = _p.get("apiBase") || location.origin;
-        const _vendor  = document.getElementById("cm-vendor-release")?.checked  ?? false;
-        const _sponsor = document.getElementById("cm-sponsor-release")?.checked ?? false;
+        const _vendor    = document.getElementById("cm-vendor-release")?.checked    ?? false;
+        const _sponsor   = document.getElementById("cm-sponsor-release")?.checked   ?? false;
+        const _organizer = document.getElementById("cm-organizer-release")?.checked ?? false;
+        const _ageGate   = document.getElementById("cm-age-gate")?.checked          ?? false;
         const _channels = {
           email:    document.getElementById("cm-ch-email")?.checked    ?? false,
           sms:      document.getElementById("cm-ch-sms")?.checked      ?? false,
@@ -1560,6 +1608,8 @@
               interaction_id: _iid,
               vendor_release_allowed: _vendor,
               sponsor_release_allowed: _sponsor,
+              organizer_release_allowed: _organizer,
+              age_confirmed_18_plus: _ageGate,
               communication_channel_consents: _channels
             })
           });
