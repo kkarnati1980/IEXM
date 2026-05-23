@@ -11146,6 +11146,12 @@ function applyLeadInboxFilters(items, filters) {
 }
 
 async function buildLeadItem(repos, tenantId, interaction, eventPolicy) {
+  const attendee = interaction.attendee_id
+    ? await repos.attendees.findById(tenantId, interaction.attendee_id).catch(() => null)
+    : null;
+  const passType = attendee?.pass_type_id
+    ? await repos.passTypes.findByIdOrNull(tenantId, attendee.pass_type_id)
+    : null;
   const profile = (interaction.attendee_id
     ? await repos.attendeeProfiles.findByAttendeeId(interaction.attendee_id)
     : null) ?? {};
@@ -11286,7 +11292,9 @@ async function buildLeadItem(repos, tenantId, interaction, eventPolicy) {
     score_history: scoreHistory,
     score_history_count: scoreHistory.length,
     latest_score_at: scoreHistory[0]?.created_at ?? null,
-    latest_note_at: notes.at(-1)?.created_at ?? null
+    latest_note_at: notes.at(-1)?.created_at ?? null,
+    pass_type_name: passType?.name ?? null,
+    pass_type_colour: passType?.colour_hex ?? null
   };
 }
 
