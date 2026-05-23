@@ -455,6 +455,9 @@ export function createMemoryRepositories(state) {
       async listByTenant(tenantId) {
         return state.attendees.filter((entry) => entry.tenant_id === tenantId);
       },
+      async listByEvent(tenantId, eventId) {
+        return state.attendees.filter((entry) => entry.tenant_id === tenantId && entry.event_id === eventId);
+      },
       async findByNfcUidHash(tenantId, hash) {
         return state.attendees.find(
           (entry) => entry.tenant_id === tenantId && entry.nfc_uid_hash === hash

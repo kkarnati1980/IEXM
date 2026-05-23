@@ -841,8 +841,15 @@ export function createPostgresRepositories(db, securityContext = null) {
       async create(record) {
         return one(
           await execute(
-            "INSERT INTO attendees (id, tenant_id, created_at) VALUES ($1,$2,$3) RETURNING *",
-            [record.id, record.tenant_id, record.created_at]
+            `INSERT INTO attendees
+               (id, tenant_id, event_id, pass_type_id, registration_source, nfc_batch_id, age_confirmed_18_plus, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+            [
+              record.id, record.tenant_id, record.event_id ?? null,
+              record.pass_type_id ?? null, record.registration_source ?? "import",
+              record.nfc_batch_id ?? null, record.age_confirmed_18_plus ?? false,
+              record.created_at
+            ]
           ),
           "Attendee"
         );
@@ -852,6 +859,12 @@ export function createPostgresRepositories(db, securityContext = null) {
       },
       async listByTenant(tenantId) {
         return many(await execute("SELECT * FROM attendees WHERE tenant_id = $1 ORDER BY created_at DESC", [tenantId]));
+      },
+      async listByEvent(tenantId, eventId) {
+        return many(await execute(
+          "SELECT * FROM attendees WHERE tenant_id = $1 AND event_id = $2 ORDER BY created_at DESC",
+          [tenantId, eventId]
+        ));
       },
       async update(record) {
         return one(

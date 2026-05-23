@@ -406,11 +406,11 @@ export function applyDemoSampleData(state) {
   });
 
   const attendees = [
-    { id: "att-ie-001", tenant_id: tenantId, created_at: now },
-    { id: "att-ie-002", tenant_id: tenantId, created_at: now },
-    { id: "att-ie-003", tenant_id: tenantId, created_at: now },
-    { id: "att-ie-004", tenant_id: tenantId, created_at: now },
-    { id: "att-ie-005", tenant_id: tenantId, created_at: now }
+    { id: "att-ie-001", tenant_id: tenantId, event_id: eventId, pass_type_id: null, registration_source: "import", nfc_batch_id: null, age_confirmed_18_plus: false, created_at: now },
+    { id: "att-ie-002", tenant_id: tenantId, event_id: eventId, pass_type_id: null, registration_source: "import", nfc_batch_id: null, age_confirmed_18_plus: false, created_at: now },
+    { id: "att-ie-003", tenant_id: tenantId, event_id: eventId, pass_type_id: null, registration_source: "import", nfc_batch_id: null, age_confirmed_18_plus: false, created_at: now },
+    { id: "att-ie-004", tenant_id: tenantId, event_id: eventId, pass_type_id: null, registration_source: "import", nfc_batch_id: null, age_confirmed_18_plus: false, created_at: now },
+    { id: "att-ie-005", tenant_id: tenantId, event_id: eventId, pass_type_id: null, registration_source: "import", nfc_batch_id: null, age_confirmed_18_plus: false, created_at: now }
   ];
 
   const profiles = [
