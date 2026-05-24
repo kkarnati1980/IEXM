@@ -172,13 +172,15 @@ export function createSeedState() {
   const demoAdmin     = { ...user("demo-admin",     "admin@test.com",     "Admin User",     "platform_admin",  platformOrg.id, tenant.id), password_hash: DEMO_PW.admin };
   const demoOrganizer = { ...user("demo-organizer", "organizer@test.com", "Organizer User", "organizer_admin", organizerOrg.id, tenant.id), password_hash: DEMO_PW.organizer };
   const demoVendor    = { ...user("demo-vendor",    "vendor@test.com",    "Vendor User",    "vendor_manager",  vendorOrg.id,    tenant.id), password_hash: DEMO_PW.vendor };
+  // DEV/TEST ONLY — second vendor user for editor≠approver tests (MT-VP-01). Do not promote to prod.
+  const demoVendorApprover = { ...user("demo-vendor-approver", "vendor-approver@test.com", "Vendor Approver", "vendor_manager", vendorOrg.id, tenant.id), password_hash: DEMO_PW.vendor };
   const demoSponsor   = { ...user("demo-sponsor",   "sponsor@test.com",   "Sponsor User",   "sponsor_user",    sponsorOrg.id,   tenant.id), password_hash: DEMO_PW.sponsor };
   const demoOps       = { ...user("demo-ops",       "ops@test.com",       "Ops User",       "ops_user",        platformOrg.id,  tenant.id), password_hash: DEMO_PW.ops };
 
   return {
     tenants: [tenant],
     organizations: [organizerOrg, vendorOrg, sponsorOrg, platformOrg],
-    users: [organizer, vendor, sponsor, ops, platform1, platform2, platform3, demoAdmin, demoOrganizer, demoVendor, demoSponsor, demoOps],
+    users: [organizer, vendor, sponsor, ops, platform1, platform2, platform3, demoAdmin, demoOrganizer, demoVendor, demoVendorApprover, demoSponsor, demoOps],
     events: [event, eventSecondary],
     halls: [hall, hallSecondary],
     stalls: [stall, stallSameEvent, stallSecondary],
@@ -221,7 +223,8 @@ export function createSeedState() {
       // Demo test users scoped to IndiaExpo 2026
       { id: "ura-demo-admin",     tenant_id: tenant.id, user_id: demoAdmin.id,     role: "platform_admin",  event_id: null,          stall_ids: [],          sponsor_package_id: null,         assigned_by_user_id: demoAdmin.id,     created_at: now },
       { id: "ura-demo-organizer", tenant_id: tenant.id, user_id: demoOrganizer.id, role: "organizer_admin", event_id: IE_EVENT_ID,   stall_ids: [],          sponsor_package_id: null,         assigned_by_user_id: demoAdmin.id,     created_at: now },
-      { id: "ura-demo-vendor",    tenant_id: tenant.id, user_id: demoVendor.id,    role: "vendor_manager",  event_id: IE_EVENT_ID,   stall_ids: [IE_STALL_A1], sponsor_package_id: null,       assigned_by_user_id: demoOrganizer.id, created_at: now },
+      { id: "ura-demo-vendor",          tenant_id: tenant.id, user_id: demoVendor.id,         role: "vendor_manager", event_id: IE_EVENT_ID, stall_ids: [IE_STALL_A1], sponsor_package_id: null, assigned_by_user_id: demoOrganizer.id, created_at: now },
+      { id: "ura-demo-vendor-approver", tenant_id: tenant.id, user_id: demoVendorApprover.id, role: "vendor_manager", event_id: IE_EVENT_ID, stall_ids: [IE_STALL_A1], sponsor_package_id: null, assigned_by_user_id: demoOrganizer.id, created_at: now },
       { id: "ura-demo-sponsor",   tenant_id: tenant.id, user_id: demoSponsor.id,   role: "sponsor_user",    event_id: IE_EVENT_ID,   stall_ids: [],          sponsor_package_id: IE_PKG_GOLD,  assigned_by_user_id: demoOrganizer.id, created_at: now },
       { id: "ura-demo-ops",       tenant_id: tenant.id, user_id: demoOps.id,       role: "ops_user",        event_id: IE_EVENT_ID,   stall_ids: [],          sponsor_package_id: null,         assigned_by_user_id: demoAdmin.id,     created_at: now }
     ],
@@ -365,6 +368,10 @@ export function createSeedState() {
     nfcReaders: [],
     nfcTagBatches: [],
     nfcTagBatchUids: [],
+    vendorProfiles: [],
+    stallBranding: [],
+    moderationItems: [],
+    moderationNotes: [],
     privacyAuditLogs: [],
     tenantOffboardingJobs: [],
     sessionSecret: "pilot-attendee-session-secret",
@@ -390,7 +397,8 @@ export function createSeedState() {
       },
       "demo-admin-token":     principalForUser(demoAdmin,     {}),
       "demo-organizer-token": principalForUser(demoOrganizer, { event_ids: [IE_EVENT_ID] }),
-      "demo-vendor-token":    principalForUser(demoVendor,    { event_ids: [IE_EVENT_ID], stall_ids: [IE_STALL_A1] }),
+      "demo-vendor-token":          principalForUser(demoVendor,         { event_ids: [IE_EVENT_ID], stall_ids: [IE_STALL_A1] }),
+      "demo-vendor-approver-token": principalForUser(demoVendorApprover,  { event_ids: [IE_EVENT_ID], stall_ids: [IE_STALL_A1] }),
       "demo-sponsor-token":   principalForUser(demoSponsor,   { event_ids: [IE_EVENT_ID], sponsor_organization_ids: [sponsorOrg.id] }),
       "demo-ops-token":       principalForUser(demoOps,       {})
     }
@@ -554,7 +562,9 @@ function user(id, email, display_name, role, organization_id, tenant_id) {
     mfa_required: false,
     invited_at: null,
     deleted_at: null,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    vendor_content_editor:   role === "vendor_manager",
+    vendor_content_approver: role === "vendor_manager"
   };
 }
 
@@ -566,6 +576,8 @@ function principalForUser(userRecord, extras) {
     role: userRecord.role,
     user_id: userRecord.id,
     organization_id: userRecord.organization_id,
+    vendor_content_editor:   userRecord.vendor_content_editor   ?? false,
+    vendor_content_approver: userRecord.vendor_content_approver ?? false,
     ...extras
   };
 }

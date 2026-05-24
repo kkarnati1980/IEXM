@@ -40,7 +40,9 @@ export function buildUserPrincipal(user, scopes = [], roleAssignments = []) {
     event_ids: [...eventIds],
     stall_ids: [...stallIds],
     sponsor_organization_ids: [...sponsorOrganizationIds],
-    sponsor_package_ids: [...sponsorPackageIds]
+    sponsor_package_ids: [...sponsorPackageIds],
+    vendor_content_editor: user.vendor_content_editor ?? false,
+    vendor_content_approver: user.vendor_content_approver ?? false
   };
 }
 

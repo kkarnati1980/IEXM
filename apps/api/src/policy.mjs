@@ -253,6 +253,25 @@ function assertBreakGlassScope(ctx, requiredPermission) {
   }
 }
 
+// ── Moderation predicates (CR-VENDOR §15.1 / Amendment 6) ───────────────────
+// Pure functions — no HttpError. Callers throw on false return.
+
+export function canSubmitModeration(principal) {
+  return principal.vendor_content_editor === true;
+}
+
+export function canApproveModeration(principal, editorUserId) {
+  return principal.vendor_content_approver === true && principal.user_id !== editorUserId;
+}
+
+export function canRejectModeration(principal, editorUserId) {
+  return canApproveModeration(principal, editorUserId);
+}
+
+export function canReadModerationHistory(principal) {
+  return true; // any authenticated vendor_manager in same org may read history; org check done at route
+}
+
 function parseBreakGlassScope(accessScope) {
   if (!accessScope) {
     return { permissions: [], event_ids: [], stall_ids: [] };

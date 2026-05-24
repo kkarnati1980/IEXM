@@ -388,7 +388,7 @@ test("break-glass expiry job does not expire sessions that have not yet expired"
 // Step 7.2 — AUDIT_EVENT_TYPES exports all 29 new types
 // ─────────────────────────────────────────────────────────────────────────────
 
-test("AUDIT_EVENT_TYPES contains all 29 Phase 7 event types", () => {
+test("AUDIT_EVENT_TYPES contains all expected event types", () => {
   const expected = [
     "user.invited", "user.activated", "user.disabled", "user.re_enabled",
     "user.role_assigned", "user.role_removed", "user.password_reset_requested",
@@ -400,7 +400,8 @@ test("AUDIT_EVENT_TYPES contains all 29 Phase 7 event types", () => {
     "branding.approved", "branding.published",
     "break_glass.requested", "break_glass.approved", "break_glass.rejected",
     "break_glass.expired", "break_glass.revoked",
-    "api_client.created", "api_client.secret_rotated", "api_client.revoked"
+    "api_client.created", "api_client.secret_rotated", "api_client.revoked",
+    "moderation.transition"
   ];
   const values = Object.values(AUDIT_EVENT_TYPES);
   for (const eventType of expected) {

@@ -4389,6 +4389,159 @@ export function createPostgresRepositories(db, securityContext = null) {
           [tenantId, nfcUid]
         ));
       }
+    },
+
+    // ── Moderation (CR-VENDOR Phase 0) ────────────────────────────────────────
+
+    vendorProfiles: {
+      async create(record) {
+        return one(await execute(
+          `INSERT INTO vendor_profiles (id, tenant_id, organization_id, currently_published_item_id, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+          [record.id, record.tenant_id, record.organization_id, record.currently_published_item_id ?? null,
+           record.created_at ?? new Date().toISOString(), record.updated_at ?? new Date().toISOString()]
+        ), "vendor_profiles");
+      },
+      async findById(tenantId, id) {
+        return one(await execute(
+          "SELECT * FROM vendor_profiles WHERE tenant_id=$1 AND id=$2",
+          [tenantId, id]
+        ), "vendor_profiles");
+      },
+      async findByOrganization(tenantId, orgId) {
+        return many(await execute(
+          "SELECT * FROM vendor_profiles WHERE tenant_id=$1 AND organization_id=$2",
+          [tenantId, orgId]
+        ));
+      },
+      async update(record) {
+        return one(await execute(
+          `UPDATE vendor_profiles
+              SET currently_published_item_id=$3, updated_at=$4
+            WHERE tenant_id=$1 AND id=$2
+           RETURNING *`,
+          [record.tenant_id, record.id, record.currently_published_item_id ?? null,
+           record.updated_at ?? new Date().toISOString()]
+        ), "vendor_profiles");
+      }
+    },
+
+    stallBranding: {
+      async create(record) {
+        return one(await execute(
+          `INSERT INTO stall_branding (id, tenant_id, stall_id, organization_id, currently_published_item_id, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+          [record.id, record.tenant_id, record.stall_id, record.organization_id,
+           record.currently_published_item_id ?? null,
+           record.created_at ?? new Date().toISOString(), record.updated_at ?? new Date().toISOString()]
+        ), "stall_branding");
+      },
+      async findById(tenantId, id) {
+        return one(await execute(
+          "SELECT * FROM stall_branding WHERE tenant_id=$1 AND id=$2",
+          [tenantId, id]
+        ), "stall_branding");
+      },
+      async findByOrganization(tenantId, orgId) {
+        return many(await execute(
+          "SELECT * FROM stall_branding WHERE tenant_id=$1 AND organization_id=$2",
+          [tenantId, orgId]
+        ));
+      },
+      async update(record) {
+        return one(await execute(
+          `UPDATE stall_branding
+              SET currently_published_item_id=$3, updated_at=$4
+            WHERE tenant_id=$1 AND id=$2
+           RETURNING *`,
+          [record.tenant_id, record.id, record.currently_published_item_id ?? null,
+           record.updated_at ?? new Date().toISOString()]
+        ), "stall_branding");
+      }
+    },
+
+    moderationItems: {
+      async create(record) {
+        return one(await execute(
+          `INSERT INTO moderation_items
+             (id, tenant_id, entity_type, entity_id, state, payload,
+              editor_user_id, approver_user_id, submitted_at, decided_at, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+          [record.id, record.tenant_id, record.entity_type, record.entity_id,
+           record.state ?? "draft", JSON.stringify(record.payload ?? {}),
+           record.editor_user_id, record.approver_user_id ?? null,
+           record.submitted_at ?? null, record.decided_at ?? null,
+           record.created_at ?? new Date().toISOString(), record.updated_at ?? new Date().toISOString()]
+        ), "moderation_items");
+      },
+      async findById(tenantId, id) {
+        return one(await execute(
+          "SELECT * FROM moderation_items WHERE tenant_id=$1 AND id=$2",
+          [tenantId, id]
+        ), "moderation_items");
+      },
+      async update(record) {
+        return one(await execute(
+          `UPDATE moderation_items
+              SET state=$3, payload=$4, editor_user_id=$5, approver_user_id=$6,
+                  submitted_at=$7, decided_at=$8, updated_at=$9
+            WHERE tenant_id=$1 AND id=$2
+           RETURNING *`,
+          [record.tenant_id, record.id, record.state, JSON.stringify(record.payload ?? {}),
+           record.editor_user_id, record.approver_user_id ?? null,
+           record.submitted_at ?? null, record.decided_at ?? null,
+           record.updated_at ?? new Date().toISOString()]
+        ), "moderation_items");
+      },
+      async findActiveApproved(tenantId, entityType, entityId) {
+        return maybeOne(await execute(
+          "SELECT * FROM moderation_items WHERE tenant_id=$1 AND entity_type=$2 AND entity_id=$3 AND state='approved'",
+          [tenantId, entityType, entityId]
+        ));
+      },
+      async listByOrg(tenantId, entityIds, { state: stateFilter, entityType } = {}) {
+        if (!entityIds.length) return [];
+        const placeholders = entityIds.map((_, i) => `$${i + 4}`).join(",");
+        const params = [tenantId, stateFilter ?? null, entityType ?? null, ...entityIds];
+        return many(await execute(
+          `SELECT * FROM moderation_items
+            WHERE tenant_id=$1
+              AND ($2::text IS NULL OR state::text=$2)
+              AND ($3::text IS NULL OR entity_type=$3)
+              AND entity_id IN (${placeholders})
+            ORDER BY created_at DESC`,
+          params
+        ));
+      }
+    },
+
+    moderationNotes: {
+      async create(record) {
+        return one(await execute(
+          `INSERT INTO moderation_notes
+             (id, tenant_id, target_table, target_id, actor_user_id,
+              action, note, prior_status, new_status, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+          [record.id, record.tenant_id, record.target_table, record.target_id,
+           record.actor_user_id, record.action, record.note ?? "",
+           record.prior_status ?? null, record.new_status,
+           record.created_at ?? new Date().toISOString()]
+        ), "moderation_notes");
+      },
+      async listByItem(tenantId, targetTable, targetId) {
+        return many(await execute(
+          `SELECT * FROM moderation_notes
+            WHERE tenant_id=$1 AND target_table=$2 AND target_id=$3
+            ORDER BY created_at ASC`,
+          [tenantId, targetTable, targetId]
+        ));
+      },
+      async update() {
+        throw Object.assign(new Error("moderation_notes rows are immutable (AP-5)"), { statusCode: 405 });
+      },
+      async delete() {
+        throw Object.assign(new Error("moderation_notes rows are immutable (AP-5)"), { statusCode: 405 });
+      }
     }
   };
 

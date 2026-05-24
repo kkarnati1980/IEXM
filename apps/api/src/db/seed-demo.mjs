@@ -28,8 +28,9 @@ export async function seedDemoData(db) {
         `INSERT INTO users (
           id, tenant_id, organization_id, email, display_name, role,
           external_identity_provider, external_subject, status, last_login_at,
-          disabled_at, disabled_reason, mfa_required, invited_at, deleted_at, created_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now())
+          disabled_at, disabled_reason, mfa_required, invited_at, deleted_at,
+          vendor_content_editor, vendor_content_approver, created_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())
          ON CONFLICT (id) DO NOTHING`,
         [
           user.id,
@@ -46,7 +47,9 @@ export async function seedDemoData(db) {
           user.disabled_reason ?? null,
           user.mfa_required ?? false,
           user.invited_at ?? null,
-          user.deleted_at ?? null
+          user.deleted_at ?? null,
+          user.vendor_content_editor ?? false,
+          user.vendor_content_approver ?? false
         ]
       );
     }

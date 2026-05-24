@@ -44,7 +44,10 @@ export const AUDIT_EVENT_TYPES = Object.freeze({
   // API clients
   API_CLIENT_CREATED: "api_client.created",
   API_CLIENT_SECRET_ROTATED: "api_client.secret_rotated",
-  API_CLIENT_REVOKED: "api_client.revoked"
+  API_CLIENT_REVOKED: "api_client.revoked",
+
+  // Moderation (CR-VENDOR §19.4)
+  MODERATION_TRANSITION: "moderation.transition"
 });
 
 export async function writeAuditEvent(repos, {

@@ -5,7 +5,7 @@ import { issuePlatformToken } from "./auth/platform-jwt.mjs";
 import { hashToken, generateInviteToken, generateResetToken } from "./auth/invite-tokens.mjs";
 import { resolveRedirectTarget } from "./auth/redirect-resolver.mjs";
 import { HttpError } from "./http-error.mjs";
-import { deriveCrmEligibility } from "./policy.mjs";
+import { deriveCrmEligibility, canSubmitModeration, canApproveModeration, canRejectModeration } from "./policy.mjs";
 import { createAttendeeSessionToken, verifyAttendeeSessionToken } from "./session-tokens.mjs";
 import { createDeviceCredentialToken, hashDeviceCredentialToken } from "./device-credentials.mjs";
 import { createShortLinkToken, hashShortLinkToken, shortLinkPath } from "./short-links.mjs";
@@ -8792,6 +8792,7 @@ export function registerRoutes(router) {
     auditEventType: "attendee.nfc_tag.cleared"
   });
 
+  registerModerationRoutes(router);
 }
 
 async function resolveDeviceCredentialResources({ repos, principal, params }) {
@@ -12738,4 +12739,171 @@ function capitalize(value) {
     return "";
   }
   return `${value[0].toUpperCase()}${value.slice(1)}`;
+}
+
+// ── Moderation Foundation (P2 Phase 0) ──────────────────────────────────────
+
+const MODERATION_TRANSITIONS = {
+  draft:             ["submitted", "discarded"],
+  submitted:         ["under_review", "withdrawn"],
+  under_review:      ["approved", "changes_requested", "rejected"],
+  changes_requested: ["submitted", "discarded"],
+  approved:          ["superseded"],
+  rejected:          [],
+  withdrawn:         [],
+  superseded:        [],
+  discarded:         []
+};
+
+const NOTE_ACTION = {
+  submitted:         "submit",
+  under_review:      "claim",
+  approved:          "approve",
+  rejected:          "reject",
+  changes_requested: "request_changes",
+  withdrawn:         "withdraw",
+  discarded:         "discard",
+  superseded:        "supersede"
+};
+
+function registerModerationRoutes(router) {
+  router.addRoute({
+    id: "vendor-moderation-transition",
+    method: "POST",
+    path: "/moderation-items/:itemId/transition",
+    allowedRoles: ["vendor_manager"],
+    validate: (body) => {
+      required(body, ["to_state"]);
+      return body;
+    },
+    handler: async ({ repos, principal, params, body }) => {
+      return repos.withTransaction(async (txRepos) => {
+        const item = await txRepos.moderationItems.findById(principal.tenant_id, params.itemId);
+
+        const allowed = MODERATION_TRANSITIONS[item.state] ?? [];
+        if (!allowed.includes(body.to_state)) {
+          throw new HttpError(422, `Invalid transition: ${item.state} → ${body.to_state}`);
+        }
+
+        const isApprove = body.to_state === "approved";
+        const isReject  = body.to_state === "rejected";
+        const isChanges = body.to_state === "changes_requested";
+
+        if (isApprove && !canApproveModeration(principal, item.editor_user_id)) {
+          throw new HttpError(403, "Editor cannot approve own submission");
+        }
+        if (isReject && !canRejectModeration(principal, item.editor_user_id)) {
+          throw new HttpError(403, "Editor cannot reject own submission");
+        }
+        if ((isReject || isChanges) && !body.note) {
+          throw new HttpError(422, `A note is required when transitioning to ${body.to_state}`);
+        }
+
+        const now = new Date().toISOString();
+        const previousState = item.state;
+
+        item.state      = body.to_state;
+        item.updated_at = now;
+
+        if (body.to_state === "submitted")    item.submitted_at = now;
+        if (isApprove || isReject)            { item.decided_at = now; item.approver_user_id = principal.user_id; }
+
+        // Atomic approve: supersede prior approved item
+        if (isApprove) {
+          const prior = await txRepos.moderationItems.findActiveApproved(
+            principal.tenant_id, item.entity_type, item.entity_id
+          );
+          if (prior && prior.id !== item.id) {
+            prior.state      = "superseded";
+            prior.updated_at = now;
+            await txRepos.moderationItems.update(prior);
+            await txRepos.moderationNotes.create({
+              id:           nextId("mn"),
+              tenant_id:    principal.tenant_id,
+              target_table: item.entity_type,
+              target_id:    item.entity_id,
+              item_id:      prior.id,
+              action:       "supersede",
+              actor_user_id: principal.user_id,
+              note:         `Superseded by item ${item.id}`,
+              created_at:   now
+            });
+          }
+        }
+
+        const updated = await txRepos.moderationItems.update(item);
+
+        await txRepos.moderationNotes.create({
+          id:           nextId("mn"),
+          tenant_id:    principal.tenant_id,
+          target_table: item.entity_type,
+          target_id:    item.entity_id,
+          item_id:      item.id,
+          action:       NOTE_ACTION[body.to_state] ?? body.to_state,
+          actor_user_id: principal.user_id,
+          note:         body.note ?? null,
+          created_at:   now
+        });
+
+        await writeAuditEvent(repos, {
+          tenantId:  principal.tenant_id,
+          actorType: "user",
+          actorId:   principal.user_id,
+          eventType: AUDIT_EVENT_TYPES.MODERATION_TRANSITION,
+          targetType: "moderation_item",
+          targetId:  item.id,
+          metadata:  { from: previousState, to: body.to_state, entity_type: item.entity_type, entity_id: item.entity_id }
+        });
+
+        return { item: updated };
+      });
+    }
+  });
+
+  router.addRoute({
+    id: "vendor-moderation-list",
+    method: "GET",
+    path: "/vendors/:vendorOrgId/moderation-items",
+    allowedRoles: ["vendor_manager"],
+    handler: async ({ repos, principal, params, query }) => {
+      const orgId = params.vendorOrgId;
+      if (orgId !== principal.organization_id) {
+        throw new HttpError(403, "Access denied to this vendor organisation");
+      }
+
+      const profiles = await repos.vendorProfiles.findByOrganization(principal.tenant_id, orgId);
+      const branding  = await repos.stallBranding.findByOrganization(principal.tenant_id, orgId);
+      const entityIds = [...profiles.map((r) => r.id), ...branding.map((r) => r.id)];
+
+      const filters = {};
+      if (query.state)       filters.state = query.state;
+      if (query.entity_type) {
+        const validTypes = ["vendor_profiles", "stall_branding"];
+        if (!validTypes.includes(query.entity_type)) {
+          throw new HttpError(400, `Invalid entity_type: ${query.entity_type}`);
+        }
+        filters.entityType = query.entity_type;
+      }
+
+      const items = entityIds.length > 0
+        ? await repos.moderationItems.listByOrg(principal.tenant_id, entityIds, filters)
+        : [];
+
+      return { items };
+    }
+  });
+
+  router.addRoute({
+    id: "vendor-moderation-history",
+    method: "GET",
+    path: "/moderation-items/:itemId/history",
+    allowedRoles: ["vendor_manager"],
+    handler: async ({ repos, principal, params }) => {
+      const item = await repos.moderationItems.findById(principal.tenant_id, params.itemId);
+      const notes = await repos.moderationNotes.listByItem(
+        principal.tenant_id, item.entity_type, item.entity_id
+      );
+      return { item_id: item.id, history: notes };
+    }
+  });
 }

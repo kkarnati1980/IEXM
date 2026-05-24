@@ -545,7 +545,12 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   "docs-access-folders": publicEntry("docs.access.folders", "List document folders using an attendee access token", "pii"),
   "docs-files-list": publicEntry("docs.files.list", "List files in a shared folder using an attendee access token", "pii"),
   "docs-file-view": publicEntry("docs.file.view", "Get viewer URL for a file using an attendee access token", "pii"),
-  "docs-file-download": publicEntry("docs.file.download", "Get download URL for a file using an attendee access token", "pii")
+  "docs-file-download": publicEntry("docs.file.download", "Get download URL for a file using an attendee access token", "pii"),
+
+  // Moderation (CR-VENDOR Phase 0 — §16 generic transition endpoint)
+  "vendor-moderation-transition": entry({ permission: "vendor.moderation.transition", roles: vendor, scope: "tenant", description: "Transition a moderation item through the review state machine" }),
+  "vendor-moderation-list":       entry({ permission: "vendor.moderation.list",       roles: vendor, scope: "tenant", description: "List moderation items for a vendor organisation" }),
+  "vendor-moderation-history":    entry({ permission: "vendor.moderation.history",    roles: vendor, scope: "tenant", description: "Read the chronological moderation audit trail for an item" })
 });
 
 export function getAccessControlEntry(routeId) {

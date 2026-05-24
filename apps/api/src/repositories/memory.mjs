@@ -1832,6 +1832,107 @@ export function createMemoryRepositories(state) {
       }
     },
 
+    // ── Moderation (CR-VENDOR Phase 0) ────────────────────────────────────────
+
+    vendorProfiles: {
+      async create(record) {
+        if (!state.vendorProfiles) state.vendorProfiles = [];
+        state.vendorProfiles.push(record);
+        return record;
+      },
+      async findById(tenantId, id) {
+        const row = (state.vendorProfiles ?? []).find((r) => r.tenant_id === tenantId && r.id === id);
+        if (!row) throw new Error(`vendor_profiles not found: ${id}`);
+        return row;
+      },
+      async findByOrganization(tenantId, orgId) {
+        return (state.vendorProfiles ?? []).filter((r) => r.tenant_id === tenantId && r.organization_id === orgId);
+      },
+      async update(record) {
+        const list = state.vendorProfiles ?? [];
+        const idx = list.findIndex((r) => r.id === record.id);
+        if (idx === -1) throw new Error(`vendor_profiles not found for update: ${record.id}`);
+        list[idx] = record;
+        return record;
+      }
+    },
+
+    stallBranding: {
+      async create(record) {
+        if (!state.stallBranding) state.stallBranding = [];
+        state.stallBranding.push(record);
+        return record;
+      },
+      async findById(tenantId, id) {
+        const row = (state.stallBranding ?? []).find((r) => r.tenant_id === tenantId && r.id === id);
+        if (!row) throw new Error(`stall_branding not found: ${id}`);
+        return row;
+      },
+      async findByOrganization(tenantId, orgId) {
+        return (state.stallBranding ?? []).filter((r) => r.tenant_id === tenantId && r.organization_id === orgId);
+      },
+      async update(record) {
+        const list = state.stallBranding ?? [];
+        const idx = list.findIndex((r) => r.id === record.id);
+        if (idx === -1) throw new Error(`stall_branding not found for update: ${record.id}`);
+        list[idx] = record;
+        return record;
+      }
+    },
+
+    moderationItems: {
+      async create(record) {
+        if (!state.moderationItems) state.moderationItems = [];
+        state.moderationItems.push(record);
+        return record;
+      },
+      async findById(tenantId, id) {
+        const row = (state.moderationItems ?? []).find((r) => r.tenant_id === tenantId && r.id === id);
+        if (!row) throw new Error(`moderation_items not found: ${id}`);
+        return row;
+      },
+      async update(record) {
+        const list = state.moderationItems ?? [];
+        const idx = list.findIndex((r) => r.id === record.id);
+        if (idx === -1) throw new Error(`moderation_items not found for update: ${record.id}`);
+        list[idx] = record;
+        return record;
+      },
+      async findActiveApproved(tenantId, entityType, entityId) {
+        return (state.moderationItems ?? []).find(
+          (r) => r.tenant_id === tenantId && r.entity_type === entityType && r.entity_id === entityId && r.state === "approved"
+        ) ?? null;
+      },
+      async listByOrg(tenantId, entityIds, { state: stateFilter, entityType } = {}) {
+        return (state.moderationItems ?? []).filter((r) => {
+          if (r.tenant_id !== tenantId) return false;
+          if (!entityIds.includes(r.entity_id)) return false;
+          if (stateFilter && r.state !== stateFilter) return false;
+          if (entityType && r.entity_type !== entityType) return false;
+          return true;
+        });
+      }
+    },
+
+    moderationNotes: {
+      async create(record) {
+        if (!state.moderationNotes) state.moderationNotes = [];
+        state.moderationNotes.push(record);
+        return record;
+      },
+      async listByItem(tenantId, targetTable, targetId) {
+        return (state.moderationNotes ?? [])
+          .filter((n) => n.tenant_id === tenantId && n.target_table === targetTable && n.target_id === targetId)
+          .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+      },
+      async update() {
+        throw Object.assign(new Error("moderation_notes rows are immutable (AP-5)"), { statusCode: 405 });
+      },
+      async delete() {
+        throw Object.assign(new Error("moderation_notes rows are immutable (AP-5)"), { statusCode: 405 });
+      }
+    },
+
   };
 
   return repos;
