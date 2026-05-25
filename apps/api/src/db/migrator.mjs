@@ -33,7 +33,7 @@ export async function runMigrations(db, migrationsDir, { reconcileOnly = false }
     const sql = await readFile(path.join(migrationsDir, file), "utf8");
     await db.withTransaction(async (tx) => {
       await tx.query(sql);
-      await tx.query("INSERT INTO schema_migrations (version) VALUES ($1)", [version]);
+      await tx.query("INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING", [version]);
     });
   }
 }
