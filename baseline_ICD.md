@@ -16,6 +16,7 @@ Re-run `/baseline` any time a new build version drops — it will extend this fi
 |---|---|---|---|
 | v1.0 | 7 May 2026 | Platform Team | Frozen device/edge-runtime interface contract issued to IoT vendor team. Based on Master Spec v1.1. |
 | v1.2 | 8 May 2026 | Platform Team | Full platform ICD — expands scope to cover all external interfaces: auth, storage, email, Drive, CRM, webhooks, DB. |
+| v1.3 | 24 May 2026 | Platform Team | Pass types, consent versioning, Pi 5 hardware, NFC tag batches, moderation interface, CI/CD. 069 migrations; ~90 tables; 488 tests. |
 
 *Note: No ICD v1.1 was issued. The first version frozen and sent to the external vendor was v1.0 (7 May 2026).*
 
@@ -26,14 +27,28 @@ Re-run `/baseline` any time a new build version drops — it will extend this fi
 | Version | Added | Changed | Removed | Clarified |
 |---|---|---|---|---|
 | v1.2 | 10 | 4 | 0 | 3 |
+| v1.3 | 6 | 3 | 0 | 1 |
 
 ---
 
 ## Quick Index — All Changes
 
+**v1.3 changes**
+- [v1.3-A1] §2 New components: Raspberry Pi 5 + ACR122U NFC reader hardware; GitHub Actions CI/CD
+- [v1.3-A2] §3 Pass types contract: pass_types table, nfc_behaviour per tap, NFC tag batch management
+- [v1.3-A3] §5 Consent versioning interface: consent_versions, consent_snapshots, organizer_release_allowed, app_config
+- [v1.3-A4] §8 Moderation interface: 9-state machine, 3 new routes, self-approval guard (MT-VP-01)
+- [v1.3-A5] §11 Migration versioning updated to 069; table count ~90
+- [v1.3-A6] §3 Walk-in registration and bulk import interface (organizer_import_staff role)
+- [v1.3-C1] §3 Attendee schema extended: registration_source, pass_type_id, nfc_batch_id, age_confirmed_18_plus
+- [v1.3-C2] §5 consents schema extended: +organizer_release_allowed, +consent_version_id, +staff_exempt consent_status
+- [v1.3-C3] §5 users schema extended: +vendor_content_editor, +vendor_content_approver
+- [v1.3-CL1] §3 NFC tap ingestion now supports Raspberry Pi 5 + ACR122U in addition to previous device types
+
 **v1.2 changes**
 - [v1.2-A1] §2 New system components: PostgreSQL, R2, ZeptoMail, Google Drive, OneDrive, Web Frontend, CRM systems
 - [v1.2-A2] §4 Full API contract (261+ routes) vs. 5 device endpoints in v1.0
+- [v1.3-NOTE] §4 Route total updated to 265 (261 v1.2 + 3 moderation + 1 bulk-import)
 - [v1.2-A3] §5 Auth interface: JWT structure, password hashing, MFA OTP, Google Drive OAuth, OneDrive OAuth, AES-256-GCM
 - [v1.2-A4] §6 Storage interface: Cloudflare R2, export file formats, HMAC-signed download links
 - [v1.2-A5] §7 Email interface: ZeptoMail HTTP API, 17 notification templates, retry logic
@@ -84,6 +99,13 @@ This document is the frozen interface contract that the IoT Platform Team must i
 
 The platform exposes an HTTPS API to devices. The device is the only edge component. Everything beyond the API gateway is platform-owned.
 
+> [v1.3 ADDED §2, no original ancestor] Additional components in v1.3:
+>
+> | ID | Component | Description |
+> |---|---|---|
+> | 2.10 | Raspberry Pi 5 + ACR122U | Physical NFC kiosk hardware; runs codex-tap.sh daemon; authenticates as device_principal |
+> | 2.11 | GitHub Actions CI/CD | Builds API + runs 488-test suite on every push to main; Docker Compose for local dev/prod |
+
 > [v1.2 ADDED §2, no original ancestor] **Full system component table:**
 
 | ID | Component | Description |
@@ -97,6 +119,8 @@ The platform exposes an HTTPS API to devices. The device is the only edge compon
 | 2.7 | Kiosk/Edge Device Runtime | Physical NFC reader; authenticates as device_principal; heartbeat + tap ingestion |
 | 2.8 | Web Frontend | 32 HTML pages; Vanilla HTML/CSS/JS; shared-app.css light theme; IBM Plex Sans |
 | 2.9 | External CRM Systems | Salesforce, HubSpot, Zoho — deletion dispatch on DSR delete events |
+
+> [v1.3 CHANGED from §2.2] PostgreSQL table count updated from 79 to **~90** (11 new tables added in v1.3 migrations 057–068).
 
 ---
 
@@ -238,6 +262,19 @@ Response: {
 
 Maximum 100 items per call. Chronological order required.
 
+> [v1.3 ADDED §3, no original ancestor] **Pass Types contract** — device taps now resolve a pass type which controls the tap flow:
+> - `nfc_behaviour = consent` — show consent screen (default; same as all v1.0/v1.2 taps)
+> - `nfc_behaviour = skip` — silent access; no interaction record created; no UI transition
+> - `nfc_behaviour = access_only` — log entry without consent screen (e.g. staff entry)
+>
+> Pass types are returned as part of the attendee resolution payload. Device must branch flow on `nfc_behaviour`.
+>
+> **NFC Tag Batches** — tags are pre-registered in `nfc_tag_batches` / `nfc_tag_batch_uids`. Status lifecycle: `pre_registered` → `active` → `returned`. Devices need not be aware of batch management; it is platform-side only.
+>
+> **Walk-in registration** — `POST /attendees/walk-in` creates an attendee at registration time. Returns attendee_id used in subsequent tap flow. `registration_source = walk_in`.
+>
+> **Bulk import** — `POST /events/:id/attendees/bulk-import` accepts CSV. Only callable by organizer_admin or organizer_import_staff. `registration_source = bulk_import`.
+
 > [v1.2 CLARIFIED §3.9] IoT sync documented via `GET /iot/runs` and `POST /iot/runs` for admin integration run management. The device-level `POST /device/sync` path is superseded by `POST /devices/:id/sync` per v1.2 naming convention.
 
 ### 3.10 IoT Sync Runs (v1.2 — new)
@@ -359,7 +396,37 @@ IV: 12 random bytes generated per encryption, prepended to ciphertext
 Auth tag: 16 bytes, appended to ciphertext
 Storage format: base64(iv + ciphertext + authTag)
 
-### 5.7 Device Credential Lifecycle (v1.0)
+### 5.7 Consent Versioning Interface (v1.3 — new)
+
+> [v1.3 ADDED §5.7, no original ancestor]
+
+**consent_versions** — versioned consent form definitions per tenant:
+
+| Field | Type | Notes |
+|---|---|---|
+| version_number | INTEGER | Monotonically increasing per tenant |
+| effective_from | TIMESTAMPTZ | When this version becomes active |
+| retention_period_days | INTEGER | Retention commitment stated in the consent form |
+| grievance_officer_email | TEXT | Contact shown to attendees |
+| data_residency_zones | TEXT[] | Data residency zones declared in consent |
+| is_cross_border_transfer | BOOLEAN | Whether cross-border transfer is disclosed |
+
+**consent_snapshots** — immutable record of consent choices at capture time, linked to `consent_version_id`. Survives consent updates/revokes (snapshot = what the attendee agreed to at that moment).
+
+**consent_attribute_changes** — audit log: every individual field change to a consent record (who changed it, old→new value, timestamp).
+
+**organizer_release_allowed** — new Boolean on `consents` table. Third consent dimension. Controls whether organizer can access attendee PII beyond the minimum required for event operations.
+
+**app_config** — singleton per tenant (one row, `tenant_id` PK). Stores deployment config surfaced in consent forms:
+- `data_controller_name` — shown to attendees at consent time
+- `grievance_officer_email` — regulatory contact
+- `deployment_region` — for data residency disclosure
+- `is_cross_border_transfer` — cross-border transfer disclosure flag
+- `retention_period_days` — default retention for consent forms
+
+**staff_exempt** — new `consent_status` value. Attendees with `nfc_behaviour = skip` bypass the consent surface entirely; their interaction records are flagged `staff_exempt`.
+
+### 5.9 Device Credential Lifecycle (v1.0)
 
 | Stage | Responsibility | Behaviour |
 |---|---|---|
@@ -511,6 +578,47 @@ Access log: every folder browse, file view, and download recorded in stall_folde
 
 ---
 
+## 8a. Moderation Interface (v1.3 — new)
+
+> [v1.3 ADDED §8a, no original ancestor] Vendor content moderation interface for CR-VENDOR-2026-001. Infrastructure only in v1.3 — content fields are added in Phase 1.
+
+### 8a.1 State Machine
+
+9 states with permitted transitions (MT-VP-01 self-approval guard enforced by API):
+
+```
+draft → submitted → under_review → changes_requested → approved
+                                                      → rejected
+              ↓                                        ↓
+           withdrawn                             superseded / discarded
+```
+
+| State | Description |
+|---|---|
+| draft | Editor is composing; not yet submitted |
+| submitted | Submitted for review; awaiting claim |
+| under_review | Claimed by a reviewer |
+| changes_requested | Reviewer sent back to editor |
+| approved | Published — entity's currently_published_item_id updated |
+| rejected | Rejected with reason |
+| withdrawn | Editor withdrew before decision |
+| superseded | A newer item was approved; this one replaced |
+| discarded | Admin discarded without formal rejection |
+
+### 8a.2 API Routes
+
+| Method | Path | Description |
+|---|---|---|
+| POST | /moderation-items/:itemId/transition | Drive state machine; body: { action, note }. Editor ≠ approver enforced. |
+| GET | /vendors/:vendorOrgId/moderation-items | List items for vendor org; org isolation enforced |
+| GET | /moderation-items/:itemId/history | Chronological moderation_notes trail for item |
+
+### 8a.3 Self-Approval Guard (MT-VP-01)
+
+`editor_user_id ≠ approver_user_id` enforced at API layer. Both must also hold `vendor_content_approver = TRUE` for approval actions. moderation_notes rows are immutable (AP-5 trigger).
+
+---
+
 ## 9. CRM Integration Interface
 
 > [v1.2 ADDED §9, no original ancestor]
@@ -569,8 +677,10 @@ All tables with tenant_id have RLS enabled. The app_runtime role can only see ro
 
 ### 11.4 Migration Versioning
 
-54 migration files in apps/api/migrations/ (001_init.sql through 054_fix_stall_rls.sql).
+69 migration files in apps/api/migrations/ (001_init.sql through 069_user_content_flags.sql).
 Migration state tracked in schema_migrations table. Migrator: db/migrator.mjs.
+
+> [v1.3 CHANGED from §11.4] **Migration count: 69** (was 54 in v1.2). New migrations 055–069 add pass types, consent versioning, NFC tag batches, import-staff role, and the full moderation foundation (enums, shell tables, moderation_items, moderation_notes, user flags). Total tables: ~90.
 
 ---
 

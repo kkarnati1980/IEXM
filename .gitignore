@@ -9,3 +9,5 @@ build/
 .cache/
 /apps/api/storage/
 /storage/
+# Added by code-review-graph
+.code-review-graph/

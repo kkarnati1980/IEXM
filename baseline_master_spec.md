@@ -15,6 +15,7 @@ Re-run `/baseline` any time a new build version drops — it will extend this fi
 | v1.0 | April 2026 | Platform Team | Original pre-build specification — requirements, architecture, design, trust, data, commercial |
 | v1.1 | 1 May 2026 | Platform Team | First production build — 18 phases complete; technology stack confirmed; Phase 6 deferred |
 | v1.2 | 8 May 2026 | Platform Team | Google Drive/OneDrive integration; MFA; snapshot comparison; unified UI; 79 tables; 438 tests |
+| v1.3 | 24 May 2026 | Platform Team | Pass types + NFC tag batches; walk-in/bulk import; consent versioning; Pi 5 hardware; CI/CD; P2 Phase 0 moderation foundation; ~90 tables; 488 tests |
 
 ---
 
@@ -24,6 +25,7 @@ Re-run `/baseline` any time a new build version drops — it will extend this fi
 |---|---|---|---|---|
 | v1.1 | 3 | 6 | 1 | 4 |
 | v1.2 | 12 | 5 | 0 | 2 |
+| v1.3 | 9 | 5 | 0 | 0 |
 
 ---
 
@@ -39,6 +41,22 @@ Re-run `/baseline` any time a new build version drops — it will extend this fi
 - [v1.1-A1] §BUILD 18 build phases all complete
 - [v1.1-A2] §STACK 32 HTML screens built
 - [v1.1-R1] §12 Launchpad removed for non-admin roles
+
+**v1.3 changes**
+- [v1.3-A1] §3 New sub-role: organizer_import_staff — can bulk-import attendees
+- [v1.3-A2] §3 New user flags: vendor_content_editor, vendor_content_approver
+- [v1.3-A3] §4 Pi 5 hardware — NFC tap ingestion for Raspberry Pi 5 + ACR122U
+- [v1.3-A4] §4 CI/CD — Docker Compose + GitHub Actions pipeline
+- [v1.3-A5] §5.4 Vendor lead item shows pass_type_name + colour
+- [v1.3-A6] §5.6 Attendees tab added to organizer event-detail (bulk import, NFC assign)
+- [v1.3-A7] §7 11 new tables — pass_types, consent_versions, consent_snapshots, consent_attribute_changes, app_config, nfc_tag_batches, nfc_tag_batch_uids, vendor_profiles, stall_branding, moderation_items, moderation_notes
+- [v1.3-A8] §BUILD P2 Phase 0 Moderation Foundation — 9-state workflow, 3 new routes, self-approval guard
+- [v1.3-A9] §D 488 tests passing (was 438 in v1.2)
+- [v1.3-C1] §2 organizer_release_allowed added as third consent dimension; staff_exempt added to consent_status
+- [v1.3-C2] §3 Attendees gain registration_source, pass_type_id, age_confirmed_18_plus
+- [v1.3-C3] §5 Kiosk — age gate, disclosure footer, nfc_behaviour per pass type (consent/skip/access_only)
+- [v1.3-C4] §7 Total tables: 79 → ~90
+- [v1.3-C5] §7 consents table extended: +organizer_release_allowed, +consent_version_id
 
 **v1.2 changes**
 - [v1.2-A1] §4 Google Drive/OneDrive integration (Phase 6 complete)
@@ -84,6 +102,8 @@ No AI or third-party enrichment may sit in the critical tap path.
 Kiosk interaction must work without internet.
 Public leaderboard must never display personal data.
 
+> [v1.3 CHANGED from §2] **Third consent dimension added:** `organizer_release_allowed` is now a first-class consent field alongside `vendor_release_allowed` and `sponsor_release_allowed`. Attendees may separately consent to organizer data access. The `consents` table gains `organizer_release_allowed BOOLEAN DEFAULT FALSE`. A new `staff_exempt` value added to `consent_status` for staff/exhibitor passes that bypass the attendee consent surface entirely.
+
 > [v1.2 ADDED §2, no original ancestor] Laws are now formally identified with IDs LAW-01 through LAW-10 and explicitly marked "confirmed implemented in v1.2 production build." Three new laws added beyond the original ten:
 > - LAW-08: OAuth tokens for Drive integrations encrypted at rest with AES-256-GCM
 > - LAW-09: Device credentials are hashed; raw tokens never stored
@@ -102,6 +122,12 @@ Public leaderboard must never display personal data.
 | Platform Admin | Manages infrastructure and masked operations by default; no unrestricted PII browsing; break-glass required for exceptional privileged access. |
 | Ops User | Handles device and deployment operations only; no attendee PII access. |
 | Device Principal | May fetch config, send heartbeat, report incidents, upload sync batches, and create tap interactions only. |
+
+> [v1.3 ADDED §3] New sub-role: **organizer_import_staff** — a scoped organizer sub-role that may bulk-import attendees and manage NFC tag assignments. Does not have full organizer admin rights. Added to `user_role_assignments` CHECK constraint in migration 063.
+>
+> [v1.3 ADDED §3] New user flags on the `users` table: `vendor_content_editor` (may submit content for moderation review) and `vendor_content_approver` (may approve/reject content — editor ≠ approver guard enforced). Backfilled to TRUE for all existing vendor_manager users.
+>
+> [v1.3 CHANGED from §3] **Attendees** now carry: `registration_source` (nfc_tap / walk_in / bulk_import / self_register / import / api), `pass_type_id` (FK to pass_types), `nfc_batch_id`, and `age_confirmed_18_plus`. Walk-in registration creates an attendee record at the kiosk without a prior database entry.
 
 > [v1.2 ADDED §3] New role added: **public** — Attendee document access page (/docs/:token) — no login required. This is a new actor type introduced for the Drive document access feature.
 >
@@ -129,6 +155,10 @@ Observability Layer: logs, metrics, alerts, audit trails, dead-letter jobs, inci
 >
 > [v1.1 CHANGED from §4] Data Layer note: Redis deferred in v1.1. In-memory store in use. Redis is a pending item.
 >
+> [v1.3 ADDED §4, no original ancestor] **Raspberry Pi 5 hardware support**: NFC tap ingestion implemented for Raspberry Pi 5 + ACR122U USB NFC reader. Includes codex-tap.sh daemon script, tablet push mode for Pi 5 consent screen, and fleet.html NFC reader status monitoring. Physical deployment package ready.
+>
+> [v1.3 ADDED §4, no original ancestor] **CI/CD pipeline**: Docker Compose (development + production stacks) and GitHub Actions workflow added. CI builds API, runs full test suite inside container, and blocks merge on failure.
+
 > [v1.2 CHANGED from §4] **Node.js upgraded** to v25.8.2 ESM modules. Original spec did not specify a Node version.
 >
 > [v1.2 ADDED §4, no original ancestor] **Drive Integration layer added**: Google Drive API (OAuth 2.0 read-only) and Microsoft Graph API (OneDrive) added as external provider integrations. Platform proxies file metadata and viewer URLs; never stores binary file content.
@@ -180,6 +210,15 @@ All dashboard screens must reflect scope-limited data only.
 | Interaction Exception Screen | Handles unreadable tags, unresolved local preview, duplicate suppression, and safe fallback actions. |
 | Diagnostics Screen | Hidden admin-only screen showing device identity, assignment, queue depth, last sync, reader status, logs, force sync, refresh config, restart adapter. |
 
+> [v1.3 CHANGED from §5.2] **Per-pass-type NFC behaviour**: each pass type defines `nfc_behaviour` which controls the kiosk flow on tap:
+> - `consent` (default) — show consent screen as normal
+> - `skip` — silent staff/exhibitor access, no interaction created
+> - `access_only` — log entry without showing consent screen
+>
+> **Age gate added**: kiosk consent screen includes age confirmation (18+). `age_confirmed_18_plus` recorded on the attendee.
+>
+> **Disclosure footer**: kiosk consent screen now shows a configurable disclosure footer from `app_config`.
+
 > [v1.1 ADDED §5.2] Kiosk page shows `CONFIG_ERROR` in browser by design — physical device required.
 
 ### 5.3 Attendee Mobile Flow
@@ -201,6 +240,8 @@ All dashboard screens must reflect scope-limited data only.
 | Scoring and Notes | Inline Hot/Warm/Cold scoring and note capture. |
 | CRM Settings | Connection to Salesforce/HubSpot/Zoho, field mapping, test push, sync rules. |
 | Export | Consent-filtered export request only; approval workflow respected. |
+
+> [v1.3 ADDED §5.4, no original ancestor] **Vendor lead item** now shows `pass_type_name` and `colour_hex` from the attendee's pass type. Allows vendor to immediately identify attendee category (e.g. VIP, Exhibitor, General) in the lead inbox.
 
 > [v1.2 ADDED §5.4, no original ancestor] **Vendor Drive screen added**: connect Google Drive or OneDrive, manage shared folders, issue/revoke attendee access grants. Auto-grant document access on attendee NFC tap.
 
@@ -224,6 +265,13 @@ All dashboard screens must reflect scope-limited data only.
 | Data Control | vendor_exports_enabled, sponsor_pii_enabled, require_export_approval, allow_crm_push, retention_days, allow_cross_event_identity_graph. |
 | Export Approval | Pending/approved/rejected export requests and approval actions. |
 | Audit Log | Sensitive actions, actor, action, target, timestamp. |
+
+> [v1.3 ADDED §5.6, no original ancestor] **Attendees tab** added to organizer event-detail UI. Allows organizers and import staff to:
+> - View full attendee roster with pass type, registration source, and NFC assignment status
+> - Bulk import attendees via CSV upload (organizer_import_staff role)
+> - Assign NFC tag UIDs to attendees from pre-registered batch
+> - Register walk-in attendees at the door
+> - Search and filter by pass type, registration source, NFC status
 
 > [v1.1 CHANGED from §5.6] **UI label changes in v1.1:**
 > - "IAM Audit" → "Access Change History"
@@ -316,6 +364,8 @@ All dashboard screens must reflect scope-limited data only.
 > - POST /auth/verify-otp — verifies OTP; returns JWT if valid
 >
 > [v1.2 CHANGED from §6.3] **Total API routes: 261+** (original spec did not number routes).
+>
+> [v1.3 CHANGED from §6.3] **Total API routes: 265** (261 from v1.2 + 3 moderation routes + 1 bulk-import route).
 
 ---
 
@@ -343,6 +393,30 @@ All dashboard screens must reflect scope-limited data only.
 
 > [v1.1 CHANGED from §7.1] **Total tables in v1.1: ~75.** Implementation adds tables beyond the original spec: api_clients, device_credentials, stalls, sponsor_packages, event_data_policies, attendee_profiles, tap_events, consents, consent_events, interaction_notes, lead_scores, leaderboard_snapshots, short_links, devices, device_assignments, device_heartbeats, device_incidents, iot_integration_runs, iot_sync_checkpoints, notifications, notification_attempts, notification_receipts, followup_messages, audit_log, privacy_audit_log, pentest_findings, final_launch_approvals, commercial_approvals, pilot_signoff_approvals, pilot_dry_run_records, compliance_runs, schema_migrations, export_requests, export_worker_queue, data_subject_requests, break_glass_access, tenant_offboarding_jobs, report_snapshots, event_report_snapshots, downstream_deletion_records, crm_connections, crm_sync_jobs, crm_sync_records, commercial_partners, commercial_deals, communication_channel_consents, communication_suppressions, wallet_passes, webhook_subscriptions, webhook_event_types, webhook_deliveries, branding_assets.
 >
+> [v1.3 ADDED §7.1] **11 new tables** added across migrations 057–068 (new in v1.3, no original ancestor):
+>
+> | Table | Purpose |
+> |---|---|
+> | pass_types | Attendee pass categories; controls nfc_behaviour (consent/skip/access_only), vendor visibility, colour |
+> | consent_versions | Versioned consent form definitions; tracks retention period, grievance officer, data residency zones |
+> | consent_snapshots | Immutable snapshot of consent state at capture time, linked to consent_version_id |
+> | consent_attribute_changes | Audit log for individual consent field changes (who, when, old→new) |
+> | app_config | Singleton per tenant; deployment region, data controller, grievance officer, retention defaults |
+> | nfc_tag_batches | Physical NFC tag batch management; links batch to pass_type; tracks quantity issued |
+> | nfc_tag_batch_uids | Individual NFC tag UIDs within a batch; pre_registered/active/returned status; assigned_to_attendee_id |
+> | vendor_profiles | Shell table for vendor org identity (Phase 0 — content fields added in Phase 1); points to currently_published_item_id |
+> | stall_branding | Shell table for stall-level branding overrides (Phase 0); points to currently_published_item_id |
+> | moderation_items | JSONB payload store for each proposed change to vendor_profiles or stall_branding; 9-state machine |
+> | moderation_notes | Immutable audit trail for moderation transitions (AP-5 trigger blocks UPDATE/DELETE) |
+>
+> **Additional columns on existing tables (v1.3):**
+> - `users`: +vendor_content_editor, +vendor_content_approver
+> - `consents`: +organizer_release_allowed, +consent_version_id
+> - `attendees`: +pass_type_id, +registration_source, +nfc_batch_id, +age_confirmed_18_plus
+> - `moderation_status` ENUM: draft / submitted / under_review / changes_requested / approved / rejected / withdrawn / superseded / discarded
+>
+> [v1.3 CHANGED from §7.1] **Total tables: ~90** (v1.2 had 79).
+
 > [v1.2 ADDED §7.1] **4 new tables** for Drive storage (new in v1.2, no original ancestor):
 >
 > | Table | Purpose |
@@ -558,26 +632,36 @@ Partner payouts must be tracked, approved, and paid after client payment receipt
 
 > [v1.1 ADDED §13, no original ancestor] **18 build phases** — all complete as of v1.1:
 
-| Phase | Name | Status in v1.1 | Status in v1.2 |
-|---|---|---|---|
-| 1 | Database Migrations | Done | Done |
-| 2 | Authentication & JWT | Done | Done |
-| 3 | Role-Based Access Control | Done | Done |
-| 4 | Organizer Module | Done | Done |
-| 5 | Vendor Module | Done | Done |
-| 6 | Google Drive / OneDrive Storage | **Pending in v1.1** | **Done in v1.2** |
-| 7 | Sponsor Module | Done | Done |
-| 8 | Attendee Module & Privacy | Done | Done |
-| 9 | Ops / Fleet Module | Done | Done |
-| 10 | Kiosk Check-in | Done | Done |
-| 11 | Analytics & Reporting | Done | Done |
-| 12 | MFA Two-Step Verification | Done | Done |
-| 13 | Snapshot Comparison | Done | Done |
-| 14 | Data Population (seed) | Done | Done |
-| 15 | Vendor Export & Stall Metrics | Done | Done |
-| 16 | Security Hardening | Done | Done |
-| 17 | Access Control Matrix | Done | Done |
-| 18 | Browser Testing — All 6 Roles | Done | Done |
+| Phase | Name | Status in v1.1 | Status in v1.2 | Status in v1.3 |
+|---|---|---|---|---|
+| 1 | Database Migrations | Done | Done | Done (069 migrations) |
+| 2 | Authentication & JWT | Done | Done | Done |
+| 3 | Role-Based Access Control | Done | Done | Done (+import_staff role) |
+| 4 | Organizer Module | Done | Done | Done (+Attendees tab) |
+| 5 | Vendor Module | Done | Done | Done (+pass type visibility) |
+| 6 | Google Drive / OneDrive Storage | **Pending in v1.1** | **Done in v1.2** | Done (fixes) |
+| 7 | Sponsor Module | Done | Done | Done |
+| 8 | Attendee Module & Privacy | Done | Done | Done (+consent versioning, walk-in, bulk import) |
+| 9 | Ops / Fleet Module | Done | Done | Done (+Pi 5 NFC) |
+| 10 | Kiosk Check-in | Done | Done | Done (+age gate, pass nfc_behaviour) |
+| 11 | Analytics & Reporting | Done | Done | Done |
+| 12 | MFA Two-Step Verification | Done | Done | Done |
+| 13 | Snapshot Comparison | Done | Done | Done |
+| 14 | Data Population (seed) | Done | Done | Done (+pass types seed) |
+| 15 | Vendor Export & Stall Metrics | Done | Done | Done |
+| 16 | Security Hardening | Done | Done | Done (+CI/CD) |
+| 17 | Access Control Matrix | Done | Done | Done (+moderation routes) |
+| 18 | Browser Testing — All 6 Roles | Done | Done | Done |
+| P2-0 | Moderation Foundation | — | — | **Done in v1.3** |
+
+> [v1.3 ADDED §13, no original ancestor] **P2 Phase 0 — Moderation Foundation** complete. Zero frontend changes. Infrastructure only:
+> - 9-state moderation_status ENUM (draft → submitted → under_review → changes_requested → approved/rejected → withdrawn/superseded/discarded)
+> - vendor_profiles + stall_branding shell tables (content fields to be added in Phase 1)
+> - moderation_items (JSONB payload per proposed change; deferred FKs to shell tables)
+> - moderation_notes (immutable audit trail — AP-5 trigger blocks UPDATE/DELETE)
+> - vendor_content_editor + vendor_content_approver flags on users (MT-VP-01 self-approval guard)
+> - 3 new routes: POST /moderation-items/:itemId/transition, GET /vendors/:vendorOrgId/moderation-items, GET /moderation-items/:itemId/history
+> - 14/14 moderation-foundation tests pass; full suite 488 pass, 0 fail, 24 skip
 
 ---
 
@@ -728,6 +812,9 @@ Field reliability outranks feature breadth.
 
 ## Appendix D — Test Coverage
 
+> [v1.3 CHANGED from §D] **488 tests passing | 0 fail | 24 skipped** (was 438 in v1.2). New test file:
+> - moderation-foundation.test.mjs — 14 tests covering 9-state machine, self-approval guard, org isolation, history audit trail
+
 > [v1.2 ADDED §D, no original ancestor] **438 tests passing | 0 fail | 24 skipped**
 
 | Test File | Coverage Area |
@@ -749,6 +836,20 @@ Field reliability outranks feature breadth.
 | phase17-notifications.test.mjs | Advanced notification flows |
 | drive-storage.test.mjs | Drive OAuth, token encryption, access grants (v1.2) |
 | e2e-full-system.test.mjs | End-to-end system test |
+| moderation-foundation.test.mjs | Moderation 9-state machine, self-approval guard, org isolation (v1.3) |
+| pass-types.test.mjs | Pass type CRUD, nfc_behaviour validation, vendor visibility (v1.3) |
+| nfc-batches.test.mjs | NFC tag batch creation, UID assignment, status lifecycle (v1.3) |
+| nfc-tap.test.mjs | NFC tap ingestion with pass-type resolution (v1.3) |
+| attendee-import.test.mjs | Bulk CSV import, walk-in registration (v1.3) |
+| attendee-management.test.mjs | Attendee roster, NFC assignment, pass-type filtering (v1.3) |
+| import-staff.test.mjs | organizer_import_staff role permissions and scope (v1.3) |
+| email-delivery.test.mjs | Email delivery worker, retry logic, dead-letter handling |
+| iot-integration.test.mjs | IoT sync run management, checkpoint persistence |
+| infra-compliance.test.mjs | Compliance report generation, pilot sign-off flows |
+| infra-crm-deletion.test.mjs | CRM deletion cascade on DSR delete events |
+| infra-storage.test.mjs | R2/S3 storage backend, export file lifecycle |
+| server.security.test.mjs | Server-level security headers, transport enforcement |
+| postgres.integration.test.mjs | PostgreSQL backend integration (requires live DB) |
 
 ---
 

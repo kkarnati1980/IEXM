@@ -7,9 +7,10 @@ const db = await createPostgresDatabase({
   sslRejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== "false"
 });
 
+const reconcileOnly = process.argv.includes("--reconcile-only");
 try {
-  await runMigrations(db, defaultMigrationsDir());
-  console.log("Migrations applied");
+  await runMigrations(db, defaultMigrationsDir(), { reconcileOnly });
+  console.log(reconcileOnly ? "Migrations reconciled (no SQL executed)" : "Migrations applied");
 } finally {
   await db.close();
 }
