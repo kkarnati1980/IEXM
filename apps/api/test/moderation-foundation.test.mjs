@@ -71,10 +71,11 @@ test("MT-VP-02: moderation_notes are immutable", async () => {
       tenant_id:     TENANT_ID,
       target_table:  "vendor_profiles",
       target_id:     randomId("vp"),
-      item_id:       randomId("item"),
       action:        "submit",
       actor_user_id: "demo-vendor",
       note:          null,
+      prior_status:  null,
+      new_status:    "submitted",
       created_at:    new Date().toISOString()
     });
 
@@ -191,6 +192,11 @@ test("history route returns notes sorted by created_at ASC", async () => {
     const t2 = new Date(Date.now() - 1000).toISOString();
     const t3 = new Date().toISOString();
 
+    const STATUS_FOR_ACTION = {
+      submit:  { prior_status: null,           new_status: "submitted"    },
+      claim:   { prior_status: "submitted",    new_status: "under_review" },
+      approve: { prior_status: "under_review", new_status: "approved"     }
+    };
     for (const [id, action, ts] of [
       ["n-c1", "submit",  t1],
       ["n-c2", "approve", t3],
@@ -198,8 +204,10 @@ test("history route returns notes sorted by created_at ASC", async () => {
     ]) {
       await app.repos.moderationNotes.create({
         id, tenant_id: TENANT_ID, target_table: "vendor_profiles",
-        target_id: entityId, item_id: item.id, action,
-        actor_user_id: "demo-vendor", note: null, created_at: ts
+        target_id: entityId, action,
+        actor_user_id: "demo-vendor", note: null,
+        ...STATUS_FOR_ACTION[action],
+        created_at: ts
       });
     }
 

@@ -313,6 +313,86 @@ test("VP-15: PATCH rejects industry longer than 80 characters", async () => {
   });
 });
 
+// VP-17: PATCH with submit=true on existing draft → note has new_status='submitted', prior_status='draft'
+test("VP-17: PATCH with submit on existing draft records moderation note with correct statuses", async () => {
+  await withApp(async (app) => {
+    // First create a draft
+    const draft = await app.inject({
+      method: "PATCH",
+      path: `/vendors/${VENDOR_ORG_ID}/profile`,
+      headers: bearer(VENDOR_TOKEN),
+      body: { display_name: "Draft Corp" }
+    });
+    assert.equal(draft.statusCode, 200, JSON.stringify(draft.body));
+    assert.equal(draft.body.item?.state, "draft");
+
+    // Now submit it
+    const submit = await app.inject({
+      method: "PATCH",
+      path: `/vendors/${VENDOR_ORG_ID}/profile`,
+      headers: bearer(VENDOR_TOKEN),
+      body: { display_name: "Draft Corp", submit: true }
+    });
+    assert.equal(submit.statusCode, 200, JSON.stringify(submit.body));
+    assert.equal(submit.body.item?.state, "submitted");
+
+    // Check the moderation note
+    const notes = await app.repos.moderationNotes.listByItem(
+      TENANT_ID, "vendor_profiles", submit.body.profile.id
+    );
+    const submitNote = notes.find((n) => n.action === "submit");
+    assert.ok(submitNote, "submit note must exist");
+    assert.equal(submitNote.new_status, "submitted");
+    assert.equal(submitNote.prior_status, "draft");
+  });
+});
+
+// VP-18: PATCH with submit=true on first creation (no prior item) → note has prior_status=null
+test("VP-18: initial PATCH with submit flag records note with prior_status=null", async () => {
+  await withApp(async (app) => {
+    const res = await app.inject({
+      method: "PATCH",
+      path: `/vendors/${VENDOR_ORG_ID}/profile`,
+      headers: bearer(VENDOR_TOKEN),
+      body: { display_name: "Instant Submit Corp", submit: true }
+    });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+    assert.equal(res.body.item?.state, "submitted");
+
+    const notes = await app.repos.moderationNotes.listByItem(
+      TENANT_ID, "vendor_profiles", res.body.profile.id
+    );
+    const submitNote = notes.find((n) => n.action === "submit");
+    assert.ok(submitNote, "submit note must exist");
+    assert.equal(submitNote.new_status, "submitted");
+    assert.equal(submitNote.prior_status, null);
+  });
+});
+
+// VP-19: moderationNotes.create with new_status=null throws (proves DB NOT NULL constraint is mirrored)
+test("VP-19: moderationNotes.create with null new_status throws (NOT NULL constraint)", async () => {
+  await withApp(async (app) => {
+    let threw = false;
+    try {
+      await app.repos.moderationNotes.create({
+        id:           "00000000-0000-0000-0000-000000000099",
+        tenant_id:    TENANT_ID,
+        target_table: "vendor_profiles",
+        target_id:    "00000000-0000-0000-0000-000000000001",
+        actor_user_id: "user-vendor",
+        action:       "submit",
+        note:         null,
+        prior_status: null,
+        new_status:   null,
+        created_at:   new Date().toISOString()
+      });
+    } catch {
+      threw = true;
+    }
+    assert.ok(threw, "moderationNotes.create with null new_status must throw");
+  });
+});
+
 // VP-16: full payload regression — ensures UUID id generation works (not nextId prefix strings)
 test("VP-16: full form payload returns 200 with valid string ids (regression: UUID id generation)", async () => {
   await withApp(async (app) => {

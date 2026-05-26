@@ -12744,6 +12744,24 @@ function capitalize(value) {
 
 // ── Moderation Foundation (P2 Phase 0) ──────────────────────────────────────
 
+async function recordModerationTransition(txRepos, {
+  tenantId, targetTable, targetId, actorUserId,
+  priorStatus, newStatus, action, note, now
+}) {
+  return txRepos.moderationNotes.create({
+    id:            randomUUID(),
+    tenant_id:     tenantId,
+    target_table:  targetTable,
+    target_id:     targetId,
+    action,
+    actor_user_id: actorUserId,
+    note:          note ?? null,
+    prior_status:  priorStatus ?? null,
+    new_status:    newStatus,
+    created_at:    now
+  });
+}
+
 const MODERATION_TRANSITIONS = {
   draft:             ["submitted", "discarded"],
   submitted:         ["under_review", "withdrawn"],
@@ -12818,16 +12836,16 @@ function registerModerationRoutes(router) {
             prior.state      = "superseded";
             prior.updated_at = now;
             await txRepos.moderationItems.update(prior);
-            await txRepos.moderationNotes.create({
-              id:           randomUUID(),
-              tenant_id:    principal.tenant_id,
-              target_table: item.entity_type,
-              target_id:    item.entity_id,
-              item_id:      prior.id,
+            await recordModerationTransition(txRepos, {
+              tenantId:     principal.tenant_id,
+              targetTable:  item.entity_type,
+              targetId:     item.entity_id,
+              actorUserId:  principal.user_id,
+              priorStatus:  "approved",
+              newStatus:    "superseded",
               action:       "supersede",
-              actor_user_id: principal.user_id,
               note:         `Superseded by item ${item.id}`,
-              created_at:   now
+              now
             });
           }
 
@@ -12853,16 +12871,16 @@ function registerModerationRoutes(router) {
 
         const updated = await txRepos.moderationItems.update(item);
 
-        await txRepos.moderationNotes.create({
-          id:           randomUUID(),
-          tenant_id:    principal.tenant_id,
-          target_table: item.entity_type,
-          target_id:    item.entity_id,
-          item_id:      item.id,
-          action:       NOTE_ACTION[body.to_state] ?? body.to_state,
-          actor_user_id: principal.user_id,
-          note:         body.note ?? null,
-          created_at:   now
+        await recordModerationTransition(txRepos, {
+          tenantId:    principal.tenant_id,
+          targetTable: item.entity_type,
+          targetId:    item.entity_id,
+          actorUserId: principal.user_id,
+          priorStatus: previousState,
+          newStatus:   body.to_state,
+          action:      NOTE_ACTION[body.to_state] ?? body.to_state,
+          note:        body.note ?? null,
+          now
         });
 
         await writeAuditEvent(repos, {
@@ -13079,6 +13097,7 @@ function registerVendorProfileRoutes(router) {
           principal.tenant_id, "vendor_profiles", profile.id
         );
 
+        let priorItemState = null;
         if (!item) {
           // Seed payload from currently published item if one exists
           let basePayload = {};
@@ -13103,7 +13122,9 @@ function registerVendorProfileRoutes(router) {
             updated_at: now
           };
           await txRepos.moderationItems.create(item);
+          // priorItemState stays null — no prior item existed
         } else {
+          priorItemState = item.state;
           // Merge fields into existing draft payload
           item.payload = { ...item.payload, ...fields };
           item.updated_at = now;
@@ -13115,16 +13136,16 @@ function registerVendorProfileRoutes(router) {
           item.submitted_at = now;
           item.updated_at = now;
           item = await txRepos.moderationItems.update(item);
-          await txRepos.moderationNotes.create({
-            id: randomUUID(),
-            tenant_id: principal.tenant_id,
-            target_table: "vendor_profiles",
-            target_id: profile.id,
-            item_id: item.id,
-            action: "submit",
-            actor_user_id: principal.user_id,
-            note: null,
-            created_at: now
+          await recordModerationTransition(txRepos, {
+            tenantId:    principal.tenant_id,
+            targetTable: "vendor_profiles",
+            targetId:    profile.id,
+            actorUserId: principal.user_id,
+            priorStatus: priorItemState,
+            newStatus:   "submitted",
+            action:      "submit",
+            note:        null,
+            now
           });
         }
 

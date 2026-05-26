@@ -1950,6 +1950,12 @@ export function createMemoryRepositories(state) {
 
     moderationNotes: {
       async create(record) {
+        if (record.new_status == null) {
+          throw Object.assign(
+            new Error("null value in column \"new_status\" of relation \"moderation_notes\" violates not-null constraint"),
+            { statusCode: 500, code: "23502" }
+          );
+        }
         if (!state.moderationNotes) state.moderationNotes = [];
         state.moderationNotes.push(record);
         return record;
