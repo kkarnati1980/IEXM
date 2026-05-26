@@ -441,6 +441,10 @@
               <label>Website URL <span class="muted">(https only)</span></label>
               <input id="pf-website-url" type="url" placeholder="https://www.example.com">
             </div>
+            <div class="field">
+              <label>Industry <span class="muted">Free text, e.g. SaaS, Manufacturing, Logistics</span></label>
+              <input id="pf-industry" maxlength="80" placeholder="e.g. SaaS">
+            </div>
           </div>
         </article>
 
@@ -1244,6 +1248,7 @@
           $('pf-description').value  = payload.description  ?? '';
           $('pf-logo-url').value     = payload.logo_url     ?? '';
           $('pf-website-url').value  = payload.website_url  ?? '';
+          $('pf-industry').value     = payload.industry     ?? '';
           renderSocialRows(payload.social_links ?? []);
           renderProfileStatus(item?.state ?? null);
         } catch (e) {
@@ -1321,6 +1326,7 @@
           description:  $('pf-description').value.trim()  || undefined,
           logo_url:     $('pf-logo-url').value.trim()     || undefined,
           website_url:  $('pf-website-url').value.trim()  || undefined,
+          industry:     $('pf-industry').value.trim()     || undefined,
           social_links: collectSocialLinks(),
           submit
         };

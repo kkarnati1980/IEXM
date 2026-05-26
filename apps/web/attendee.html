@@ -116,6 +116,7 @@
           <img id="vp-logo" class="vp-logo" src="" alt="Vendor logo" hidden>
           <p class="vp-name" id="vp-name"></p>
           <p class="vp-tagline" id="vp-tagline"></p>
+          <p class="mini-note muted" id="vp-industry" hidden></p>
           <div class="social-chips" id="vp-social"></div>
         </div>
 
@@ -341,6 +342,7 @@
           if (p.logo_url) { $("vp-logo").src = p.logo_url; $("vp-logo").hidden = false; }
           $("vp-name").textContent    = p.display_name || "";
           $("vp-tagline").textContent = p.tagline || "";
+          if (p.industry) { $("vp-industry").textContent = p.industry; $("vp-industry").hidden = false; }
           const socialEl = $("vp-social");
           while (socialEl.firstChild) socialEl.removeChild(socialEl.firstChild);
           for (const sl of (data.social_links || [])) {

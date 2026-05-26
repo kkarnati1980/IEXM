@@ -12942,7 +12942,7 @@ function stripHtml(str) {
 
 function validateProfileBody(body) {
   const out = {};
-  const allowed = ["display_name", "tagline", "description", "logo_url", "website_url", "social_links", "submit"];
+  const allowed = ["display_name", "tagline", "description", "logo_url", "website_url", "industry", "social_links", "submit"];
   for (const k of Object.keys(body)) {
     if (!allowed.includes(k)) throw new HttpError(400, `Unknown field: ${k}`);
   }
@@ -12976,6 +12976,11 @@ function validateProfileBody(body) {
     } else {
       out.website_url = null;
     }
+  }
+  if (body.industry !== undefined) {
+    if (typeof body.industry !== "string") throw new HttpError(422, "industry must be a string");
+    if (body.industry.length > 80) throw new HttpError(422, "industry must be 80 characters or fewer");
+    out.industry = stripHtml(body.industry).slice(0, 80);
   }
   if (body.social_links !== undefined) {
     if (!Array.isArray(body.social_links)) throw new HttpError(422, "social_links must be an array");

@@ -277,3 +277,38 @@ test("VP-13: GET /vendors/:org/profile after approval shows published, no pendin
     assert.equal(view.body.pending, null);
   });
 });
+
+// VP-14: industry field persists into payload and is returned by GET /profile
+test("VP-14: PATCH with industry persists to moderation_items.payload and GET returns it", async () => {
+  await withApp(async (app) => {
+    const patch = await app.inject({
+      method: "PATCH",
+      path: `/vendors/${VENDOR_ORG_ID}/profile`,
+      headers: bearer(VENDOR_TOKEN),
+      body: { display_name: "Acme", industry: "SaaS" }
+    });
+    assert.equal(patch.statusCode, 200, JSON.stringify(patch.body));
+    assert.equal(patch.body.item?.payload?.industry, "SaaS");
+
+    const get = await app.inject({
+      method: "GET",
+      path: `/vendors/${VENDOR_ORG_ID}/profile`,
+      headers: bearer(VENDOR_TOKEN)
+    });
+    assert.equal(get.statusCode, 200, JSON.stringify(get.body));
+    assert.equal(get.body.pending?.payload?.industry, "SaaS");
+  });
+});
+
+// VP-15: industry > 80 chars returns 422
+test("VP-15: PATCH rejects industry longer than 80 characters", async () => {
+  await withApp(async (app) => {
+    const res = await app.inject({
+      method: "PATCH",
+      path: `/vendors/${VENDOR_ORG_ID}/profile`,
+      headers: bearer(VENDOR_TOKEN),
+      body: { industry: "A".repeat(81) }
+    });
+    assert.equal(res.statusCode, 422, JSON.stringify(res.body));
+  });
+});
