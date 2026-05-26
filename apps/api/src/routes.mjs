@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { nextId } from "./store.mjs";
 import { hashPassword, verifyPassword, validatePasswordComplexity } from "./auth/passwords.mjs";
 import { issuePlatformToken } from "./auth/platform-jwt.mjs";
@@ -12819,7 +12819,7 @@ function registerModerationRoutes(router) {
             prior.updated_at = now;
             await txRepos.moderationItems.update(prior);
             await txRepos.moderationNotes.create({
-              id:           nextId("mn"),
+              id:           randomUUID(),
               tenant_id:    principal.tenant_id,
               target_table: item.entity_type,
               target_id:    item.entity_id,
@@ -12854,7 +12854,7 @@ function registerModerationRoutes(router) {
         const updated = await txRepos.moderationItems.update(item);
 
         await txRepos.moderationNotes.create({
-          id:           nextId("mn"),
+          id:           randomUUID(),
           tenant_id:    principal.tenant_id,
           target_table: item.entity_type,
           target_id:    item.entity_id,
@@ -13062,7 +13062,7 @@ function registerVendorProfileRoutes(router) {
         let profile;
         if (profiles.length === 0) {
           profile = {
-            id: nextId("vp"),
+            id: randomUUID(),
             tenant_id: principal.tenant_id,
             organization_id: orgId,
             currently_published_item_id: null,
@@ -13089,7 +13089,7 @@ function registerVendorProfileRoutes(router) {
             basePayload = { ...pub.payload };
           }
           item = {
-            id: nextId("mi"),
+            id: randomUUID(),
             tenant_id: principal.tenant_id,
             entity_type: "vendor_profiles",
             entity_id: profile.id,
@@ -13116,7 +13116,7 @@ function registerVendorProfileRoutes(router) {
           item.updated_at = now;
           item = await txRepos.moderationItems.update(item);
           await txRepos.moderationNotes.create({
-            id: nextId("mn"),
+            id: randomUUID(),
             tenant_id: principal.tenant_id,
             target_table: "vendor_profiles",
             target_id: profile.id,
@@ -13180,7 +13180,7 @@ function registerVendorProfileRoutes(router) {
         let profile;
         if (profiles.length === 0) {
           profile = {
-            id: nextId("vp"),
+            id: randomUUID(),
             tenant_id: principal.tenant_id,
             organization_id: orgId,
             currently_published_item_id: null,
@@ -13204,7 +13204,7 @@ function registerVendorProfileRoutes(router) {
             basePayload = { ...pub.payload };
           }
           item = {
-            id: nextId("mi"),
+            id: randomUUID(),
             tenant_id: principal.tenant_id,
             entity_type: "vendor_profiles",
             entity_id: profile.id,

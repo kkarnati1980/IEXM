@@ -237,7 +237,6 @@ async function dispatch({
   } catch (error) {
     const normalized = normalizeError(error);
     if (normalized.statusCode >= 500) {
-      const isProduction = ctx.env?.NODE_ENV === "production";
       console.error("[error]", JSON.stringify({
         timestamp: new Date().toISOString(),
         request_id: ctx.requestId,
@@ -245,7 +244,8 @@ async function dispatch({
         path: ctx.route?.path ?? "unknown",
         status: normalized.statusCode,
         error: normalized.message,
-        ...(isProduction ? {} : { stack: error.stack })
+        cause: error?.message ?? null,
+        stack: error?.stack?.split("\n").slice(0, 10).join("\n") ?? null
       }));
     }
     await attemptAuditFailure(ctx, normalized);

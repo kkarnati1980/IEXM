@@ -312,3 +312,30 @@ test("VP-15: PATCH rejects industry longer than 80 characters", async () => {
     assert.equal(res.statusCode, 422, JSON.stringify(res.body));
   });
 });
+
+// VP-16: full payload regression — ensures UUID id generation works (not nextId prefix strings)
+test("VP-16: full form payload returns 200 with valid string ids (regression: UUID id generation)", async () => {
+  await withApp(async (app) => {
+    const res = await app.inject({
+      method: "PATCH",
+      path: `/vendors/${VENDOR_ORG_ID}/profile`,
+      headers: bearer(VENDOR_TOKEN),
+      body: {
+        display_name: "Acme Test Vendor",
+        tagline: "We make great test data",
+        description: "This is a test profile for P2 Phase 1 verification.",
+        website_url: "https://example.com",
+        industry: "Testing",
+        social_links: [
+          { channel: "linkedin", url: "https://linkedin.com/company/acme-test" }
+        ]
+      }
+    });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+    assert.equal(res.body.item?.state, "draft");
+    assert.equal(res.body.item?.payload?.display_name, "Acme Test Vendor");
+    assert.equal(res.body.item?.payload?.industry, "Testing");
+    assert.ok(typeof res.body.profile?.id === "string" && res.body.profile.id.length > 0, "profile id must be a non-empty string");
+    assert.ok(typeof res.body.item?.id === "string" && res.body.item.id.length > 0, "item id must be a non-empty string");
+  });
+});
