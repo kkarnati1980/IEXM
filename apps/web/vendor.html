@@ -93,10 +93,11 @@
       @media(max-width:1100px){main{grid-template-columns:1fr;}}
       @media(max-width:640px){.metric-grid{grid-template-columns:repeat(2,1fr);}}
       /* ── Tab bar ── */
-      .tab-bar{max-width:1400px;margin:0 auto;padding:0 24px 0;display:flex;gap:6px;border-bottom:1px solid var(--line);background:transparent;}
-      .tab-btn{background:none;border:0;border-radius:0;padding:12px 18px;font-size:14px;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px;font-weight:500;}
-      .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
-      .tab-btn:hover:not(.active){color:var(--ink);}
+      .tab-bar{max-width:1400px;margin:0 auto;padding:0 24px 8px;}
+      .tabs{display:flex;gap:4px;flex-wrap:wrap;}
+      .tab-btn{border:0;background:none;color:var(--muted);padding:10px 16px;border-radius:12px;cursor:pointer;font:inherit;font-size:14px;border:1px solid transparent;}
+      .tab-btn.active{background:#fef3c7;color:var(--accent);border-color:rgba(45,106,159,0.3);}
+      .tab-btn:hover:not(.active){background:rgba(17,34,51,.06);color:var(--ink);}
       /* ── Profile tab ── */
       #tab-profile{max-width:800px;margin:0 auto;padding:24px 24px 48px;}
       .profile-status{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.7);margin-bottom:18px;font-size:13px;}
@@ -117,7 +118,6 @@
         <div class="shell-title">
           <span class="eyebrow">Vendor View</span>
           <strong id="page-title">Vendor dashboard</strong>
-          <span class="muted" id="page-subtitle">Lead inbox and CRM for your assigned stall.</span>
         </div>
         <nav class="shell-nav">
           <a href="./vendor.html" class="active">Vendor</a>
@@ -127,8 +127,10 @@
       </div>
     </div>
     <div class="tab-bar">
-      <button class="tab-btn active" id="tab-btn-leads" onclick="switchTab('leads')">Leads</button>
-      <button class="tab-btn" id="tab-btn-profile" onclick="switchTab('profile')">Profile</button>
+      <div class="tabs">
+        <button class="tab-btn active" id="tab-btn-leads" onclick="switchTab('leads')">Leads</button>
+        <button class="tab-btn" id="tab-btn-profile" onclick="switchTab('profile')">Profile</button>
+      </div>
     </div>
 
     <main id="tab-leads">
@@ -537,7 +539,7 @@
         $("m-enriched").textContent  = num(m.enriched_leads  || 0);
         $("m-response").textContent  = m.response_rate != null ? `${m.response_rate}%` : "0%";
         $("page-title").textContent  = m.stall_name ? `${m.stall_name} leads` : "Vendor dashboard";
-        $("page-subtitle").textContent = m.event_name ? `${m.event_name} · ${m.stall_name || stallId}` : "Lead inbox for your assigned stall.";
+        $("page-title").textContent = m.stall_name || "Vendor dashboard";
       }
 
       /* ── LEAD TABLE ──────────────────────────────── */
