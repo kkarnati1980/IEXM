@@ -4512,6 +4512,39 @@ export function createPostgresRepositories(db, securityContext = null) {
             ORDER BY created_at DESC`,
           params
         ));
+      },
+      async findPendingByEntity(tenantId, entityType, entityId) {
+        return maybeOne(await execute(
+          `SELECT * FROM moderation_items
+           WHERE tenant_id=$1 AND entity_type=$2 AND entity_id=$3
+             AND state IN ('draft','submitted','under_review','changes_requested')
+           ORDER BY created_at DESC LIMIT 1`,
+          [tenantId, entityType, entityId]
+        ));
+      }
+    },
+
+    vendorProfileSocialLinks: {
+      async listByProfile(tenantId, vendorProfileId) {
+        return many(await execute(
+          `SELECT * FROM vendor_profile_social_links
+           WHERE tenant_id=$1 AND vendor_profile_id=$2 ORDER BY channel`,
+          [tenantId, vendorProfileId]
+        ));
+      },
+      async replaceForProfile(tenantId, vendorProfileId, socialLinks, now) {
+        await execute(
+          `DELETE FROM vendor_profile_social_links WHERE tenant_id=$1 AND vendor_profile_id=$2`,
+          [tenantId, vendorProfileId]
+        );
+        for (const sl of socialLinks) {
+          await execute(
+            `INSERT INTO vendor_profile_social_links
+               (id, tenant_id, vendor_profile_id, channel, url, prefilled_message, click_count, created_at, updated_at)
+             VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 0, $6, $6)`,
+            [tenantId, vendorProfileId, sl.channel, sl.url, sl.prefilled_message ?? null, now]
+          );
+        }
       }
     },
 

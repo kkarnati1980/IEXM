@@ -8793,6 +8793,7 @@ export function registerRoutes(router) {
   });
 
   registerModerationRoutes(router);
+  registerVendorProfileRoutes(router);
 }
 
 async function resolveDeviceCredentialResources({ repos, principal, params }) {
@@ -12829,6 +12830,25 @@ function registerModerationRoutes(router) {
               created_at:   now
             });
           }
+
+          // AP-1: vendor_profiles pointer swap + social link sync (CR-VP-01 Phase 1)
+          if (item.entity_type === "vendor_profiles") {
+            let profile;
+            try {
+              profile = await txRepos.vendorProfiles.findById(principal.tenant_id, item.entity_id);
+            } catch {
+              profile = null;
+            }
+            if (profile) {
+              profile.currently_published_item_id = item.id;
+              profile.updated_at = now;
+              await txRepos.vendorProfiles.update(profile);
+              const socialLinks = item.payload.social_links ?? [];
+              await txRepos.vendorProfileSocialLinks.replaceForProfile(
+                principal.tenant_id, item.entity_id, socialLinks, now
+              );
+            }
+          }
         }
 
         const updated = await txRepos.moderationItems.update(item);
@@ -12904,6 +12924,346 @@ function registerModerationRoutes(router) {
         principal.tenant_id, item.entity_type, item.entity_id
       );
       return { item_id: item.id, history: notes };
+    }
+  });
+}
+
+// ─── Vendor Profile Core (CR-VP-01, P2 Phase 1) ──────────────────────────────
+
+const VALID_SOCIAL_CHANNELS = new Set([
+  "linkedin", "youtube", "instagram", "facebook", "x", "whatsapp",
+  "generic_1", "generic_2"
+]);
+
+function stripHtml(str) {
+  if (typeof str !== "string") return str;
+  return str.replace(/<[^>]*>/g, "").trim();
+}
+
+function validateProfileBody(body) {
+  const out = {};
+  const allowed = ["display_name", "tagline", "description", "logo_url", "website_url", "social_links", "submit"];
+  for (const k of Object.keys(body)) {
+    if (!allowed.includes(k)) throw new HttpError(400, `Unknown field: ${k}`);
+  }
+  if (body.display_name !== undefined) {
+    if (typeof body.display_name !== "string" || !body.display_name.trim())
+      throw new HttpError(422, "display_name must be a non-empty string");
+    out.display_name = stripHtml(body.display_name).slice(0, 120);
+  }
+  if (body.tagline !== undefined) {
+    if (typeof body.tagline !== "string") throw new HttpError(422, "tagline must be a string");
+    out.tagline = stripHtml(body.tagline).slice(0, 200);
+  }
+  if (body.description !== undefined) {
+    if (typeof body.description !== "string") throw new HttpError(422, "description must be a string");
+    out.description = stripHtml(body.description).slice(0, 2000);
+  }
+  if (body.logo_url !== undefined) {
+    if (body.logo_url !== null) {
+      if (typeof body.logo_url !== "string" || !body.logo_url.startsWith("https://"))
+        throw new HttpError(422, "logo_url must be an https URL or null");
+      out.logo_url = body.logo_url.slice(0, 512);
+    } else {
+      out.logo_url = null;
+    }
+  }
+  if (body.website_url !== undefined) {
+    if (body.website_url !== null) {
+      if (typeof body.website_url !== "string" || !body.website_url.startsWith("https://"))
+        throw new HttpError(422, "website_url must be an https URL or null");
+      out.website_url = body.website_url.slice(0, 512);
+    } else {
+      out.website_url = null;
+    }
+  }
+  if (body.social_links !== undefined) {
+    if (!Array.isArray(body.social_links)) throw new HttpError(422, "social_links must be an array");
+    if (body.social_links.length > 8) throw new HttpError(422, "social_links may not exceed 8 entries");
+    const seen = new Set();
+    out.social_links = body.social_links.map((sl, i) => {
+      if (!sl || typeof sl !== "object") throw new HttpError(422, `social_links[${i}] must be an object`);
+      if (!VALID_SOCIAL_CHANNELS.has(sl.channel))
+        throw new HttpError(422, `social_links[${i}].channel invalid: ${sl.channel}`);
+      if (seen.has(sl.channel)) throw new HttpError(422, `Duplicate channel: ${sl.channel}`);
+      seen.add(sl.channel);
+      if (typeof sl.url !== "string" || !sl.url.startsWith("https://"))
+        throw new HttpError(422, `social_links[${i}].url must be an https URL`);
+      const entry = { channel: sl.channel, url: sl.url.slice(0, 512) };
+      if (sl.prefilled_message != null) {
+        if (typeof sl.prefilled_message !== "string")
+          throw new HttpError(422, `social_links[${i}].prefilled_message must be a string`);
+        entry.prefilled_message = stripHtml(sl.prefilled_message).slice(0, 500);
+      }
+      return entry;
+    });
+  }
+  return { fields: out, submit: body.submit === true };
+}
+
+function registerVendorProfileRoutes(router) {
+  // D1: Read editor view — published snapshot + pending draft
+  router.addRoute({
+    id: "vendor-profile-get",
+    method: "GET",
+    path: "/vendors/:vendorOrgId/profile",
+    allowedRoles: ["vendor_manager"],
+    handler: async ({ repos, principal, params }) => {
+      const orgId = params.vendorOrgId;
+      if (orgId !== principal.organization_id) {
+        throw new HttpError(403, "Access denied to this vendor organisation");
+      }
+      const profiles = await repos.vendorProfiles.findByOrganization(principal.tenant_id, orgId);
+      if (profiles.length === 0) {
+        return { profile: null, published: null, pending: null };
+      }
+      const profile = profiles[0];
+      const published = profile.currently_published_item_id
+        ? await repos.moderationItems.findById(principal.tenant_id, profile.currently_published_item_id)
+        : null;
+      const pending = await repos.moderationItems.findPendingByEntity(
+        principal.tenant_id, "vendor_profiles", profile.id
+      );
+      return { profile, published, pending };
+    }
+  });
+
+  // D2: Create or update vendor profile draft (optionally submit)
+  router.addRoute({
+    id: "vendor-profile-patch",
+    method: "PATCH",
+    path: "/vendors/:vendorOrgId/profile",
+    allowedRoles: ["vendor_manager"],
+    validate: (body) => body,
+    handler: async ({ repos, principal, params, body }) => {
+      const orgId = params.vendorOrgId;
+      if (orgId !== principal.organization_id) {
+        throw new HttpError(403, "Access denied to this vendor organisation");
+      }
+      if (!canSubmitModeration(principal)) {
+        throw new HttpError(403, "vendor_content_editor scope required");
+      }
+
+      const { fields, submit } = validateProfileBody(body);
+      if (Object.keys(fields).length === 0 && !submit) {
+        throw new HttpError(422, "No updatable fields provided");
+      }
+
+      const now = new Date().toISOString();
+
+      return repos.withTransaction(async (txRepos) => {
+        // Auto-create vendor profile shell if first time
+        let profiles = await txRepos.vendorProfiles.findByOrganization(principal.tenant_id, orgId);
+        let profile;
+        if (profiles.length === 0) {
+          profile = {
+            id: nextId("vp"),
+            tenant_id: principal.tenant_id,
+            organization_id: orgId,
+            currently_published_item_id: null,
+            created_at: now,
+            updated_at: now
+          };
+          await txRepos.vendorProfiles.create(profile);
+        } else {
+          profile = profiles[0];
+        }
+
+        // Find or create pending draft
+        let item = await txRepos.moderationItems.findPendingByEntity(
+          principal.tenant_id, "vendor_profiles", profile.id
+        );
+
+        if (!item) {
+          // Seed payload from currently published item if one exists
+          let basePayload = {};
+          if (profile.currently_published_item_id) {
+            const pub = await txRepos.moderationItems.findById(
+              principal.tenant_id, profile.currently_published_item_id
+            );
+            basePayload = { ...pub.payload };
+          }
+          item = {
+            id: nextId("mi"),
+            tenant_id: principal.tenant_id,
+            entity_type: "vendor_profiles",
+            entity_id: profile.id,
+            state: "draft",
+            payload: { ...basePayload, ...fields },
+            editor_user_id: principal.user_id,
+            approver_user_id: null,
+            submitted_at: null,
+            decided_at: null,
+            created_at: now,
+            updated_at: now
+          };
+          await txRepos.moderationItems.create(item);
+        } else {
+          // Merge fields into existing draft payload
+          item.payload = { ...item.payload, ...fields };
+          item.updated_at = now;
+          item = await txRepos.moderationItems.update(item);
+        }
+
+        if (submit && item.state === "draft") {
+          item.state = "submitted";
+          item.submitted_at = now;
+          item.updated_at = now;
+          item = await txRepos.moderationItems.update(item);
+          await txRepos.moderationNotes.create({
+            id: nextId("mn"),
+            tenant_id: principal.tenant_id,
+            target_table: "vendor_profiles",
+            target_id: profile.id,
+            item_id: item.id,
+            action: "submit",
+            actor_user_id: principal.user_id,
+            note: null,
+            created_at: now
+          });
+        }
+
+        return { profile, item };
+      });
+    }
+  });
+
+  // D3: List published social links for a vendor profile
+  router.addRoute({
+    id: "vendor-profile-social-get",
+    method: "GET",
+    path: "/vendors/:vendorOrgId/social-links",
+    allowedRoles: ["vendor_manager"],
+    handler: async ({ repos, principal, params }) => {
+      const orgId = params.vendorOrgId;
+      if (orgId !== principal.organization_id) {
+        throw new HttpError(403, "Access denied to this vendor organisation");
+      }
+      const profiles = await repos.vendorProfiles.findByOrganization(principal.tenant_id, orgId);
+      if (profiles.length === 0) return { social_links: [] };
+      const links = await repos.vendorProfileSocialLinks.listByProfile(
+        principal.tenant_id, profiles[0].id
+      );
+      return { social_links: links };
+    }
+  });
+
+  // D4: Bulk-replace social links in vendor profile draft
+  router.addRoute({
+    id: "vendor-profile-social-put",
+    method: "PUT",
+    path: "/vendors/:vendorOrgId/social-links",
+    allowedRoles: ["vendor_manager"],
+    validate: (body) => body,
+    handler: async ({ repos, principal, params, body }) => {
+      const orgId = params.vendorOrgId;
+      if (orgId !== principal.organization_id) {
+        throw new HttpError(403, "Access denied to this vendor organisation");
+      }
+      if (!canSubmitModeration(principal)) {
+        throw new HttpError(403, "vendor_content_editor scope required");
+      }
+      if (!Array.isArray(body.social_links)) {
+        throw new HttpError(422, "social_links array required");
+      }
+
+      const { fields } = validateProfileBody({ social_links: body.social_links });
+      const now = new Date().toISOString();
+
+      return repos.withTransaction(async (txRepos) => {
+        let profiles = await txRepos.vendorProfiles.findByOrganization(principal.tenant_id, orgId);
+        let profile;
+        if (profiles.length === 0) {
+          profile = {
+            id: nextId("vp"),
+            tenant_id: principal.tenant_id,
+            organization_id: orgId,
+            currently_published_item_id: null,
+            created_at: now,
+            updated_at: now
+          };
+          await txRepos.vendorProfiles.create(profile);
+        } else {
+          profile = profiles[0];
+        }
+
+        let item = await txRepos.moderationItems.findPendingByEntity(
+          principal.tenant_id, "vendor_profiles", profile.id
+        );
+        if (!item) {
+          let basePayload = {};
+          if (profile.currently_published_item_id) {
+            const pub = await txRepos.moderationItems.findById(
+              principal.tenant_id, profile.currently_published_item_id
+            );
+            basePayload = { ...pub.payload };
+          }
+          item = {
+            id: nextId("mi"),
+            tenant_id: principal.tenant_id,
+            entity_type: "vendor_profiles",
+            entity_id: profile.id,
+            state: "draft",
+            payload: { ...basePayload, social_links: fields.social_links },
+            editor_user_id: principal.user_id,
+            approver_user_id: null,
+            submitted_at: null,
+            decided_at: null,
+            created_at: now,
+            updated_at: now
+          };
+          await txRepos.moderationItems.create(item);
+        } else {
+          item.payload = { ...item.payload, social_links: fields.social_links };
+          item.updated_at = now;
+          item = await txRepos.moderationItems.update(item);
+        }
+
+        return { profile, item };
+      });
+    }
+  });
+
+  // D5: Public attendee-facing vendor profile for a stall
+  // Requires ?tenant_id=<tenantId> — the attendee HTML has this from its session context.
+  router.addRoute({
+    id: "stall-vendor-profile-public",
+    method: "GET",
+    path: "/stalls/:stallId/vendor-profile",
+    authRequired: false,
+    handler: async ({ repos, params, query }) => {
+      const tenantId = query.tenant_id;
+      if (!tenantId) throw new HttpError(400, "tenant_id query parameter required");
+
+      let stall;
+      try {
+        stall = await repos.stalls.findById(tenantId, params.stallId);
+      } catch {
+        throw new HttpError(404, "Stall not found");
+      }
+
+      const orgId = stall.vendor_organization_id;
+      if (!orgId) return { profile: null, social_links: [] };
+
+      const profiles = await repos.vendorProfiles.findByOrganization(tenantId, orgId);
+      if (profiles.length === 0 || !profiles[0].currently_published_item_id) {
+        return { profile: null, social_links: [] };
+      }
+      const profile = profiles[0];
+      const publishedItem = await repos.moderationItems.findById(
+        tenantId, profile.currently_published_item_id
+      );
+      const socialLinks = await repos.vendorProfileSocialLinks.listByProfile(
+        tenantId, profile.id
+      );
+      return {
+        profile: {
+          id: profile.id,
+          organization_id: orgId,
+          ...publishedItem.payload
+        },
+        social_links: socialLinks
+      };
     }
   });
 }

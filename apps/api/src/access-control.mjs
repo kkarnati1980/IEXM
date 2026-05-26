@@ -550,7 +550,14 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
   // Moderation (CR-VENDOR Phase 0 — §16 generic transition endpoint)
   "vendor-moderation-transition": entry({ permission: "vendor.moderation.transition", roles: vendor, scope: "tenant", description: "Transition a moderation item through the review state machine" }),
   "vendor-moderation-list":       entry({ permission: "vendor.moderation.list",       roles: vendor, scope: "tenant", description: "List moderation items for a vendor organisation" }),
-  "vendor-moderation-history":    entry({ permission: "vendor.moderation.history",    roles: vendor, scope: "tenant", description: "Read the chronological moderation audit trail for an item" })
+  "vendor-moderation-history":    entry({ permission: "vendor.moderation.history",    roles: vendor, scope: "tenant", description: "Read the chronological moderation audit trail for an item" }),
+
+  // Vendor Profile (CR-VP-01 Phase 1)
+  "vendor-profile-get":          entry({ permission: "vendor.profile.get",        roles: vendor, scope: "tenant", description: "Read vendor profile editor view (published + pending items)" }),
+  "vendor-profile-patch":        entry({ permission: "vendor.profile.patch",      roles: vendor, scope: "tenant", description: "Create or update vendor profile draft moderation item" }),
+  "vendor-profile-social-get":   entry({ permission: "vendor.profile.social.get", roles: vendor, scope: "tenant", description: "Read published social links for vendor profile" }),
+  "vendor-profile-social-put":   entry({ permission: "vendor.profile.social.put", roles: vendor, scope: "tenant", description: "Bulk-replace social links in vendor profile draft" }),
+  "stall-vendor-profile-public": publicEntry("stall.vendor.profile.public", "Public attendee-facing vendor profile for a stall", "public")
 });
 
 export function getAccessControlEntry(routeId) {

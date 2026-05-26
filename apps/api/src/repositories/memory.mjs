@@ -1911,6 +1911,40 @@ export function createMemoryRepositories(state) {
           if (entityType && r.entity_type !== entityType) return false;
           return true;
         });
+      },
+      async findPendingByEntity(tenantId, entityType, entityId) {
+        const PENDING = ["draft", "submitted", "under_review", "changes_requested"];
+        return (state.moderationItems ?? []).find(
+          (r) => r.tenant_id === tenantId &&
+                 r.entity_type === entityType &&
+                 r.entity_id === entityId &&
+                 PENDING.includes(r.state)
+        ) ?? null;
+      }
+    },
+
+    vendorProfileSocialLinks: {
+      async listByProfile(tenantId, vendorProfileId) {
+        return (state.vendorProfileSocialLinks ?? [])
+          .filter((r) => r.tenant_id === tenantId && r.vendor_profile_id === vendorProfileId);
+      },
+      async replaceForProfile(tenantId, vendorProfileId, socialLinks, now) {
+        if (!state.vendorProfileSocialLinks) state.vendorProfileSocialLinks = [];
+        state.vendorProfileSocialLinks = state.vendorProfileSocialLinks
+          .filter((r) => !(r.tenant_id === tenantId && r.vendor_profile_id === vendorProfileId));
+        for (const sl of socialLinks) {
+          state.vendorProfileSocialLinks.push({
+            id: `sl-${Math.random().toString(36).slice(2)}`,
+            tenant_id: tenantId,
+            vendor_profile_id: vendorProfileId,
+            channel: sl.channel,
+            url: sl.url,
+            prefilled_message: sl.prefilled_message ?? null,
+            click_count: 0,
+            created_at: now,
+            updated_at: now
+          });
+        }
       }
     },
 

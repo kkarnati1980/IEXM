@@ -92,6 +92,23 @@
       .filter-bar select,.filter-bar input{min-width:130px;flex:1 1 130px;padding:9px 10px;font-size:13px;}
       @media(max-width:1100px){main{grid-template-columns:1fr;}}
       @media(max-width:640px){.metric-grid{grid-template-columns:repeat(2,1fr);}}
+      /* ── Tab bar ── */
+      .tab-bar{max-width:1400px;margin:0 auto;padding:0 24px 0;display:flex;gap:6px;border-bottom:1px solid var(--line);background:transparent;}
+      .tab-btn{background:none;border:0;border-radius:0;padding:12px 18px;font-size:14px;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px;font-weight:500;}
+      .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);}
+      .tab-btn:hover:not(.active){color:var(--ink);}
+      /* ── Profile tab ── */
+      #tab-profile{max-width:800px;margin:0 auto;padding:24px 24px 48px;}
+      .profile-status{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.7);margin-bottom:18px;font-size:13px;}
+      .profile-status .state-pill{padding:4px 12px;border-radius:999px;font-weight:600;font-size:12px;}
+      .state-pill.draft{background:rgba(17,34,51,.07);color:var(--muted);}
+      .state-pill.submitted,.state-pill.under_review,.state-pill.changes_requested{background:rgba(180,108,20,.1);color:var(--warn);}
+      .state-pill.approved{background:rgba(15,141,99,.1);color:var(--good);}
+      .profile-form .field{margin-bottom:14px;}
+      .profile-form label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:500;letter-spacing:.03em;}
+      .social-row{display:grid;grid-template-columns:140px 1fr auto;gap:8px;align-items:center;margin-bottom:8px;}
+      .social-row select,.social-row input{margin:0;}
+      .icon-btn{background:rgba(192,58,58,.08);color:var(--danger);border:1px solid rgba(192,58,58,.2);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;}
     </style>
   </head>
   <body>
@@ -109,8 +126,12 @@
         </nav>
       </div>
     </div>
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-btn-leads" onclick="switchTab('leads')">Leads</button>
+      <button class="tab-btn" id="tab-btn-profile" onclick="switchTab('profile')">Profile</button>
+    </div>
 
-    <main>
+    <main id="tab-leads">
       <section class="column">
 
         <!-- STATUS BAR -->
@@ -384,6 +405,56 @@
 
       </aside>
     </main>
+
+    <!-- PROFILE TAB -->
+    <div id="tab-profile" style="display:none;">
+      <div>
+        <div class="profile-status" id="profile-status-bar">
+          <span>Status:</span>
+          <span class="state-pill draft" id="profile-state-pill">No profile yet</span>
+          <span class="muted" id="profile-state-hint" style="flex:1;"></span>
+          <button class="secondary sm" onclick="loadProfile()">↻ Refresh</button>
+        </div>
+
+        <article class="card" style="margin-bottom:18px;">
+          <div class="section-head"><div><div class="eyebrow">Vendor Profile</div><h2>Public profile content</h2><p>Changes are queued for review before going live.</p></div></div>
+          <div class="profile-form">
+            <div class="field">
+              <label>Display name</label>
+              <input id="pf-display-name" maxlength="120" placeholder="Your company or brand name">
+            </div>
+            <div class="field">
+              <label>Tagline <span class="muted">(200 chars max)</span></label>
+              <input id="pf-tagline" maxlength="200" placeholder="One-line pitch">
+            </div>
+            <div class="field">
+              <label>Description <span class="muted">(2000 chars max)</span></label>
+              <textarea id="pf-description" rows="4" placeholder="Tell attendees what you offer…"></textarea>
+            </div>
+            <div class="field">
+              <label>Logo URL <span class="muted">(https only)</span></label>
+              <input id="pf-logo-url" type="url" placeholder="https://cdn.example.com/logo.png">
+            </div>
+            <div class="field">
+              <label>Website URL <span class="muted">(https only)</span></label>
+              <input id="pf-website-url" type="url" placeholder="https://www.example.com">
+            </div>
+          </div>
+        </article>
+
+        <article class="card" style="margin-bottom:18px;">
+          <div class="section-head"><div><div class="eyebrow">Social Links</div><h2>Contact channels</h2><p>Up to 8 channels. Changes merge into the active draft.</p></div></div>
+          <div id="social-link-rows"></div>
+          <button class="secondary sm" style="margin-top:8px;" onclick="addSocialRow()">+ Add channel</button>
+        </article>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="secondary" onclick="saveProfileDraft()">Save draft</button>
+          <button class="primary" onclick="saveProfileDraft(true)">Submit for review</button>
+        </div>
+        <div id="profile-msg" class="status" hidden style="margin-top:14px;"></div>
+      </div>
+    </div>
 
     <script type="module">
       const params  = new URLSearchParams(window.location.search);
@@ -1148,13 +1219,136 @@
         history.replaceState({}, '', location.pathname);
       }
 
+      // ─── Tab switching ────────────────────────────────────────────────────────
+      function switchTab(name) {
+        $('tab-leads').style.display   = name === 'leads'   ? '' : 'none';
+        $('tab-profile').style.display = name === 'profile' ? '' : 'none';
+        $('tab-btn-leads').classList.toggle('active',   name === 'leads');
+        $('tab-btn-profile').classList.toggle('active', name === 'profile');
+        if (name === 'profile') loadProfile();
+      }
+
+      // ─── Profile tab ─────────────────────────────────────────────────────────
+      const SOCIAL_CHANNELS = ['linkedin','youtube','instagram','facebook','x','whatsapp','generic_1','generic_2'];
+      const orgId = jwtPayload.organization_id || params.get('orgId') || 'org-vendor';
+
+      async function loadProfile() {
+        try {
+          const data = await api(`/vendors/${enc(orgId)}/profile`);
+          const item = data.pending ?? data.published;
+          const payload = item?.payload ?? {};
+          $('pf-display-name').value = payload.display_name ?? '';
+          $('pf-tagline').value      = payload.tagline      ?? '';
+          $('pf-description').value  = payload.description  ?? '';
+          $('pf-logo-url').value     = payload.logo_url     ?? '';
+          $('pf-website-url').value  = payload.website_url  ?? '';
+          renderSocialRows(payload.social_links ?? []);
+          renderProfileStatus(item?.state ?? null);
+        } catch (e) {
+          showProfileMsg(e.message, 'error');
+        }
+      }
+
+      function renderProfileStatus(state) {
+        const pill = $('profile-state-pill');
+        const hint = $('profile-state-hint');
+        const labels = { draft: 'Draft', submitted: 'Submitted', under_review: 'Under review',
+                         changes_requested: 'Changes requested', approved: 'Live', superseded: 'Superseded' };
+        pill.textContent = labels[state] ?? 'No profile yet';
+        pill.className = 'state-pill ' + (state ?? 'draft');
+        const hints = {
+          draft: 'Save your changes and submit when ready.',
+          submitted: 'Waiting for reviewer pickup.',
+          under_review: 'A reviewer is checking your profile.',
+          changes_requested: 'Reviewer requested edits — update and resubmit.',
+          approved: 'Your profile is live for attendees.'
+        };
+        hint.textContent = hints[state] ?? '';
+      }
+
+      function renderSocialRows(links) {
+        const container = $('social-link-rows');
+        while (container.firstChild) container.removeChild(container.firstChild);
+        for (const sl of links) addSocialRow(sl);
+      }
+
+      function addSocialRow(sl = {}) {
+        const container = $('social-link-rows');
+        const row = document.createElement('div');
+        row.className = 'social-row';
+
+        const sel = document.createElement('select');
+        for (const ch of SOCIAL_CHANNELS) {
+          const opt = document.createElement('option');
+          opt.value = ch;
+          opt.textContent = ch;
+          if (ch === sl.channel) opt.selected = true;
+          sel.appendChild(opt);
+        }
+
+        const urlInput = document.createElement('input');
+        urlInput.type = 'url';
+        urlInput.placeholder = 'https://…';
+        urlInput.value = sl.url ?? '';
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'icon-btn';
+        removeBtn.textContent = '✕';
+        removeBtn.addEventListener('click', () => row.remove());
+
+        row.appendChild(sel);
+        row.appendChild(urlInput);
+        row.appendChild(removeBtn);
+        container.appendChild(row);
+      }
+
+      function collectSocialLinks() {
+        const rows = $('social-link-rows').querySelectorAll('.social-row');
+        return Array.from(rows).map(row => {
+          const [sel, urlInput] = row.querySelectorAll('select, input[type="url"]');
+          return { channel: sel.value, url: urlInput.value.trim() };
+        }).filter(sl => sl.url);
+      }
+
+      async function saveProfileDraft(submit = false) {
+        const msg = $('profile-msg');
+        msg.hidden = true;
+        const body = {
+          display_name: $('pf-display-name').value.trim() || undefined,
+          tagline:      $('pf-tagline').value.trim()      || undefined,
+          description:  $('pf-description').value.trim()  || undefined,
+          logo_url:     $('pf-logo-url').value.trim()     || undefined,
+          website_url:  $('pf-website-url').value.trim()  || undefined,
+          social_links: collectSocialLinks(),
+          submit
+        };
+        // remove undefined keys
+        for (const k of Object.keys(body)) if (body[k] === undefined) delete body[k];
+        try {
+          const data = await api(`/vendors/${enc(orgId)}/profile`, { method: 'PATCH', body });
+          renderProfileStatus(data.item?.state ?? null);
+          showProfileMsg(submit ? 'Submitted for review!' : 'Draft saved.', 'ok');
+        } catch (e) {
+          showProfileMsg(e.message, 'error');
+        }
+      }
+
+      function showProfileMsg(text, type) {
+        const el = $('profile-msg');
+        el.textContent = text;
+        el.className = 'status ' + type;
+        el.hidden = false;
+        setTimeout(() => { el.hidden = true; }, 4000);
+      }
+
       // Expose functions to window so onclick="" attributes can find them.
       // <script type="module"> scopes functions to the module — they are NOT
       // on window by default, which causes onclick handlers to throw ReferenceError.
       Object.assign(window, {
         loadAll, requestExport, setScore, pushToCRM, addNote,
         connectGoogle, connectOneDrive, disconnectDrive, refreshDrive,
-        browseFolders, loadSharedFolders, addCRMConnection
+        browseFolders, loadSharedFolders, addCRMConnection,
+        switchTab, addSocialRow, saveProfileDraft, loadProfile
       });
 
       loadDriveConnections();

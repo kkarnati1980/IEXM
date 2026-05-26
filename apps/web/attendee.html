@@ -85,6 +85,12 @@
       .muted{color:var(--muted);}
       .mini-note{font-size:12px;color:var(--muted);}
       .section-title{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px;}
+      /* ── Vendor profile card ─────────────────────── */
+      .vp-logo{width:56px;height:56px;border-radius:12px;object-fit:cover;margin-bottom:10px;}
+      .vp-name{font-weight:700;font-size:1.05rem;margin:0 0 2px;}
+      .vp-tagline{color:var(--muted);font-size:13px;margin:0 0 12px;}
+      .social-chips{display:flex;flex-wrap:wrap;gap:8px;}
+      .social-chip{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:6px 12px;font-size:13px;border:1px solid var(--line);background:rgba(255,255,255,.8);color:var(--ink);text-decoration:none;}
     </style>
   </head>
   <body>
@@ -105,6 +111,14 @@
           <div class="detail-field"><label>Time</label><span id="lc-time">—</span></div>
           <div class="detail-field"><label>Tap type</label><span id="lc-tap-type">—</span></div>
         </div>
+        <!-- Vendor profile card — populated by loadVendorProfile() -->
+        <div class="card" id="vp-card" hidden>
+          <img id="vp-logo" class="vp-logo" src="" alt="Vendor logo" hidden>
+          <p class="vp-name" id="vp-name"></p>
+          <p class="vp-tagline" id="vp-tagline"></p>
+          <div class="social-chips" id="vp-social"></div>
+        </div>
+
         <button class="btn primary" onclick="goTo('screen-consent')">Review consent &amp; preferences →</button>
         <button class="btn secondary" onclick="goTo('screen-vault')">View my connections</button>
       </div>
@@ -310,6 +324,36 @@
         // SPEC §2.2: Must never pre-tick consent checkboxes
         $("chk-vendor").checked  = false;
         $("chk-sponsor").checked = false;
+
+        // Load vendor profile card from stall
+        const stallId = (ia.current_connection && ia.current_connection.stall_id) || ia.stall_id;
+        if (stallId) loadVendorProfile(stallId);
+      }
+
+      async function loadVendorProfile(stallId) {
+        const CHANNEL_LABELS = { linkedin:"LinkedIn", youtube:"YouTube", instagram:"Instagram",
+          facebook:"Facebook", x:"X", whatsapp:"WhatsApp", generic_1:"Link 1", generic_2:"Link 2" };
+        try {
+          const data = await fetch(`${apiBase}/stalls/${enc(stallId)}/vendor-profile?tenant_id=${enc(resolvedTenantId)}`, { cache: "no-store" })
+            .then(r => r.json()).catch(() => null);
+          if (!data || !data.profile) return;
+          const p = data.profile;
+          if (p.logo_url) { $("vp-logo").src = p.logo_url; $("vp-logo").hidden = false; }
+          $("vp-name").textContent    = p.display_name || "";
+          $("vp-tagline").textContent = p.tagline || "";
+          const socialEl = $("vp-social");
+          while (socialEl.firstChild) socialEl.removeChild(socialEl.firstChild);
+          for (const sl of (data.social_links || [])) {
+            const a = document.createElement("a");
+            a.href = sl.url;
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+            a.className = "social-chip";
+            a.textContent = CHANNEL_LABELS[sl.channel] || sl.channel;
+            socialEl.appendChild(a);
+          }
+          $("vp-card").hidden = false;
+        } catch { /* best-effort, no error surfaced to user */ }
       }
 
       function renderLandingFallback() {
