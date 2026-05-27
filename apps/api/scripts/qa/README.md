@@ -13,7 +13,100 @@ These scripts cover the §1 "Backend smoke tests" section of each Phase Closure 
 - **Structured** — every item records PASS / FAIL / SKIP; final report written to markdown
 - **CI-ready** — exit 0 = all pass, exit 1 = failures, exit 2 = env error
 
-## How to set env vars
+---
+
+## seed-approver-user_v1_0.sh — AP-4 user seeder
+
+Creates `vendor-approver@test.com` on any environment (or re-logs-in if it already exists),
+configures AP-4 flag separation, and writes both JWTs to `/tmp/codex_qa_tokens.env`
+for the smoke script to source.
+
+### Why this script exists
+
+`phase1_backend_smoke_v1_0.sh` requires both `VENDOR_TOKEN` and `VENDOR_APPROVER_TOKEN`.
+On a fresh Postgres environment (where `seed-demo.mjs` was not run), the approver user
+does not exist and its token cannot be acquired. This script fixes that.
+
+It also breaks the "both flags on both users" state seeded by migration `069_user_content_flags.sql`
+and configures the correct AP-4 separation:
+
+| User | `vendor_content_editor` | `vendor_content_approver` |
+|---|---|---|
+| `vendor@test.com` | `true` | `false` |
+| `vendor-approver@test.com` | `false` | `true` |
+
+### Quick start
+
+```bash
+# 1. Set your DATABASE_URL:
+export DATABASE_URL="postgres://pilot@host:5432/pilot_platform"
+
+# 2. Run the seeder:
+bash apps/api/scripts/qa/seed-approver-user_v1_0.sh
+
+# 3. Source the token file:
+source /tmp/codex_qa_tokens.env
+
+# 4. Run the smoke tests:
+bash apps/api/scripts/qa/phase1_backend_smoke_v1_0.sh
+```
+
+### Dry-run (no writes)
+
+```bash
+DATABASE_URL="postgres://..." bash apps/api/scripts/qa/seed-approver-user_v1_0.sh --dry-run
+```
+
+Skips invite, accept-invite, and SQL UPDATE. Shows what would happen.
+
+### Env vars
+
+| Variable | Default | Required |
+|---|---|---|
+| `DATABASE_URL` | — | **required** (for AP-4 SQL update) |
+| `API_BASE_URL` | `https://codex-api-production-064f.up.railway.app` | no |
+| `ADMIN_EMAIL` | `admin@test.com` | no |
+| `ADMIN_PASSWORD` | `TestPass123!` | no |
+| `VENDOR_EMAIL` | `vendor@test.com` | no |
+| `VENDOR_PASSWORD` | `TestPass123!` | no |
+| `APPROVER_EMAIL` | `vendor-approver@test.com` | no |
+| `APPROVER_PASSWORD` | `TestPass123!` | no |
+
+### Steps
+
+| Step | Description | Write? | Dry-run skipped? |
+|---|---|---|---|
+| 1 | Admin login (`POST /auth/login`) | no | no |
+| 2 | Check if approver user exists (`GET /users`) | no | no |
+| 3 | Invite user (`POST /users/invite`) — skipped if exists | yes | yes |
+| 4 | Accept invite or login to get approver JWT | yes (if new) | yes (if new) |
+| 5 | Configure AP-4 flags (`UPDATE users`) | yes | yes |
+| 6 | Verify flag state (`SELECT`) | no | yes |
+| 7 | Login as vendor to capture `VENDOR_TOKEN` | no | no |
+| 8 | Write `/tmp/codex_qa_tokens.env` | yes | yes |
+
+### What gets created
+
+- User: `vendor-approver@test.com`, role `vendor_manager`, org `org-vendor`,
+  event `event-indiaexpo`, stall `stall-ie-a1`
+- AP-4 flags updated on both `vendor@test.com` and `vendor-approver@test.com`
+- `/tmp/codex_qa_tokens.env` with `VENDOR_TOKEN` and `VENDOR_APPROVER_TOKEN` exports
+
+### Notes
+
+- **Idempotent**: if `vendor-approver@test.com` already exists, it re-logs-in
+  using `APPROVER_PASSWORD`. If login fails (password mismatch), it stops with a clear error.
+- **Destructive-safe**: does not delete users. The AP-4 SQL UPDATE is labelled `[WRITE]`.
+- **In-memory backend**: steps 5/6 (psql) require a real Postgres connection.
+  The API steps (1–4, 7) work against any backend.
+- **Page limit**: step 2 scans up to 100 `vendor_manager` users. QA environments
+  will never approach this limit.
+
+---
+
+## phase1_backend_smoke_v1_0.sh — vendor profile smoke tests
+
+### How to set env vars
 
 ```bash
 export VENDOR_TOKEN="demo-vendor-token"
@@ -26,7 +119,7 @@ export API_BASE_URL="https://codex-api-production-064f.up.railway.app"
 export DATABASE_URL="postgres://pilot@127.0.0.1:5432/pilot_platform"
 ```
 
-## How to run
+### How to run
 
 ```bash
 # Run all tests against production:
