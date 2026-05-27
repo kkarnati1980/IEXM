@@ -12975,7 +12975,9 @@ function validateProfileBody(body) {
   }
   if (body.description !== undefined) {
     if (typeof body.description !== "string") throw new HttpError(422, "description must be a string");
-    out.description = stripHtml(body.description).slice(0, 2000);
+    const stripped = stripHtml(body.description);
+    if (stripped.length > 2000) throw new HttpError(422, "Description must be 2000 characters or fewer");
+    out.description = stripped;
   }
   if (body.logo_url !== undefined) {
     if (body.logo_url !== null) {

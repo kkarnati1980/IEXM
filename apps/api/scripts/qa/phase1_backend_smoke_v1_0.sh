@@ -46,7 +46,8 @@
 #   A1    Cross-org isolation — vendor cannot access different org → 403
 #   A2    Invalid logo_url (http://) → 422
 #   A3    Invalid logo_url (javascript:) → 422
-#   A4    Description >5000 chars → code behavior (silently truncated to 2000 vs spec 422)
+#   A4    Description >5000 chars → 422
+#   A4b   Description 2001 chars (1 over limit boundary) → 422
 #   A5    Industry >80 chars → 422
 #
 # Exit codes:
@@ -272,8 +273,8 @@ smoke_A3_invalid_logo_javascript() {
 }
 
 smoke_A4_description_length() {
-  hr; echo "  A4: Description >5000 chars"
-  if [[ "$DRY_RUN" == "true" ]]; then skip_item "A4" "Description >5000 chars" "dry-run"; return; fi
+  hr; echo "  A4: Description >5000 chars → 422"
+  if [[ "$DRY_RUN" == "true" ]]; then skip_item "A4" "Description >5000 chars → 422" "dry-run"; return; fi
   local long_desc
   long_desc="$(python3 -c "print('A' * 5001)")"
   write_op "PATCH with 5001-char description"
@@ -282,9 +283,22 @@ smoke_A4_description_length() {
   if assert_http 422 "$RESP_STATUS"; then
     pass_item "A4" "Description >5000 chars rejected → 422"
   else
-    # Code actually silently truncates to 2000 chars (slice(0,2000)) — surfaces spec gap
-    fail_item "A4" "Description >5000 chars" \
-      "Expected 422, got $RESP_STATUS — code silently truncates to 2000 chars; spec may need enforcement"
+    fail_item "A4" "Description >5000 chars" "Expected 422, got $RESP_STATUS"
+  fi
+}
+
+smoke_A4b_description_boundary() {
+  hr; echo "  A4b: Description 2001 chars (1 over limit) → 422"
+  if [[ "$DRY_RUN" == "true" ]]; then skip_item "A4b" "Description 2001 chars → 422" "dry-run"; return; fi
+  local boundary_desc
+  boundary_desc="$(python3 -c "print('B' * 2001)")"
+  write_op "PATCH with 2001-char description (1 over 2000-char limit)"
+  curl_req PATCH "/vendors/${QA_VENDOR_ORG}/profile" "$VENDOR_TOKEN" \
+    "{\"description\":\"${boundary_desc}\"}"
+  if assert_http 422 "$RESP_STATUS"; then
+    pass_item "A4b" "Description 2001 chars (boundary) rejected → 422"
+  else
+    fail_item "A4b" "Description 2001 chars boundary" "Expected 422, got $RESP_STATUS"
   fi
 }
 
@@ -963,6 +977,7 @@ main() {
   smoke_A2_invalid_logo_http
   smoke_A3_invalid_logo_javascript
   smoke_A4_description_length
+  smoke_A4b_description_boundary
   smoke_A5_industry_too_long
 
   # Section B: Social links (independent of main draft flow)

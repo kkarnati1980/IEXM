@@ -419,3 +419,30 @@ test("VP-16: full form payload returns 200 with valid string ids (regression: UU
     assert.ok(typeof res.body.item?.id === "string" && res.body.item.id.length > 0, "item id must be a non-empty string");
   });
 });
+
+// VP-20: description > 2000 chars returns 422 (backend enforces UI's "2000 chars max" promise)
+test("VP-20: PATCH rejects description longer than 2000 characters", async () => {
+  await withApp(async (app) => {
+    const res = await app.inject({
+      method: "PATCH",
+      path: `/vendors/${VENDOR_ORG_ID}/profile`,
+      headers: bearer(VENDOR_TOKEN),
+      body: { description: "A".repeat(2001) }
+    });
+    assert.equal(res.statusCode, 422, JSON.stringify(res.body));
+  });
+});
+
+// VP-21: description exactly 2000 chars is accepted
+test("VP-21: PATCH accepts description of exactly 2000 characters", async () => {
+  await withApp(async (app) => {
+    const res = await app.inject({
+      method: "PATCH",
+      path: `/vendors/${VENDOR_ORG_ID}/profile`,
+      headers: bearer(VENDOR_TOKEN),
+      body: { description: "A".repeat(2000) }
+    });
+    assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+    assert.equal(res.body.item?.payload?.description, "A".repeat(2000));
+  });
+});
