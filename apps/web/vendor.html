@@ -92,6 +92,17 @@
       .filter-bar select,.filter-bar input{min-width:130px;flex:1 1 130px;padding:9px 10px;font-size:13px;}
       @media(max-width:1100px){main{grid-template-columns:1fr;}}
       @media(max-width:640px){.metric-grid{grid-template-columns:repeat(2,1fr);}}
+      @media(max-width:480px){
+        .shell{padding:14px 14px 0;}
+        .shell-bar{flex-direction:column;align-items:flex-start;gap:8px;}
+        .shell-title{min-width:0;width:100%;}
+        .shell-nav{gap:6px;}
+        .shell-nav a{font-size:13px;padding:7px 11px;}
+        .tab-bar{padding:0 14px 8px;}
+        .tab-btn{font-size:13px;padding:8px 12px;}
+        main{padding:0 14px 40px;}
+        #tab-profile{padding:16px 14px 40px;}
+      }
       /* ── Tab bar ── */
       .tab-bar{max-width:1400px;margin:0 auto;padding:0 24px 8px;}
       .tabs{display:flex;gap:4px;flex-wrap:wrap;}
@@ -1231,14 +1242,16 @@
         $('tab-profile').style.display = name === 'profile' ? '' : 'none';
         $('tab-btn-leads').classList.toggle('active',   name === 'leads');
         $('tab-btn-profile').classList.toggle('active', name === 'profile');
-        if (name === 'profile') loadProfile();
+        if (name === 'profile') loadProfile({ silent: true });
       }
 
       // ─── Profile tab ─────────────────────────────────────────────────────────
       const SOCIAL_CHANNELS = ['linkedin','youtube','instagram','facebook','x','whatsapp','generic_1','generic_2'];
       const orgId = jwtPayload.organization_id || params.get('orgId') || 'org-vendor';
 
-      async function loadProfile() {
+      async function loadProfile({ silent = false } = {}) {
+        const btn = document.querySelector('#profile-status-bar button.secondary');
+        if (btn) { btn.disabled = true; btn.textContent = '↻ …'; }
         try {
           const data = await api(`/vendors/${enc(orgId)}/profile`);
           const item = data.pending ?? data.published;
@@ -1251,8 +1264,11 @@
           $('pf-industry').value     = payload.industry     ?? '';
           renderSocialRows(payload.social_links ?? []);
           renderProfileStatus(item?.state ?? null);
+          if (!silent) showProfileMsg('Status refreshed.', 'ok');
         } catch (e) {
           showProfileMsg(e.message, 'error');
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh'; }
         }
       }
 

@@ -13127,7 +13127,25 @@ function registerVendorProfileRoutes(router) {
           // priorItemState stays null — no prior item existed
         } else {
           priorItemState = item.state;
-          // Merge fields into existing draft payload
+          // If saving (not submitting) and item is already submitted/under_review, auto-transition
+          // back to draft first so the payload change is audited and the state stays coherent.
+          if (!submit && (item.state === "submitted" || item.state === "under_review")) {
+            item.state = "draft";
+            item.updated_at = now;
+            item = await txRepos.moderationItems.update(item);
+            await recordModerationTransition(txRepos, {
+              tenantId:    principal.tenant_id,
+              targetTable: "vendor_profiles",
+              targetId:    profile.id,
+              actorUserId: principal.user_id,
+              priorStatus: priorItemState,
+              newStatus:   "draft",
+              action:      "withdraw_to_draft",
+              note:        null,
+              now
+            });
+          }
+          // Merge fields into the (now-draft) payload
           item.payload = { ...item.payload, ...fields };
           item.updated_at = now;
           item = await txRepos.moderationItems.update(item);
