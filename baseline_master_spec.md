@@ -16,6 +16,18 @@ Re-run `/baseline` any time a new build version drops — it will extend this fi
 | v1.1 | 1 May 2026 | Platform Team | First production build — 18 phases complete; technology stack confirmed; Phase 6 deferred |
 | v1.2 | 8 May 2026 | Platform Team | Google Drive/OneDrive integration; MFA; snapshot comparison; unified UI; 79 tables; 438 tests |
 | v1.3 | 24 May 2026 | Platform Team | Pass types + NFC tag batches; walk-in/bulk import; consent versioning; Pi 5 hardware; CI/CD; P2 Phase 0 moderation foundation; ~90 tables; 488 tests |
+| v1.3-patch | 25 May 2026 | Platform Team | Prod schema reconciliation: 70 migrations recorded in prod DB; migrator --reconcile-only + ON CONFLICT DO NOTHING; 494 tests (9 new migrator tests) |
+| v1.4 | 26 May 2026 | Platform Team | P2 Phase 1 — Vendor Profile Core (CR-VP-01): moderation-backed vendor profile editor (6 fields + social links), public attendee profile card, migration 070 (`vendor_profile_social_links`), 5 new routes, 510 tests. |
+| v1.4-patch | 26 May 2026 | Platform Team | Vendor tab-nav restyle: removed redundant profile subtitle, aligned tab nav with organizer dashboard pattern. Frontend-only; no API or data model changes. |
+| v1.4-fix | 26 May 2026 | Platform Team | Industry field restored to vendor profile: was listed in v1.4 spec but silently dropped during execution. Backend validation (max 80 chars), vendor.html form, attendee.html profile card, 2 new tests. 512 tests total. |
+| v1.4-hotfix | 26 May 2026 | Platform Team | Fix 500 on PATCH /vendors/:vendorOrgId/profile: ID generation in vendor profile + moderation routes switched from nextId() to randomUUID() for PostgreSQL UUID PK compatibility. Improved 5xx error logging in app.mjs. Regression test VP-16 added; 513 tests total. |
+| v1.4-fix2 | 26 May 2026 | Platform Team | Fix null new_status in moderation_notes on PATCH /vendors/:vendorOrgId/profile?submit=true: extracted recordModerationTransition() helper shared by submit + transition paths; memory backend mirrors NOT NULL constraint; regression tests VP-17/VP-18/VP-19 added; 516 tests total. |
+| v1.4-qa | 26 May 2026 | Platform Team | Phase 1 QA automation: `phase1_backend_smoke_v1_0.sh` replaces 28 manual checklist items with one idempotent bash script; covers all Phase 1 §1.1–1.8 items plus 10 extra validation cases; establishes `phaseN_backend_smoke_v1_0.sh` pattern for future phases. No schema, route, or node:test count changes. |
+| v1.4-qa2 | 27 May 2026 | Platform Team | QA tooling: `seed-approver-user_v1_0.sh` (518 lines) — seeds vendor-approver@test.com, configures AP-4 flag separation (editor vs. approver), writes JWT tokens to /tmp for smoke script. Idempotent. No spec, schema, or route changes. |
+| v1.4-fix3 | 27 May 2026 | Platform Team | Fix description field limit: backend now enforces 2000-char max (was 5000 in v1.4 spec; UI already said "2000 chars max"); smoke test A4 updated to boundary-test 2001 chars; 2 new unit tests (2000 → 200, 2001 → 422). |
+| v1.4-fix4 | 28 May 2026 | Platform Team | Phase 1 QA fix-up: save-draft on a submitted/under_review item now auto-transitions back to draft before overwriting (moderation integrity); Refresh button loading state + toast added to vendor.html; mobile header responsive reflow at ≤480px. 519 tests. |
+| v1.4-fix4b | 28 May 2026 | Platform Team | Mobile header follow-up: `.shell-nav` top-right action group (Vendor / My Account / Sign out) was missing `width:100%` in the `@media(max-width:480px)` block, causing overflow at 375px. Added `width:100%` to `.shell-nav`. Pure CSS; no API, schema, or test count changes. |
+| v1.5 | 29 May 2026 | Platform Team | P2 Phase 1.5 — Approver moderation queue UI (CR-VENDOR-2026-001 §14): Review tab in vendor.html (approver-only, dynamically injected); single-operator self-approve fallback (two-call confirm + system audit note); optimistic-concurrency 409 guard; notification fan-out on submit/approve/reject (3 new templates); edit-lock on submitted/under_review items (M4 fix, VP-22 inverted); Release action (under_review → submitted); history enriched with actor names. 539 tests. |
 
 ---
 
@@ -26,10 +38,83 @@ Re-run `/baseline` any time a new build version drops — it will extend this fi
 | v1.1 | 3 | 6 | 1 | 4 |
 | v1.2 | 12 | 5 | 0 | 2 |
 | v1.3 | 9 | 5 | 0 | 0 |
+| v1.3-patch | 1 | 1 | 0 | 0 |
+| v1.4 | 6 | 4 | 0 | 0 |
+| v1.4-patch | 0 | 0 | 0 | 1 |
+| v1.4-fix | 0 | 1 | 0 | 1 |
+| v1.4-hotfix | 0 | 1 | 0 | 1 |
+| v1.4-fix2 | 0 | 2 | 0 | 1 |
+| v1.4-qa | 1 | 0 | 0 | 0 |
+| v1.4-qa2 | 1 | 0 | 0 | 0 |
+| v1.4-fix3 | 0 | 1 | 0 | 1 |
+| v1.4-fix4 | 0 | 2 | 0 | 2 |
+| v1.4-fix4b | 0 | 1 | 0 | 0 |
+| v1.5 | 5 | 6 | 0 | 0 |
 
 ---
 
 ## Quick Index — All Changes
+
+**v1.5 changes**
+- [v1.5-A1] §5.4 Review tab added to vendor.html (approver-only, dynamically injected after `/auth/me` confirms `vendor_content_approver: true`). Shows pending moderation queue for the vendor org; actions: Claim (→ under_review), Approve, Request Changes (note required), Reject (note required), Release (under_review → submitted). Discussion thread displays all moderation notes with actor names. No new routes, no new DB tables.
+- [v1.5-A2] §6.3 3 new notification templates: `vendor_profile_submitted` (notifies all org approvers on submit, self-suppressed), `vendor_profile_approved` (notifies editor on approval), `vendor_profile_needs_changes` (notifies editor on changes_requested or rejected).
+- [v1.5-A3] §6.3 2 new policy functions: `canReleaseModeration` (approver-flag required) and async `canSelfApproveAsSingleOperator` (returns true only when `countApproverCapableInOrg <= 1`).
+- [v1.5-A4] §6.3 2 new repository methods: `users.countApproverCapableInOrg` and `users.listApproverCapableInOrg` (active, non-deleted users only) — used by notification fan-out and single-operator guard.
+- [v1.5-A5] §D 20 new tests in `p2-phase1-5-moderation-queue.test.mjs` (Auth-1, VP-22b/c, VP-23, MT-VP-10, SO-1–4, Conc-1/2, Rel-1/2, Resub-1/2, Notif-1–3, Hist-1, Audit-1); total 539 tests.
+- [v1.5-C1] §6.3 `GET /auth/me` principal now includes `vendor_content_editor` and `vendor_content_approver` boolean flags; frontend gates Review tab and action buttons on these values.
+- [v1.5-C2] §6.3 `MODERATION_TRANSITIONS`: `under_review` allowed-targets now includes `"submitted"` (enables Release — sends item back to queue without rejection note).
+- [v1.5-C3] §6.3 `PATCH /vendors/:vendorOrgId/profile`: when item is `submitted` or `under_review`, now returns 422 "Profile is under review — withdraw before editing" (M4 fix). Previous auto-draft behavior (v1.4-fix4 VP-22) was a latent bug — Phase 1.5 closes it; VP-22 test inverted to assert 422 + unchanged state.
+- [v1.5-C4] §6.3 `PUT /vendors/:vendorOrgId/social-links`: same 422 edit-lock applied. Social links share the same moderation item as the profile PATCH (`entity_type="vendor_profiles"`) so the lock is shared.
+- [v1.5-C5] §6.3 `GET /moderation-items/:itemId/history`: each note now includes `actor_display_name` (resolved via `users.findByIdGlobal`).
+- [v1.5-C6] §D Test count: 519 → 539 (20 new; 1 existing VP-22 inverted).
+
+**v1.4-fix4b changes**
+- [v1.4-fix4b-C1] §5.4 Mobile header follow-up: `.shell-nav` (the top-right action group containing Vendor / My Account / Sign out links) was not assigned `width:100%` in the `@media(max-width:480px)` block introduced by v1.4-fix4. At 375px viewport this caused the nav to overflow the right edge of the shell bar. Fix: added `width:100%` to `.shell-nav` inside that breakpoint. 1-line CSS change in vendor.html. Desktop and wider-mobile layouts unchanged.
+
+**v1.4-fix4 changes**
+- [v1.4-fix4-C1] §6.3 PATCH /vendors/:vendorOrgId/profile: save-draft on a submitted or under_review item now auto-transitions back to draft (via `recordModerationTransition(action='withdraw_to_draft')`) before overwriting the payload. Previously the overwrite was silent with no state transition or audit record. Test VP-22 added.
+- [v1.4-fix4-C2] §D Test count: 516 → 519 (3 new tests in p2-phase1-vendor-profile.test.mjs: VP-22 moderation-integrity regression + 2 supporting edge-case tests; smoke script updated with item 1.3b-integrity).
+- [v1.4-fix4-CL1] §5.4 Vendor.html Refresh button: now shows disabled/loading state during fetch and fires a 'Status refreshed.' toast on success. Tab-switch loadProfile calls pass `silent:true` to suppress the toast on navigation. No functional change.
+- [v1.4-fix4-CL2] §5.4 Mobile header: `@media(max-width:480px)` added — `.shell-bar`, `.shell-nav`, `.tab-bar`, and `#tab-profile` reflow to prevent element overlap at 375px viewport. Desktop layout unchanged.
+
+**v1.4-fix3 changes**
+- [v1.4-fix3-C1] §5.4 Description field max length corrected from 5000 to **2000** chars. The UI helper text already said "Description (2000 chars max)"; the backend was silently accepting longer descriptions. v1.4-fix3 adds server-side validation: >2000 → 422 "Description must be 2000 characters or fewer". Smoke test A4 updated to test the 2001-char boundary.
+- [v1.4-fix3-CL1] §13 The v1.4-qa smoke test previously tested "description >5000 chars → 422" (the pre-fix threshold). The corrected enforced limit is 2000 chars. 2 new unit tests confirm the boundary: 2000 chars → 200, 2001 chars → 422.
+
+**v1.4-qa2 changes**
+- [v1.4-qa2-A1] §13 New QA script: `apps/api/scripts/qa/seed-approver-user_v1_0.sh` (518 lines). Seeds `vendor-approver@test.com` via /users/invite + /auth/accept-invite; sets `vendor_content_editor=true` on vendor@test.com and `vendor_content_approver=true` on vendor-approver@test.com (AP-4 flag separation: editor ≠ approver). Writes both JWT tokens to /tmp/codex_qa_tokens.env for the smoke script to source. Idempotent: re-logs in and refreshes tokens if approver already exists. QA README.md updated (97 lines).
+
+**v1.4-qa changes**
+- [v1.4-qa-A1] §13 New `apps/api/scripts/qa/` directory: `phase1_backend_smoke_v1_0.sh` (816 lines), `README.md` (73 lines), `test-fixtures.sh` (11 lines). Replaces 28 manual Phase 1 checklist items with one idempotent bash script. Covers all §1.1–1.8 items plus 10 extra validation cases: cross-org isolation (403), invalid logo_url formats (http://, javascript:) → 422, description >5000 chars → 422, industry >80 chars → 422, social link invalid channel (tiktok) → 422, HTML stripping in display_name, UUID id format (nextId regression), industry field persistence, self-approval guard (vendor approves own submission → 403), reject-with-note and reject-without-note flows. Script features: cleanup/reset before each run, [WRITE] labels on all mutations, --dry-run flag, exit codes 0/1/2, inline progress + final summary table, markdown report fan-out to /tmp/outputs/, docs/qa_reports/, and Obsidian. Establishes `phaseN_backend_smoke_v1_0.sh` naming pattern for future phases.
+
+**v1.4-fix2 changes**
+- [v1.4-fix2-CL1] §6.3 PATCH /vendors/:vendorOrgId/profile?submit=true — moderation_notes insert now uses `recordModerationTransition()` helper, which correctly computes `new_status` from the TRANSITIONS state machine and `prior_status` from the current item. Previously the submit path constructed moderation_notes inline without these fields, so `new_status` was null, causing a NOT NULL constraint violation (500) in production. The transition endpoint already used the same helper; both paths now share it.
+- [v1.4-fix2-C1] §BUILD Memory backend: `moderation_notes` insert now enforces NOT NULL on `new_status` so the test suite catches this class of bug before it reaches production.
+- [v1.4-fix2-C2] §D Test count: 513 → 516 (VP-17: prior_status=draft for existing-draft submit; VP-18: prior_status=null for first-ever submit; VP-19: null new_status throws at repo layer. Two pre-existing moderation-foundation tests that omitted new_status were also fixed).
+
+**v1.4-hotfix changes**
+- [v1.4-hotfix-CL1] §6.3 PATCH /vendors/:vendorOrgId/profile (and moderation routes) now use `randomUUID()` from `node:crypto` for ID generation. `nextId()` was producing TEXT strings in the form `prefix-<uuid>` (e.g. `vp-<uuid>`, `mi-<uuid>`, `mn-<uuid>`) which PostgreSQL silently accepted in the memory backend but rejected with a 500 for UUID PRIMARY KEY columns in production. No API contract change — IDs were already opaque strings to callers.
+- [v1.4-hotfix-CL2] `app.mjs` 5xx error logging improved: server now emits `cause` and the first 10 stack-trace lines to server logs on any 5xx response. HTTP response body unchanged (still returns generic message to clients).
+- [v1.4-hotfix-C1] §D Test count: 512 → 513 (regression test VP-16 added: full form payload verifies 200 + valid string IDs on PATCH /vendors/:vendorOrgId/profile)
+
+**v1.4-fix changes**
+- [v1.4-fix-CL1] §5.4 Industry field confirmed present in vendor.html editor and attendee.html profile card — was in v1.4 spec but silently dropped in implementation; restored with max 80 chars (OI-VP-02 taxonomy lookup stays open)
+- [v1.4-fix-C1] §D Test count: 510 → 512 (2 new tests: industry persistence, industry length validation)
+
+**v1.4-patch changes**
+- [v1.4-patch-CL1] §5.4 Vendor tab nav restyled to match organizer dashboard pattern; redundant subtitle under Profile tab removed — functionality unchanged
+
+**v1.4 changes**
+- [v1.4-A1] §7.1 New table: `vendor_profile_social_links`; UNIQUE index on `vendor_profiles(tenant_id, organization_id)`
+- [v1.4-A2] §6.3 5 new vendor profile routes (D1–D5) + D6 approval extension; route total 265 → 270
+- [v1.4-A3] §5.4 Vendor Profile tab added to vendor.html (profile editor form + social link editor)
+- [v1.4-A4] §5.3 Vendor profile card added to attendee landing screen (attendee.html screen 1)
+- [v1.4-A5] §13 P2 Phase 1 build phase complete
+- [v1.4-A6] §D 13 new tests in p2-phase1-vendor-profile.test.mjs; 510 pass, 0 fail
+- [v1.4-C1] §6.3 Total API routes: 265 → 270
+- [v1.4-C2] §7.1 Total tables: ~90 → ~91
+- [v1.4-C3] §7.1 logo_url stored as HTTPS TEXT string (spec'd as UUID FK to branding_assets — deferred to Phase 1.1)
+- [v1.4-C4] §D Test count: 494 → 510
 
 **v1.1 changes**
 - [v1.1-C1] §4 Technology stack confirmed (custom router, scrypt, ZeptoMail, R2)
@@ -41,6 +126,10 @@ Re-run `/baseline` any time a new build version drops — it will extend this fi
 - [v1.1-A1] §BUILD 18 build phases all complete
 - [v1.1-A2] §STACK 32 HTML screens built
 - [v1.1-R1] §12 Launchpad removed for non-admin roles
+
+**v1.3-patch changes**
+- [v1.3-patch-A1] §BUILD Migrator: --reconcile-only mode, rollback file filtering, ON CONFLICT DO NOTHING fix
+- [v1.3-patch-C1] §D Test count: 488 → 494 (9 new migrator unit/integration tests in migrator.test.mjs)
 
 **v1.3 changes**
 - [v1.3-A1] §3 New sub-role: organizer_import_staff — can bulk-import attendees
@@ -223,6 +312,8 @@ All dashboard screens must reflect scope-limited data only.
 
 ### 5.3 Attendee Mobile Flow
 
+> [v1.4 ADDED §5.3, no original ancestor] **Vendor profile card** inserted in attendee landing screen (screen 1) after the landing-context card. The card is hidden by default; populated by a second API call to `GET /stalls/:stallId/vendor-profile` (public, no auth). If no approved profile exists the card stays hidden and the stall + org name from the session remain as the only context. On approved profile: shows company name, tagline, description, and social link chips. Fails silently — the card is supplementary and its failure must never affect consent or vault flows.
+
 | Screen | Required behavior |
 |---|---|
 | Landing Page | Shows event and vendor context, confirms contact exchange, presents save/contact actions. |
@@ -241,7 +332,29 @@ All dashboard screens must reflect scope-limited data only.
 | CRM Settings | Connection to Salesforce/HubSpot/Zoho, field mapping, test push, sync rules. |
 | Export | Consent-filtered export request only; approval workflow respected. |
 
-> [v1.3 ADDED §5.4, no original ancestor] **Vendor lead item** now shows `pass_type_name` and `colour_hex` from the attendee's pass type. Allows vendor to immediately identify attendee category (e.g. VIP, Exhibitor, General) in the lead inbox.
+> [v1.3 ADDED §5.4, no original ancestor] **Vendor lead item** now shows `pass_type_name` and `colour_hex` from the attendee's pass type.
+>
+> [v1.4-patch CLARIFIED §5.4] Tab navigation bar in vendor.html restyled to match the organizer dashboard's tab pattern; redundant subtitle text below the Profile tab label removed. Same tabs, same routes, same functionality — visual consistency fix only.
+>
+> [v1.4-fix CLARIFIED §5.4] **Industry field restored** — the v1.4 spec listed `industry` in the vendor profile field set but it was silently dropped during execution. v1.4-fix restores it: optional free-text, max 80 chars (the spec said "no taxonomy" — Open Item OI-VP-02 stays open). Implemented in backend validation (routes.mjs), vendor.html editor form, and attendee.html profile card. No schema or migration changes — field lives in `moderation_items.payload.industry`.
+
+> [v1.4 ADDED §5.4, no original ancestor] **Vendor Profile tab** added to vendor.html. Vendors can now author their public profile:
+> - Company name (required), tagline (max 200), description (**max 2000** [v1.4-fix3; was 5000], HTML stripped), logo URL (HTTPS), website URL (HTTPS), industry
+> - Up to 8 social links (channels: linkedin, youtube, instagram, facebook, x, whatsapp, generic_1, generic_2); each requires HTTPS URL
+> - Save draft / Submit for review workflow feeds the Phase 0 moderation engine
+> - Pending badge shows current moderation state; published profile loaded on tab open Allows vendor to immediately identify attendee category (e.g. VIP, Exhibitor, General) in the lead inbox.
+
+> [v1.4-fix3 CHANGED from §5.4] Description field max length corrected from 5000 to **2000** chars. The UI helper text already said "Description (2000 chars max)"; the backend was silently accepting descriptions longer than 2000 chars without error. v1.4-fix3 aligns the backend to the UI: >2000 → 422 "Description must be 2000 characters or fewer". Smoke test A4 updated. 2 new unit tests: exact 2000 chars → 200, 2001 chars → 422.
+
+> [v1.4-fix4 CLARIFIED §5.4] **Refresh button** in the vendor.html status panel: now shows a disabled/loading state (button disabled + '↻ …' label) during the status fetch, and fires a 'Status refreshed.' toast on success. Tab-switch calls to `loadProfile` pass `silent:true` to suppress the toast during navigation. Functionality unchanged — this is a UX polish only.
+>
+> [v1.4-fix4 CLARIFIED §5.4] **Mobile header responsive fix**: `@media(max-width:480px)` rules added to vendor.html — `.shell-bar`, `.shell-nav`, `.tab-bar`, and `#tab-profile` reflow to prevent header element overlap at 375px viewport (e.g. iPhone SE). Desktop layout unchanged.
+>
+> [v1.4-fix4b CHANGED from §5.4] **Mobile header shell-nav follow-up**: `.shell-nav` (top-right action group — Vendor / My Account / Sign out) was not given `width:100%` in the `@media(max-width:480px)` block, causing the group to overflow the right edge of the shell bar at 375px. Added `width:100%` to `.shell-nav` inside that breakpoint. 1-line CSS change; desktop unchanged.
+
+> [v1.5 ADDED §5.4, no original ancestor] **Review tab** added to vendor.html for `vendor_content_approver` users. Injected dynamically after `/auth/me` returns `vendor_content_approver: true` — non-approver users never see the tab. Shows the moderation queue for the vendor org. Each item shows company name, current state, and submission time. Approver actions: Claim (draft/submitted → under_review), Approve (under_review → approved), Request Changes (under_review → changes_requested; note required), Reject (under_review → rejected; note required), Release (under_review → submitted — sends back to queue without rejection). Discussion thread shows all moderation notes with actor display names. All server-provided values escaped before HTML insertion; single-operator confirm modal built with DOM methods (no inline event handlers with server data).
+>
+> [v1.5 CHANGED from §5.4] **Profile tab form-lock (M4 fix)**: the profile form and social-links editor are now locked (read-only) when the moderation item is in `submitted` or `under_review` state. A status-bar message explains the lock and offers a Withdraw button. Previously (v1.4-fix4 / VP-22) saving would silently auto-transition the item back to draft — this was a latent bug. Phase 1.5 closes it: `PATCH /vendors/:vendorOrgId/profile` and `PUT /vendors/:vendorOrgId/social-links` now return 422 "Profile is under review — withdraw before editing" instead of performing the auto-draft. VP-22 test inverted.
 
 > [v1.2 ADDED §5.4, no original ancestor] **Vendor Drive screen added**: connect Google Drive or OneDrive, manage shared folders, issue/revoke attendee access grants. Auto-grant document access on attendee NFC tap.
 
@@ -366,6 +479,48 @@ All dashboard screens must reflect scope-limited data only.
 > [v1.2 CHANGED from §6.3] **Total API routes: 261+** (original spec did not number routes).
 >
 > [v1.3 CHANGED from §6.3] **Total API routes: 265** (261 from v1.2 + 3 moderation routes + 1 bulk-import route).
+>
+> [v1.4 ADDED §6.3, no original ancestor] **5 new Vendor Profile routes + 1 approval extension** (Phase 1):
+>
+> | Method | Path | Auth | Description |
+> |---|---|---|---|
+> | GET | /vendors/:vendorOrgId/profile | vendor_manager | Editor view: published + pending moderation item |
+> | PATCH | /vendors/:vendorOrgId/profile | vendor_manager | Create or update vendor profile draft; `submit:true` transitions to submitted |
+> | GET | /vendors/:vendorOrgId/social-links | vendor_manager | Published social links from `vendor_profile_social_links` table |
+> | PUT | /vendors/:vendorOrgId/social-links | vendor_manager | Bulk-replace social links in current draft (or create new draft) |
+> | GET | /stalls/:stallId/vendor-profile | public (no auth) | Attendee-facing: approved vendor profile or fallback |
+>
+> `POST /moderation-items/:itemId/transition` extended (D6): on `approved` + `entity_type = vendor_profiles`, atomically swaps `vendor_profiles.currently_published_item_id` pointer and bulk-replaces `vendor_profile_social_links`.
+>
+> [v1.4 CHANGED from §6.3] **Total API routes: 270** (265 + 5 new vendor profile routes).
+>
+> [v1.4-fix2 CHANGED from §6.3] **PATCH /vendors/:vendorOrgId/profile?submit=true behaviour corrected**: the submit path previously built the moderation_notes record inline without computing `new_status` or `prior_status`, causing a NOT NULL constraint violation (500) in production. A `recordModerationTransition()` helper is now extracted and shared by both the submit path and the `/moderation-items/:itemId/transition` endpoint. The helper reads `prior_status` from the current item state and derives `new_status` from the TRANSITIONS state machine. No API contract change — same request/response shape.
+>
+> [v1.4-fix4 CHANGED from §6.3] **PATCH /vendors/:vendorOrgId/profile save-draft corrected (moderation integrity)**: when the existing moderation item is already in `submitted` or `under_review` state, a save-draft call now auto-transitions the item back to `draft` (via `recordModerationTransition(action='withdraw_to_draft')`) before applying the new payload. Previously the payload was silently overwritten with no state transition and no moderation_notes audit record, leaving the item's status inconsistent with its content. No API contract change — same request/response shape. Test VP-22 added.
+>
+> [v1.5 CHANGED from §6.3] **PATCH /vendors/:vendorOrgId/profile — M4 edit-lock (VP-22 inverted)**: the Phase 1.5 review workflow requires items to stay in `submitted`/`under_review` while under review. The v1.4-fix4 auto-draft was a latent bug. Phase 1.5 replaces it with a hard 422 "Profile is under review — withdraw before editing". To edit, the vendor must use the Withdraw action first (submitted → draft via the transition endpoint). VP-22 test inverted to assert 422 + unchanged state.
+>
+> [v1.5 CHANGED from §6.3] **PUT /vendors/:vendorOrgId/social-links — same 422 edit-lock**: social-link saves share the same moderation item as the profile PATCH (`entity_type="vendor_profiles"`). The 422 lock applies here too — social links cannot be saved when the item is submitted or under review.
+>
+> [v1.5 CHANGED from §6.3] **MODERATION_TRANSITIONS — Release action added**: `under_review` allowed-targets now includes `"submitted"`. This enables the Release action (approver sends item back to the queue without rejection). Requires `canReleaseModeration(principal)` to pass — i.e., `vendor_content_approver: true`.
+>
+> [v1.5 CHANGED from §6.3] **Transition handler enhancements** (POST /moderation-items/:itemId/transition):
+> - Optimistic-concurrency guard: if `expected_updated_at` is provided and differs from the stored `item.updated_at`, returns 409 Conflict. Prevents stale overwrites when two approvers act concurrently. Note: claim (under_review) is advisory in v1.5 — hard reviewer lock deferred to v2.
+> - Single-operator self-approve: if the approver is also the editor and is the sole approver-capable user in the org (checked via `countApproverCapableInOrg <= 1`), a two-call confirm protocol is supported. First call without `confirm_single_operator` returns 403 `{ error: "self_approval_blocked", details: { single_operator: true } }`; second call with `confirm_single_operator: true` re-checks and, if still true, allows approval + records `self_approved_single_operator` audit note + system note. Multi-approver orgs always get plain 403.
+> - Notification fan-out: on `submitted` → email all org approvers (actor suppressed); on `approved` → email editor; on `changes_requested`/`rejected` → email editor. Errors are caught and logged without failing the transition.
+> - Audit metadata now includes `action` name alongside from/to states.
+>
+> [v1.5 CHANGED from §6.3] **GET /auth/me principal**: now includes `vendor_content_editor` and `vendor_content_approver` boolean flags. Frontend uses these to gate the Review tab injection and action-bar rendering.
+>
+> [v1.5 CHANGED from §6.3] **GET /moderation-items/:itemId/history**: each note now includes `actor_display_name` (resolved via `users.findByIdGlobal`). Null if user not found.
+>
+> [v1.5 ADDED §6.3, no original ancestor] **3 new notification templates** added to `notification-templates.mjs`:
+>
+> | Template key | Trigger | Recipient |
+> |---|---|---|
+> | `vendor_profile_submitted` | Item transitions to `submitted` | All `vendor_content_approver` users in org (actor excluded) |
+> | `vendor_profile_approved` | Item transitions to `approved` | Item's `editor_user_id` |
+> | `vendor_profile_needs_changes` | Item transitions to `changes_requested` or `rejected` | Item's `editor_user_id` |
 
 ---
 
@@ -416,6 +571,18 @@ All dashboard screens must reflect scope-limited data only.
 > - `moderation_status` ENUM: draft / submitted / under_review / changes_requested / approved / rejected / withdrawn / superseded / discarded
 >
 > [v1.3 CHANGED from §7.1] **Total tables: ~90** (v1.2 had 79).
+>
+> [v1.4 ADDED §7.1] **1 new table** added in migration 070:
+>
+> | Table | Purpose |
+> |---|---|
+> | vendor_profile_social_links | Published social links for approved vendor profile; channels: linkedin, youtube, instagram, facebook, x, whatsapp, generic_1, generic_2; bulk-replaced on approval; RLS enabled |
+>
+> **Unique index added to vendor_profiles:** `(tenant_id, organization_id)` — prevents duplicate shells on concurrent first-save.
+>
+> [v1.4 CHANGED from §7.1] **Total tables: ~91** (v1.3 had ~90).
+>
+> [v1.4 CHANGED from §7.1] **logo_url field in vendor_profiles payload**: stored as HTTPS TEXT string (the original spec referenced `logo_asset_id UUID FK to branding_assets`). The `branding_assets` table is event-scoped with a TEXT PK — not usable as a vendor asset store. File upload and R2 scanning deferred to Phase 1.1. Validation: must start with `https://` if provided.
 
 > [v1.2 ADDED §7.1] **4 new tables** for Drive storage (new in v1.2, no original ancestor):
 >
@@ -653,6 +820,17 @@ Partner payouts must be tracked, approved, and paid after client payment receipt
 | 17 | Access Control Matrix | Done | Done | Done (+moderation routes) |
 | 18 | Browser Testing — All 6 Roles | Done | Done | Done |
 | P2-0 | Moderation Foundation | — | — | **Done in v1.3** |
+| P2-1 | Vendor Profile Core (CR-VP-01) | — | — | **Done in v1.4** |
+| P2-1.5 | Approver Moderation Queue UI | — | — | **Done in v1.5** |
+
+> [v1.4-qa ADDED §13, no original ancestor] **Phase 1 QA automation** (26 May 2026): `apps/api/scripts/qa/phase1_backend_smoke_v1_0.sh` (816 lines) is a reusable, idempotent backend smoke test script that replaces manual checklist items 1–28 for P2 Phase 1. Covers all checklist items (1.1–1.8) and 10 extra validation cases: cross-org isolation (403), invalid logo_url formats → 422, description >5000 chars → 422, industry >80 chars → 422, invalid social link channel → 422, HTML stripping, UUID id format regression, industry field persistence regression, self-approval guard (403), reject-with/without-note flows. Script features: cleanup/reset before each run (idempotent), [WRITE] labels on all mutations, --dry-run flag, exit codes 0/1/2, inline progress + final summary table, markdown report fan-out to /tmp/outputs/, docs/qa_reports/, and Obsidian. Establishes `phaseN_backend_smoke_v1_0.sh` naming convention for future phases. No schema, API route, or node:test count changes.
+
+> [v1.3-patch ADDED §13, no original ancestor] **Migrator improvements** (25 May 2026):
+> - `MIGRATION_FILE_RE` regex filters out `.rollback.sql` and non-standard filenames
+> - `--reconcile-only` flag records migration versions without executing SQL (used for prod schema reconciliation)
+> - `ON CONFLICT DO NOTHING` on schema_migrations INSERT — prevents duplicate-key error when SQL self-inserts in same transaction
+> - Production Railway DB now has **70 migrations recorded** in schema_migrations (migrations 012–069 reconciled)
+> - Migration `058_attendees_pass_columns.sql` renamed to singular form `058_attendee_pass_columns.sql` to match prod record
 
 > [v1.3 ADDED §13, no original ancestor] **P2 Phase 0 — Moderation Foundation** complete. Zero frontend changes. Infrastructure only:
 > - 9-state moderation_status ENUM (draft → submitted → under_review → changes_requested → approved/rejected → withdrawn/superseded/discarded)
@@ -812,6 +990,36 @@ Field reliability outranks feature breadth.
 
 ## Appendix D — Test Coverage
 
+> [v1.5 CHANGED from §D] **539 tests passing | 0 fail | 24 skipped** (was 519 in v1.4-fix4). New test file:
+> - `p2-phase1-5-moderation-queue.test.mjs` — 20 tests: Auth-1 (vendor_content_* flags in /auth/me), VP-22b/c (edit-lock on submitted/under_review for profile and social-links), VP-23 (Release transition), MT-VP-10 (under_review → submitted allowed), SO-1–4 (single-operator fallback, FIX-1 multi-approver plain-403 verification), Conc-1/2 (optimistic-concurrency 409 guard), Rel-1/2 (Release authz), Resub-1/2 (resubmit authz), Notif-1–3 (notification fan-out), Hist-1 (actor_display_name in history), Audit-1 (audit metadata includes action).
+>
+> VP-22 test in `p2-phase1-vendor-profile.test.mjs` inverted: now asserts 422 + state unchanged (was: asserts auto-draft success).
+
+> [v1.4-fix4 CHANGED from §D] **519 tests passing | 0 fail | 24 skipped** (was 516 in v1.4-fix3). 3 new tests added to p2-phase1-vendor-profile.test.mjs:
+> - VP-22: PATCH /vendors/:vendorOrgId/profile on a submitted item auto-transitions to draft before overwriting (moderation integrity regression test)
+> - 2 supporting edge-case tests for the auto-withdraw flow (submitted → draft, under_review → draft)
+>
+> Smoke script `phase1_backend_smoke_v1_0.sh` updated with item 1.3b-integrity.
+
+> [v1.4-fix2 CHANGED from §D] **516 tests passing | 0 fail | 24 skipped** (was 513 in v1.4-hotfix). 3 new regression tests added to p2-phase1-vendor-profile.test.mjs + 2 existing moderation-foundation tests corrected:
+> - VP-17: submit on an existing draft sets `prior_status = draft` in moderation_notes
+> - VP-18: first-ever submit (no prior item) sets `prior_status = null` in moderation_notes
+> - VP-19: null new_status is rejected at the repo layer (NOT NULL constraint mirrored in memory backend)
+> - Two pre-existing moderation-foundation tests that omitted `new_status` were corrected to pass the required field.
+
+> [v1.4-hotfix CHANGED from §D] **513 tests passing | 0 fail | 24 skipped** (was 512 in v1.4-fix). 1 new test added to p2-phase1-vendor-profile.test.mjs:
+> - Regression test VP-16: full form payload on PATCH /vendors/:vendorOrgId/profile returns 200 and IDs are valid UUID strings (not `prefix-uuid` TEXT strings)
+
+> [v1.4-fix CHANGED from §D] **512 tests passing | 0 fail | 24 skipped** (was 510 in v1.4). 2 new tests added to p2-phase1-vendor-profile.test.mjs:
+> - Industry field persistence (PATCH /vendors/:vendorOrgId/profile stores and retrieves industry)
+> - Industry field length validation (> 80 chars rejected with 400)
+
+> [v1.4 CHANGED from §D] **510 tests passing | 0 fail | 24 skipped** (was 494 in v1.3-patch). New test file:
+> - p2-phase1-vendor-profile.test.mjs — 13 tests covering vendor profile draft creation, self-approval guard (MT-VP-01), approval pointer swap + social link sync, public attendee endpoint fallback/full-content, validation (HTTPS enforcement, HTML stripping, channel enum), auto-shell creation on first save
+
+> [v1.3-patch CHANGED from §D] **494 tests passing | 0 fail | 24 skipped** (was 488 in v1.3). New test file:
+> - migrator.test.mjs — 9 new unit/integration tests covering rollback filtering, reconcileOnly mode, ON CONFLICT DO NOTHING behaviour
+
 > [v1.3 CHANGED from §D] **488 tests passing | 0 fail | 24 skipped** (was 438 in v1.2). New test file:
 > - moderation-foundation.test.mjs — 14 tests covering 9-state machine, self-approval guard, org isolation, history audit trail
 
@@ -850,6 +1058,7 @@ Field reliability outranks feature breadth.
 | infra-storage.test.mjs | R2/S3 storage backend, export file lifecycle |
 | server.security.test.mjs | Server-level security headers, transport enforcement |
 | postgres.integration.test.mjs | PostgreSQL backend integration (requires live DB) |
+| p2-phase1-5-moderation-queue.test.mjs | Approver queue: edit-lock, Release, single-operator, optimistic-concurrency, notifications, history, audit (v1.5) |
 
 ---
 
