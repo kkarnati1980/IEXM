@@ -1757,22 +1757,39 @@
         confirmSingleOpApprove, withdrawProfile, resubmitProfile
       });
 
-      // Phase 1.5: resolve /auth/me flags before first render, then inject Review tab if approver
+      // Phase 1.5: resolve /auth/me flags before first render
       let ME = { vendor_content_approver: false, vendor_content_editor: true, user_id: null };
-      try {
-        const meData = await api('/auth/me');
-        const p = meData.principal ?? {};
-        ME = { ...ME, ...p };
-      } catch { /* non-critical; ME stays at defaults */ }
+      let _meBanner = null;
 
-      if (ME.vendor_content_approver) {
-        const reviewBtn = document.createElement('button');
-        reviewBtn.className = 'tab-btn';
-        reviewBtn.id = 'tab-btn-review';
-        reviewBtn.textContent = 'Review';
-        reviewBtn.setAttribute('onclick', "switchTab('review')");
-        document.querySelector('.tabs').appendChild(reviewBtn);
+      async function loadMePrincipal() {
+        try {
+          const meData = await api('/auth/me');
+          ME = { ...ME, ...(meData.principal ?? {}) };
+          _meBanner?.remove(); _meBanner = null;
+          if (ME.vendor_content_approver && !$('tab-btn-review')) {
+            const btn = document.createElement('button');
+            btn.className = 'tab-btn'; btn.id = 'tab-btn-review'; btn.textContent = 'Review';
+            btn.setAttribute('onclick', "switchTab('review')");
+            document.querySelector('.tabs').appendChild(btn);
+          }
+        } catch {
+          if (!_meBanner) {
+            _meBanner = document.createElement('div');
+            _meBanner.id = 'me-error-banner';
+            _meBanner.style.cssText = 'background:#fef2f2;border-bottom:1px solid #fca5a5;padding:10px 24px;font-size:13px;display:flex;align-items:center;gap:10px;';
+            const msg = document.createElement('span');
+            msg.textContent = "Couldn’t load your profile. Some features may be hidden.";
+            const retryBtn = document.createElement('button');
+            retryBtn.className = 'secondary sm'; retryBtn.textContent = 'Retry';
+            retryBtn.addEventListener('click', loadMePrincipal);
+            _meBanner.append(msg, retryBtn);
+            const tabBar = document.querySelector('.tab-bar');
+            (tabBar ?? document.body).insertAdjacentElement(tabBar ? 'beforebegin' : 'afterbegin', _meBanner);
+          }
+        }
       }
+
+      await loadMePrincipal();
 
       loadDriveConnections();
       loadAll();
