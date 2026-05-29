@@ -29,7 +29,8 @@
     "db:local:stop": "bash scripts/postgres-local-stop.sh",
     "db:backup": "bash scripts/postgres-local-backup.sh",
     "test": "node --test apps/api/test/*.test.mjs packages/runtime/test/*.test.mjs",
-    "test:e2e": "node --test apps/web/test/*.test.mjs"
+    "test:e2e": "node --test apps/web/test/*.test.mjs",
+    "refresh-baselines": "claude -p --permission-mode acceptEdits \"Run /baseline to refresh baseline_master_spec.md and baseline_ICD.md. Skip steps 7 and 8. Just write the two files and print the summary.\""
   },
   "devDependencies": {
     "playwright-core": "^1.59.1"
