@@ -128,6 +128,26 @@ export function createMemoryRepositories(state) {
         }
         state.users[index] = record;
         return record;
+      },
+      async countApproverCapableInOrg(tenantId, orgId) {
+        return state.users.filter(u =>
+          u.tenant_id === tenantId &&
+          u.organization_id === orgId &&
+          u.vendor_content_approver === true &&
+          u.status === "active" &&
+          !u.deleted_at
+        ).length;
+      },
+      async listApproverCapableInOrg(tenantId, orgId) {
+        return state.users
+          .filter(u =>
+            u.tenant_id === tenantId &&
+            u.organization_id === orgId &&
+            u.vendor_content_approver === true &&
+            u.status === "active" &&
+            !u.deleted_at
+          )
+          .map(({ id, email, display_name }) => ({ id, email, display_name }));
       }
     },
     events: {

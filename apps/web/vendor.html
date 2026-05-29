@@ -109,6 +109,14 @@
       .tab-btn{border:0;background:none;color:var(--muted);padding:10px 16px;border-radius:12px;cursor:pointer;font:inherit;font-size:14px;border:1px solid transparent;}
       .tab-btn.active{background:#fef3c7;color:var(--accent);border-color:rgba(45,106,159,0.3);}
       .tab-btn:hover:not(.active){background:rgba(17,34,51,.06);color:var(--ink);}
+      @media(max-width:400px){.tabs{flex-wrap:wrap;gap:4px;}.tab-btn{flex:1 1 auto;font-size:12px;padding:7px 8px;}}
+      /* ── Review tab ── */
+      #tab-review{max-width:960px;margin:0 auto;padding:24px 24px 48px;}
+      .review-table{width:100%;border-collapse:collapse;font-size:13px;}
+      .review-table th{padding:8px 10px;text-align:left;font-size:12px;color:var(--muted);border-bottom:2px solid var(--line);}
+      .review-table td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle;}
+      .review-table tr:hover td{background:rgba(17,34,51,.03);}
+      .single-op-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:1000;}
       /* ── Profile tab ── */
       #tab-profile{max-width:800px;margin:0 auto;padding:24px 24px 48px;}
       .profile-status{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.7);margin-bottom:18px;font-size:13px;}
@@ -141,6 +149,7 @@
       <div class="tabs">
         <button class="tab-btn active" id="tab-btn-leads" onclick="switchTab('leads')">Leads</button>
         <button class="tab-btn" id="tab-btn-profile" onclick="switchTab('profile')">Profile</button>
+        <!-- Review tab button injected by JS if vendor_content_approver flag is set -->
       </div>
     </div>
 
@@ -471,6 +480,17 @@
         </div>
         <div id="profile-msg" class="status" hidden style="margin-top:14px;"></div>
       </div>
+    </div>
+
+    <!-- Review tab (rendered only if vendor_content_approver flag is set) -->
+    <div id="tab-review" style="display:none;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">
+        <h2 style="margin:0;font-size:18px;">Moderation Queue</h2>
+        <button class="secondary sm" id="review-refresh-btn" onclick="loadModerationQueue()">↻ Refresh</button>
+        <span id="review-loading" class="muted" style="font-size:13px;" hidden>Loading…</span>
+      </div>
+      <div id="review-queue-list"></div>
+      <div id="review-pane" style="display:none;margin-top:24px;"></div>
     </div>
 
     <script type="module">
@@ -883,7 +903,12 @@
           body: options.body ? JSON.stringify(options.body) : undefined
         });
         const payload = await resp.json().catch(() => ({}));
-        if (!resp.ok) throw new Error(payload.error || `Request failed ${resp.status}`);
+        if (!resp.ok) {
+          const err = new Error(payload.error || `Request failed ${resp.status}`);
+          err.payload = payload;  // enables structured error detection (e.g. self_approval_blocked)
+          err.status  = resp.status;
+          throw err;
+        }
         return payload;
       }
 
@@ -1240,9 +1265,12 @@
       function switchTab(name) {
         $('tab-leads').style.display   = name === 'leads'   ? '' : 'none';
         $('tab-profile').style.display = name === 'profile' ? '' : 'none';
+        if ($('tab-review')) $('tab-review').style.display = name === 'review' ? '' : 'none';
         $('tab-btn-leads').classList.toggle('active',   name === 'leads');
         $('tab-btn-profile').classList.toggle('active', name === 'profile');
+        if ($('tab-btn-review')) $('tab-btn-review').classList.toggle('active', name === 'review');
         if (name === 'profile') loadProfile({ silent: true });
+        if (name === 'review')  loadModerationQueue();
       }
 
       // ─── Profile tab ─────────────────────────────────────────────────────────
@@ -1250,7 +1278,8 @@
       const orgId = jwtPayload.organization_id || params.get('orgId') || 'org-vendor';
 
       async function loadProfile({ silent = false } = {}) {
-        const btn = document.querySelector('#profile-status-bar button.secondary');
+        const btn = document.querySelector('#profile-status-bar button.secondary.profile-refresh') ??
+                    document.querySelector('#profile-status-bar button.secondary');
         if (btn) { btn.disabled = true; btn.textContent = '↻ …'; }
         try {
           const data = await api(`/vendors/${enc(orgId)}/profile`);
@@ -1263,7 +1292,17 @@
           $('pf-website-url').value  = payload.website_url  ?? '';
           $('pf-industry').value     = payload.industry     ?? '';
           renderSocialRows(payload.social_links ?? []);
-          renderProfileStatus(item?.state ?? null);
+
+          // Fetch latest reviewer note for changes_requested state (editor feedback loop)
+          let lastNote = null;
+          if ((data.pending?.state ?? null) === 'changes_requested' && data.pending?.id) {
+            try {
+              const hist = await api(`/moderation-items/${enc(data.pending.id)}/history`);
+              const crNote = (hist.history ?? []).filter(n => n.action === 'request_changes').slice(-1)[0];
+              if (crNote) lastNote = crNote.note;
+            } catch { /* non-critical */ }
+          }
+          renderProfileStatus(item?.state ?? null, lastNote);
           if (!silent) showProfileMsg('Status refreshed.', 'ok');
         } catch (e) {
           showProfileMsg(e.message, 'error');
@@ -1272,7 +1311,7 @@
         }
       }
 
-      function renderProfileStatus(state) {
+      function renderProfileStatus(state, lastNote = null) {
         const pill = $('profile-state-pill');
         const hint = $('profile-state-hint');
         const labels = { draft: 'Draft', submitted: 'Submitted', under_review: 'Under review',
@@ -1287,6 +1326,89 @@
           approved: 'Your profile is live for attendees.'
         };
         hint.textContent = hints[state] ?? '';
+
+        // Form lock while submitted/under_review
+        const locked = state === 'submitted' || state === 'under_review';
+        const profileCard = $('tab-profile');
+        if (profileCard) {
+          profileCard.querySelectorAll('input,textarea,select').forEach(el => { el.disabled = locked; });
+          profileCard.querySelectorAll('button').forEach(el => {
+            if (el.id === 'profile-withdraw-btn' || el.id === 'profile-resubmit-btn') return;
+            el.disabled = locked;
+          });
+        }
+
+        // Approver note for changes_requested
+        let noteEl = $('profile-approver-note');
+        if (state === 'changes_requested' && lastNote) {
+          if (!noteEl) {
+            noteEl = document.createElement('div');
+            noteEl.id = 'profile-approver-note';
+            noteEl.style.cssText = 'background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;';
+            const bar = $('profile-status-bar');
+            if (bar) bar.insertAdjacentElement('afterend', noteEl);
+          }
+          noteEl.textContent = 'Reviewer note: ' + (lastNote ?? '');
+          noteEl.hidden = false;
+        } else if (noteEl) {
+          noteEl.hidden = true;
+        }
+
+        // Withdraw button (submitted/under_review)
+        let wBtn = $('profile-withdraw-btn');
+        if (!wBtn) {
+          wBtn = document.createElement('button');
+          wBtn.id = 'profile-withdraw-btn';
+          wBtn.className = 'secondary sm';
+          wBtn.textContent = 'Withdraw';
+          wBtn.addEventListener('click', () => withdrawProfile());
+          const bar = $('profile-status-bar');
+          if (bar) bar.appendChild(wBtn);
+        }
+        wBtn.style.display = locked ? '' : 'none';
+
+        // Resubmit button (changes_requested only)
+        let rBtn = $('profile-resubmit-btn');
+        if (!rBtn) {
+          rBtn = document.createElement('button');
+          rBtn.id = 'profile-resubmit-btn';
+          rBtn.className = 'primary sm';
+          rBtn.textContent = 'Resubmit for review';
+          rBtn.addEventListener('click', () => resubmitProfile());
+          const bar = $('profile-status-bar');
+          if (bar) bar.appendChild(rBtn);
+        }
+        rBtn.style.display = state === 'changes_requested' ? '' : 'none';
+
+        if (state === 'approved') showProfileMsg('Your profile is live!', 'ok');
+      }
+
+      async function withdrawProfile() {
+        try {
+          const data = await api(`/vendors/${enc(orgId)}/profile`);
+          const item = data.pending;
+          if (!item) return;
+          await api(`/moderation-items/${enc(item.id)}/transition`, {
+            method: 'POST',
+            body: { to_state: 'withdrawn', expected_updated_at: item.updated_at }
+          });
+          await loadProfile();
+          showProfileMsg('Withdrawn.', 'ok');
+        } catch (e) { showProfileMsg(e.message, 'error'); }
+      }
+
+      async function resubmitProfile() {
+        try {
+          const data = await api(`/vendors/${enc(orgId)}/profile`);
+          const item = data.pending;
+          if (!item) return;
+          await api(`/moderation-items/${enc(item.id)}/transition`, {
+            method: 'POST',
+            body: { to_state: 'submitted', expected_updated_at: item.updated_at }
+          });
+          await loadProfile();
+          showProfileMsg('Resubmitted for review.', 'ok');
+        } catch (e) { showProfileMsg(e.message, 'error'); }
       }
 
       function renderSocialRows(links) {
@@ -1365,6 +1487,263 @@
         setTimeout(() => { el.hidden = true; }, 4000);
       }
 
+      // ─── Review Tab ──────────────────────────────────────────────────────────
+      let QUEUE_ITEMS = [];
+      let SELECTED_ITEM = null;
+      let REVIEW_SUBMITTING = false;
+
+      async function loadModerationQueue() {
+        const btn = $('review-refresh-btn');
+        const loading = $('review-loading');
+        if (btn) { btn.disabled = true; btn.textContent = '↻ …'; }
+        if (loading) loading.hidden = false;
+        try {
+          const data = await api(`/vendors/${enc(orgId)}/moderation-items`);
+          QUEUE_ITEMS = (data.items ?? []).filter(i => i.state === 'submitted' || i.state === 'under_review');
+          renderQueue(QUEUE_ITEMS);
+        } catch (e) {
+          const el = $('review-queue-list');
+          if (el) el.textContent = 'Failed to load: ' + e.message;
+        } finally {
+          if (loading) loading.hidden = true;
+          if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh'; }
+        }
+      }
+
+      function renderQueue(items) {
+        const el = $('review-queue-list');
+        if (!el) return;
+        if (!items.length) {
+          el.innerHTML = '<p class="muted" style="font-size:13px;">No items pending review.</p>';
+          const pane = $('review-pane');
+          if (pane) pane.style.display = 'none';
+          return;
+        }
+        const STATE_LABELS = { submitted: 'Submitted', under_review: 'Under review' };
+        let html = '<table class="review-table"><thead><tr>'
+          + '<th>State</th><th>Submitted</th><th>Editor</th><th></th>'
+          + '</tr></thead><tbody>';
+        for (const item of items) {
+          const claimed = item.state === 'under_review'
+            ? '<span style="font-size:11px;color:var(--muted);margin-left:6px;">(claimed)</span>' : '';
+          html += `<tr>
+            <td><span class="state-pill ${esc(item.state)}">${esc(STATE_LABELS[item.state] ?? item.state)}</span>${claimed}</td>
+            <td style="font-size:12px;">${item.submitted_at ? new Date(item.submitted_at).toLocaleDateString() : '—'}</td>
+            <td style="font-size:12px;" id="editor-cell-${esc(item.id)}">…</td>
+            <td><button class="secondary sm" data-item-id="${esc(item.id)}">Review</button></td>
+          </tr>`;
+        }
+        html += '</tbody></table>';
+        el.innerHTML = html;
+        // Attach event listeners after innerHTML (no inline onclick to avoid XSS via item.id)
+        el.querySelectorAll('button[data-item-id]').forEach(btn => {
+          btn.addEventListener('click', () => openReviewPane(btn.dataset.itemId));
+        });
+        for (const item of items) {
+          if (item.editor_user_id) loadEditorName(item.id, item.editor_user_id);
+        }
+      }
+
+      async function loadEditorName(itemId, editorUserId) {
+        try {
+          const data = await api(`/moderation-items/${enc(itemId)}/history`);
+          const note = (data.history ?? []).find(n => n.actor_user_id === editorUserId);
+          const cell = $(`editor-cell-${itemId}`);
+          if (cell && note?.actor_display_name) cell.textContent = note.actor_display_name;
+          else if (cell) cell.textContent = editorUserId.slice(-8);
+        } catch { /* non-critical */ }
+      }
+
+      async function openReviewPane(itemId) {
+        SELECTED_ITEM = QUEUE_ITEMS.find(i => i.id === itemId) ?? null;
+        if (!SELECTED_ITEM) return;
+        const pane = $('review-pane');
+        if (!pane) return;
+        pane.style.display = '';
+        pane.innerHTML = '<p class="muted">Loading…</p>';
+        try {
+          const data = await api(`/moderation-items/${enc(itemId)}/history`);
+          renderReviewPane(SELECTED_ITEM, data.history ?? []);
+        } catch (e) {
+          pane.innerHTML = `<p style="color:red;">${esc(e.message)}</p>`;
+        }
+      }
+
+      function renderReviewPane(item, history) {
+        const pane = $('review-pane');
+        if (!pane) return;
+        const isSelf = item.editor_user_id === ME.user_id;
+
+        // Proposed payload
+        const p = item.payload ?? {};
+        let payloadRows = '';
+        for (const [k, v] of Object.entries(p)) {
+          if (k === 'social_links') continue;
+          payloadRows += `<tr><td style="padding:6px 8px;font-weight:600;color:var(--muted);font-size:12px;width:140px;">${esc(k)}</td>`
+            + `<td style="padding:6px 8px;font-size:13px;">${esc(String(v ?? ''))}</td></tr>`;
+        }
+        if ((p.social_links ?? []).length) {
+          payloadRows += `<tr><td style="padding:6px 8px;font-weight:600;color:var(--muted);font-size:12px;">social_links</td>`
+            + `<td style="padding:6px 8px;font-size:13px;">${p.social_links.map(s => esc(s.channel + ': ' + s.url)).join('<br>')}</td></tr>`;
+        }
+
+        // Thread
+        let threadHtml = '<div style="display:flex;flex-direction:column;gap:8px;">';
+        for (const note of history) {
+          threadHtml += `<div style="border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:13px;">`
+            + `<strong>${esc(note.actor_display_name ?? note.actor_user_id ?? '?')}</strong>`
+            + ` <span class="muted">${esc(note.action)}</span>`
+            + ` <span class="muted" style="font-size:11px;">${new Date(note.created_at).toLocaleString()}</span>`
+            + (note.note ? `<p style="margin:6px 0 0;white-space:pre-wrap;font-size:13px;">${esc(note.note)}</p>` : '')
+            + '</div>';
+        }
+        threadHtml += '</div>';
+
+        // Action bar: AP-4 guard — own submissions disabled except single-operator path
+        let actionBar = '';
+        if (item.state === 'submitted') {
+          if (!isSelf) {
+            actionBar = `<button class="primary" onclick="doTransition('under_review')">Claim</button>`;
+          } else {
+            actionBar = `<span class="muted" style="font-size:13px;">This is your own submission — claim not available.</span>`;
+          }
+        }
+        if (item.state === 'under_review') {
+          // Both self and non-self show action bar; AP-4 enforced at API level; single-operator modal handles self path
+          actionBar = `
+            <button class="primary" onclick="doTransition('approved')">Approve</button>
+            <button class="secondary" onclick="doTransition('changes_requested')">Request changes</button>
+            <button class="secondary" style="color:#c00;" onclick="doTransition('rejected')">Reject</button>
+            <button class="secondary" style="margin-left:auto;" onclick="doTransition('submitted')">Release</button>`;
+          if (isSelf) {
+            actionBar = `<p class="muted" style="font-size:12px;margin:0 0 8px;">You are the item editor. Self-approval requires single-operator confirmation.</p>` + actionBar;
+          }
+        }
+
+        pane.innerHTML = `
+          <article class="card">
+            <div class="section-head"><div><div class="eyebrow">Item ${esc(item.id.slice(-8))}</div><h3 style="margin:0;">Proposed changes</h3></div></div>
+            <table style="width:100%;border-collapse:collapse;">${payloadRows}</table>
+          </article>
+          <article class="card" style="margin-top:16px;">
+            <div class="section-head"><div><div class="eyebrow">Discussion</div><h3 style="margin:0;">Thread</h3></div></div>
+            ${history.length ? threadHtml : '<p class="muted" style="font-size:13px;">No notes yet.</p>'}
+          </article>
+          <article class="card" style="margin-top:16px;">
+            <div class="section-head"><div><h3 style="margin:0;">Actions</h3></div></div>
+            <div style="margin-bottom:10px;">
+              <textarea id="review-note" rows="3" style="width:100%;box-sizing:border-box;font:inherit;font-size:13px;padding:8px;" placeholder="Note (required for reject / request-changes)"></textarea>
+              <div id="review-note-error" style="color:#c00;font-size:12px;margin-top:4px;" hidden>A note is required for this action.</div>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;" id="review-action-bar">${actionBar}</div>
+            <div id="review-action-msg" class="status" hidden style="margin-top:10px;"></div>
+          </article>`;
+      }
+
+      async function doTransition(toState, extraBody = {}) {
+        if (REVIEW_SUBMITTING) return;
+        const item = SELECTED_ITEM;
+        if (!item) return;
+
+        const note = ($('review-note')?.value ?? '').trim();
+        const needsNote = toState === 'rejected' || toState === 'changes_requested';
+        const errEl = $('review-note-error');
+        if (needsNote && !note) {
+          if (errEl) errEl.hidden = false;
+          return;
+        }
+        if (errEl) errEl.hidden = true;
+
+        REVIEW_SUBMITTING = true;
+        const bar = $('review-action-bar');
+        if (bar) bar.querySelectorAll('button').forEach(b => { b.disabled = true; });
+
+        const body = {
+          to_state: toState,
+          expected_updated_at: item.updated_at,  // M1: echo exact string, no Date round-trip
+          ...(note ? { note } : {}),
+          ...extraBody
+        };
+
+        try {
+          await api(`/moderation-items/${enc(item.id)}/transition`, { method: 'POST', body });
+          showReviewMsg('Done.', 'ok');
+          await loadModerationQueue();
+          const pane = $('review-pane');
+          if (pane) pane.style.display = 'none';
+          SELECTED_ITEM = null;
+        } catch (e) {
+          // Check for single-operator self-approve signal (details.single_operator from HttpError)
+          if (e.payload?.details?.single_operator === true) {
+            showSingleOperatorModal(toState, note);
+          } else {
+            showReviewMsg(e.message, 'error');
+          }
+        } finally {
+          REVIEW_SUBMITTING = false;
+          if (bar) bar.querySelectorAll('button').forEach(b => { b.disabled = false; });
+        }
+      }
+
+      // Pending single-operator args stored here to avoid passing user text through onclick attributes
+      let _pendingSingleOp = null;
+
+      function showSingleOperatorModal(toState, note) {
+        $('single-op-modal')?.remove();
+        _pendingSingleOp = { toState, note };
+
+        const overlay = document.createElement('div');
+        overlay.id = 'single-op-modal';
+        overlay.className = 'single-op-modal-overlay';
+
+        // Build the modal with DOM methods to avoid innerHTML with user text
+        const box = document.createElement('div');
+        box.style.cssText = 'background:#fff;border-radius:12px;padding:32px;max-width:440px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.2);';
+
+        const h = document.createElement('h3');
+        h.style.cssText = 'margin:0 0 12px;font-size:16px;';
+        h.textContent = 'Single-operator approval';
+
+        const p = document.createElement('p');
+        p.style.cssText = 'font-size:13px;margin:0 0 20px;line-height:1.6;';
+        p.textContent = 'You are the only approver-capable user in this organisation. Normal maker-checker requires a second approver. Do you want to self-approve?';
+
+        const btns = document.createElement('div');
+        btns.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'secondary';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.addEventListener('click', () => overlay.remove());
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.className = 'primary';
+        confirmBtn.textContent = 'Confirm self-approve';
+        confirmBtn.addEventListener('click', () => confirmSingleOpApprove());
+
+        btns.append(cancelBtn, confirmBtn);
+        box.append(h, p, btns);
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+      }
+
+      async function confirmSingleOpApprove() {
+        $('single-op-modal')?.remove();
+        if (!_pendingSingleOp) return;
+        const { toState, note } = _pendingSingleOp;
+        _pendingSingleOp = null;
+        await doTransition(toState, { confirm_single_operator: true, ...(note ? { note } : {}) });
+      }
+
+      function showReviewMsg(text, type) {
+        const el = $('review-action-msg');
+        if (!el) return;
+        el.textContent = text;
+        el.className = 'status ' + type;
+        el.hidden = false;
+        setTimeout(() => { el.hidden = true; }, 4000);
+      }
+
       // Expose functions to window so onclick="" attributes can find them.
       // <script type="module"> scopes functions to the module — they are NOT
       // on window by default, which causes onclick handlers to throw ReferenceError.
@@ -1372,8 +1751,28 @@
         loadAll, requestExport, setScore, pushToCRM, addNote,
         connectGoogle, connectOneDrive, disconnectDrive, refreshDrive,
         browseFolders, loadSharedFolders, addCRMConnection,
-        switchTab, addSocialRow, saveProfileDraft, loadProfile
+        switchTab, addSocialRow, saveProfileDraft, loadProfile,
+        // Phase 1.5 additions:
+        loadModerationQueue, openReviewPane, doTransition,
+        confirmSingleOpApprove, withdrawProfile, resubmitProfile
       });
+
+      // Phase 1.5: resolve /auth/me flags before first render, then inject Review tab if approver
+      let ME = { vendor_content_approver: false, vendor_content_editor: true, user_id: null };
+      try {
+        const meData = await api('/auth/me');
+        const p = meData.principal ?? {};
+        ME = { ...ME, ...p };
+      } catch { /* non-critical; ME stays at defaults */ }
+
+      if (ME.vendor_content_approver) {
+        const reviewBtn = document.createElement('button');
+        reviewBtn.className = 'tab-btn';
+        reviewBtn.id = 'tab-btn-review';
+        reviewBtn.textContent = 'Review';
+        reviewBtn.setAttribute('onclick', "switchTab('review')");
+        document.querySelector('.tabs').appendChild(reviewBtn);
+      }
 
       loadDriveConnections();
       loadAll();

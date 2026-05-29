@@ -266,6 +266,27 @@ export function createPostgresRepositories(db, securityContext = null) {
       async findByIdGlobal(id) {
         const result = await execute(`SELECT * FROM users WHERE id = $1`, [id]);
         return result.rows[0] ?? null;
+      },
+      async countApproverCapableInOrg(tenantId, orgId) {
+        const r = await execute(
+          `SELECT COUNT(*)::int AS n FROM users
+           WHERE tenant_id = $1 AND organization_id = $2
+             AND vendor_content_approver = TRUE
+             AND status = 'active'
+             AND deleted_at IS NULL`,
+          [tenantId, orgId]
+        );
+        return r.rows[0]?.n ?? 0;
+      },
+      async listApproverCapableInOrg(tenantId, orgId) {
+        return many(await execute(
+          `SELECT id, email, display_name FROM users
+           WHERE tenant_id = $1 AND organization_id = $2
+             AND vendor_content_approver = TRUE
+             AND status = 'active'
+             AND deleted_at IS NULL`,
+          [tenantId, orgId]
+        ));
       }
     },
     events: {

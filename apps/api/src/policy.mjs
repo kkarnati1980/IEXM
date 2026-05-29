@@ -272,6 +272,16 @@ export function canReadModerationHistory(principal) {
   return true; // any authenticated vendor_manager in same org may read history; org check done at route
 }
 
+// Phase 1.5 additions
+export function canReleaseModeration(principal) {
+  return principal.vendor_content_approver === true;
+}
+
+export async function canSelfApproveAsSingleOperator(repos, tenantId, orgId) {
+  const count = await repos.users.countApproverCapableInOrg(tenantId, orgId);
+  return count <= 1;
+}
+
 function parseBreakGlassScope(accessScope) {
   if (!accessScope) {
     return { permissions: [], event_ids: [], stall_ids: [] };

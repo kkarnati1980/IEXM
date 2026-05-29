@@ -102,6 +102,9 @@ function renderBody(messageType, vars = {}) {
     case "offboarding_deletion_reminder_14d": return renderOffboardingDeletionReminder14d(vars);
     case "offboarding_deletion_reminder_3d": return renderOffboardingDeletionReminder3d(vars);
     case "mfa_otp": return renderMfaOtp(vars);
+    case "vendor_profile_submitted":     return renderVendorProfileSubmitted(vars);
+    case "vendor_profile_approved":      return renderVendorProfileApproved(vars);
+    case "vendor_profile_needs_changes": return renderVendorProfileNeedsChanges(vars);
     default: throw new Error(`Unknown notification template: ${messageType}`);
   }
 }
@@ -496,6 +499,48 @@ function renderOffboardingDeletionCertificate({
       `Please retain this certificate for your records. As per data protection regulations, this certificate will be kept for 7 years.`,
       ``,
       `If you have questions about this deletion, contact ${platform_name} support.`
+    ].join("\n")
+  };
+}
+
+// ── Phase 1.5 moderation notification templates ──────────────────────────────
+
+function renderVendorProfileSubmitted({ display_name = "there" }) {
+  return {
+    subject: "A vendor profile is awaiting your review",
+    body: [
+      `Hi ${display_name},`,
+      ``,
+      `A vendor profile has been submitted and is awaiting your review on Codex Platform.`,
+      ``,
+      `Please log in to the approver queue to claim and review it.`
+    ].join("\n")
+  };
+}
+
+function renderVendorProfileApproved({ display_name = "there" }) {
+  return {
+    subject: "Your vendor profile is live",
+    body: [
+      `Hi ${display_name},`,
+      ``,
+      `Your vendor profile has been approved and is now live for attendees.`
+    ].join("\n")
+  };
+}
+
+function renderVendorProfileNeedsChanges({ display_name = "there", note = "" }) {
+  return {
+    subject: "Your vendor profile needs changes",
+    body: [
+      `Hi ${display_name},`,
+      ``,
+      `Your vendor profile requires changes before it can be approved.`,
+      ``,
+      `Reviewer note:`,
+      note,
+      ``,
+      `Please log in to update and resubmit your profile.`
     ].join("\n")
   };
 }

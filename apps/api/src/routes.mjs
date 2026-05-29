@@ -5,7 +5,7 @@ import { issuePlatformToken } from "./auth/platform-jwt.mjs";
 import { hashToken, generateInviteToken, generateResetToken } from "./auth/invite-tokens.mjs";
 import { resolveRedirectTarget } from "./auth/redirect-resolver.mjs";
 import { HttpError } from "./http-error.mjs";
-import { deriveCrmEligibility, canSubmitModeration, canApproveModeration, canRejectModeration } from "./policy.mjs";
+import { deriveCrmEligibility, canSubmitModeration, canApproveModeration, canRejectModeration, canReleaseModeration, canSelfApproveAsSingleOperator } from "./policy.mjs";
 import { createAttendeeSessionToken, verifyAttendeeSessionToken } from "./session-tokens.mjs";
 import { createDeviceCredentialToken, hashDeviceCredentialToken } from "./device-credentials.mjs";
 import { createShortLinkToken, hashShortLinkToken, shortLinkPath } from "./short-links.mjs";
@@ -367,6 +367,8 @@ export function registerRoutes(router) {
         stall_ids: principal.stall_ids ?? [],
         sponsor_organization_ids: principal.sponsor_organization_ids ?? [],
         sponsor_package_ids: principal.sponsor_package_ids ?? [],
+        vendor_content_editor:   principal.vendor_content_editor   ?? false,
+        vendor_content_approver: principal.vendor_content_approver ?? false,
         auth_source: principal.auth_source ?? "seed"
       }
     }),
@@ -12765,7 +12767,7 @@ async function recordModerationTransition(txRepos, {
 const MODERATION_TRANSITIONS = {
   draft:             ["submitted", "discarded"],
   submitted:         ["under_review", "withdrawn"],
-  under_review:      ["approved", "changes_requested", "rejected"],
+  under_review:      ["approved", "changes_requested", "rejected", "submitted"],
   changes_requested: ["submitted", "discarded"],
   approved:          ["superseded"],
   rejected:          [],
@@ -12799,24 +12801,66 @@ function registerModerationRoutes(router) {
       return repos.withTransaction(async (txRepos) => {
         const item = await txRepos.moderationItems.findById(principal.tenant_id, params.itemId);
 
+        // Optimistic-concurrency guard (AP-3 belt-and-suspenders)
+        if (body.expected_updated_at && body.expected_updated_at !== item.updated_at) {
+          throw new HttpError(409, "Conflict: item has been updated since you last read it");
+        }
+
         const allowed = MODERATION_TRANSITIONS[item.state] ?? [];
         if (!allowed.includes(body.to_state)) {
           throw new HttpError(422, `Invalid transition: ${item.state} → ${body.to_state}`);
         }
 
-        const isApprove = body.to_state === "approved";
-        const isReject  = body.to_state === "rejected";
-        const isChanges = body.to_state === "changes_requested";
+        const isApprove  = body.to_state === "approved";
+        const isReject   = body.to_state === "rejected";
+        const isChanges  = body.to_state === "changes_requested";
+        const isRelease  = item.state === "under_review" && body.to_state === "submitted";
+        const isResubmit = item.state === "changes_requested" && body.to_state === "submitted";
 
-        if (isApprove && !canApproveModeration(principal, item.editor_user_id)) {
-          throw new HttpError(403, "Editor cannot approve own submission");
-        }
-        if (isReject && !canRejectModeration(principal, item.editor_user_id)) {
-          throw new HttpError(403, "Editor cannot reject own submission");
-        }
         if ((isReject || isChanges) && !body.note) {
           throw new HttpError(422, `A note is required when transitioning to ${body.to_state}`);
         }
+
+        // ── Authz by from-state ──────────────────────────────────────────────
+
+        // Approve/reject: AP-4 editor≠approver, with single-operator fallback
+        let selfApprove = false;
+        if ((isApprove || isReject) && !canApproveModeration(principal, item.editor_user_id)) {
+          if (isApprove &&
+              principal.vendor_content_approver === true &&
+              principal.user_id === item.editor_user_id) {
+            // Conditions (a)+(b) met. Check (c) FIRST — FIX-1.
+            const singleOp = await canSelfApproveAsSingleOperator(
+              txRepos, principal.tenant_id, principal.organization_id
+            );
+            if (!singleOp) {
+              // Multi-approver org: plain 403, no modal
+              throw new HttpError(403, "Editor cannot approve own submission");
+            }
+            if (!body.confirm_single_operator) {
+              throw new HttpError(403, "self_approval_blocked", { single_operator: true });
+            }
+            selfApprove = true;
+          } else {
+            throw new HttpError(403, isReject
+              ? "Editor cannot reject own submission"
+              : "Editor cannot approve own submission");
+          }
+        }
+
+        // Release: approver flag required (C5)
+        if (isRelease && !canReleaseModeration(principal)) {
+          throw new HttpError(403, "Approver scope required to release");
+        }
+        // Resubmit: editor flag + must be the item's own editor (C5)
+        if (isResubmit && (!canSubmitModeration(principal) || principal.user_id !== item.editor_user_id)) {
+          throw new HttpError(403, "Only the item editor can resubmit");
+        }
+
+        // ── Note action ──────────────────────────────────────────────────────
+        const noteAction = isRelease    ? "release"
+          : selfApprove                 ? "self_approved_single_operator"
+          : (NOTE_ACTION[body.to_state] ?? body.to_state);
 
         const now = new Date().toISOString();
         const previousState = item.state;
@@ -12827,7 +12871,7 @@ function registerModerationRoutes(router) {
         if (body.to_state === "submitted")    item.submitted_at = now;
         if (isApprove || isReject)            { item.decided_at = now; item.approver_user_id = principal.user_id; }
 
-        // Atomic approve: supersede prior approved item
+        // Atomic approve: supersede prior approved item (AP-1)
         if (isApprove) {
           const prior = await txRepos.moderationItems.findActiveApproved(
             principal.tenant_id, item.entity_type, item.entity_id
@@ -12878,10 +12922,25 @@ function registerModerationRoutes(router) {
           actorUserId: principal.user_id,
           priorStatus: previousState,
           newStatus:   body.to_state,
-          action:      NOTE_ACTION[body.to_state] ?? body.to_state,
+          action:      noteAction,
           note:        body.note ?? null,
           now
         });
+
+        // System note for single-operator self-approval (AP-5 insert)
+        if (selfApprove) {
+          await recordModerationTransition(txRepos, {
+            tenantId:    principal.tenant_id,
+            targetTable: item.entity_type,
+            targetId:    item.entity_id,
+            actorUserId: principal.user_id,
+            priorStatus: body.to_state,
+            newStatus:   body.to_state,
+            action:      "system_note",
+            note:        "[System] Single-operator self-approval: this org has only one approver-capable user. Normal maker-checker resumes when a second approver is added.",
+            now
+          });
+        }
 
         await writeAuditEvent(repos, {
           tenantId:  principal.tenant_id,
@@ -12890,8 +12949,53 @@ function registerModerationRoutes(router) {
           eventType: AUDIT_EVENT_TYPES.MODERATION_TRANSITION,
           targetType: "moderation_item",
           targetId:  item.id,
-          metadata:  { from: previousState, to: body.to_state, entity_type: item.entity_type, entity_id: item.entity_id }
+          metadata:  { from: previousState, to: body.to_state, entity_type: item.entity_type, entity_id: item.entity_id, action: noteAction }
         });
+
+        // ── Notification fan-out (#4) ────────────────────────────────────────
+        try {
+          if (body.to_state === "submitted") {
+            const approvers = await txRepos.users.listApproverCapableInOrg(
+              principal.tenant_id, principal.organization_id
+            );
+            for (const u of approvers) {
+              if (u.id === principal.user_id) continue; // M2: suppress self-notify
+              await dispatchTransactionalEmail({
+                repos: txRepos, tenantId: principal.tenant_id,
+                recipientEmail: u.email,
+                messageType: "vendor_profile_submitted",
+                templateVars: { display_name: u.display_name },
+                actorUserId: principal.user_id
+              });
+            }
+          }
+          if (isApprove) {
+            const editor = await txRepos.users.findByIdGlobal(item.editor_user_id);
+            if (editor) {
+              await dispatchTransactionalEmail({
+                repos: txRepos, tenantId: principal.tenant_id,
+                recipientEmail: editor.email,
+                messageType: "vendor_profile_approved",
+                templateVars: { display_name: editor.display_name },
+                actorUserId: principal.user_id
+              });
+            }
+          }
+          if (isReject || isChanges) {
+            const editor = await txRepos.users.findByIdGlobal(item.editor_user_id);
+            if (editor) {
+              await dispatchTransactionalEmail({
+                repos: txRepos, tenantId: principal.tenant_id,
+                recipientEmail: editor.email,
+                messageType: "vendor_profile_needs_changes",
+                templateVars: { display_name: editor.display_name, note: body.note ?? "" },
+                actorUserId: principal.user_id
+              });
+            }
+          }
+        } catch (notifyErr) {
+          console.error("[moderation] notification dispatch failed:", notifyErr.message);
+        }
 
         return { item: updated };
       });
@@ -12941,7 +13045,17 @@ function registerModerationRoutes(router) {
       const notes = await repos.moderationNotes.listByItem(
         principal.tenant_id, item.entity_type, item.entity_id
       );
-      return { item_id: item.id, history: notes };
+      const actorIds = [...new Set(notes.map(n => n.actor_user_id).filter(Boolean))];
+      const actorMap = {};
+      await Promise.all(actorIds.map(async (id) => {
+        const u = await repos.users.findByIdGlobal(id);
+        if (u) actorMap[id] = u.display_name;
+      }));
+      const history = notes.map(n => ({
+        ...n,
+        actor_display_name: actorMap[n.actor_user_id] ?? null
+      }));
+      return { item_id: item.id, history };
     }
   });
 }
@@ -13127,25 +13241,11 @@ function registerVendorProfileRoutes(router) {
           // priorItemState stays null — no prior item existed
         } else {
           priorItemState = item.state;
-          // If saving (not submitting) and item is already submitted/under_review, auto-transition
-          // back to draft first so the payload change is audited and the state stays coherent.
-          if (!submit && (item.state === "submitted" || item.state === "under_review")) {
-            item.state = "draft";
-            item.updated_at = now;
-            item = await txRepos.moderationItems.update(item);
-            await recordModerationTransition(txRepos, {
-              tenantId:    principal.tenant_id,
-              targetTable: "vendor_profiles",
-              targetId:    profile.id,
-              actorUserId: principal.user_id,
-              priorStatus: priorItemState,
-              newStatus:   "draft",
-              action:      "withdraw_to_draft",
-              note:        null,
-              now
-            });
+          // Edit lock: submitted/under_review items cannot be edited; use Withdraw or wait for changes_requested
+          if (item.state === "submitted" || item.state === "under_review") {
+            throw new HttpError(422, "Profile is under review — withdraw before editing");
           }
-          // Merge fields into the (now-draft) payload
+          // Merge fields into the (draft or changes_requested) payload
           item.payload = { ...item.payload, ...fields };
           item.updated_at = now;
           item = await txRepos.moderationItems.update(item);
@@ -13260,6 +13360,9 @@ function registerVendorProfileRoutes(router) {
           };
           await txRepos.moderationItems.create(item);
         } else {
+          if (item.state === "submitted" || item.state === "under_review") {
+            throw new HttpError(422, "Profile is under review — withdraw before editing");
+          }
           item.payload = { ...item.payload, social_links: fields.social_links };
           item.updated_at = now;
           item = await txRepos.moderationItems.update(item);

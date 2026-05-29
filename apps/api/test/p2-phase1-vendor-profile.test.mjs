@@ -447,8 +447,9 @@ test("VP-21: PATCH accepts description of exactly 2000 characters", async () => 
   });
 });
 
-// VP-22: save-draft on a submitted item → auto-transitions back to draft + audit note written
-test("VP-22: PATCH save-draft on submitted item transitions back to draft with moderation note", async () => {
+// VP-22: save-draft on a submitted item → 422 (edit locked while under review)
+// Phase 1.5 correction: auto-draft was a latent Phase 1 bug; editing is now blocked.
+test("VP-22: PATCH save-draft on submitted item returns 422 (edit locked)", async () => {
   await withApp(async (app) => {
     // Create and immediately submit
     const submit = await app.inject({
@@ -459,24 +460,25 @@ test("VP-22: PATCH save-draft on submitted item transitions back to draft with m
     });
     assert.equal(submit.statusCode, 200, JSON.stringify(submit.body));
     assert.equal(submit.body.item?.state, "submitted");
-    const profileId = submit.body.profile.id;
 
-    // Save-draft on the submitted item — must auto-transition back to draft
+    // Save-draft on the submitted item — must be blocked with 422
     const saveDraft = await app.inject({
       method: "PATCH",
       path: `/vendors/${VENDOR_ORG_ID}/profile`,
       headers: bearer(VENDOR_TOKEN),
-      body: { display_name: "VP-22 Corp (edited after submit)" }
+      body: { display_name: "VP-22 Corp (blocked edit)" }
     });
-    assert.equal(saveDraft.statusCode, 200, JSON.stringify(saveDraft.body));
-    assert.equal(saveDraft.body.item?.state, "draft",
-      "save-draft on a submitted item must auto-transition back to draft");
+    assert.equal(saveDraft.statusCode, 422, JSON.stringify(saveDraft.body));
+    assert.match(saveDraft.body.error, /under review/i,
+      "error must mention 'under review'");
 
-    // A moderation_notes row with action=withdraw_to_draft must be written
-    const notes = await app.repos.moderationNotes.listByItem(TENANT_ID, "vendor_profiles", profileId);
-    const withdrawNote = notes.find((n) => n.action === "withdraw_to_draft");
-    assert.ok(withdrawNote, "withdraw_to_draft audit note must exist when save-draft is called on a submitted item");
-    assert.equal(withdrawNote.prior_status, "submitted", "prior_status must be 'submitted'");
-    assert.equal(withdrawNote.new_status, "draft", "new_status must be 'draft'");
+    // State must remain submitted
+    const profileData = await app.inject({
+      method: "GET",
+      path: `/vendors/${VENDOR_ORG_ID}/profile`,
+      headers: bearer(VENDOR_TOKEN)
+    });
+    assert.equal(profileData.body.pending?.state, "submitted",
+      "state must remain submitted after blocked save-draft attempt");
   });
 });
