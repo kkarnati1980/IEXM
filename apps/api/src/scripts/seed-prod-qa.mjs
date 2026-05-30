@@ -1,5 +1,28 @@
+// SECURITY NOTICE:
+// This script seeds well-known TEST credentials (password "TestPass123!" with
+// hashes from store.mjs DEMO_PW). Do NOT run against any environment that
+// holds real customer data. The seeded admin account is rotated to a random
+// password immediately after first run (see docs/incident_logs/
+// 2026-05-30_db_repopulation.md). Re-running this script against a
+// production-data DB would overwrite that rotation and re-introduce the
+// known-credential backdoor.
+//
+// The SEED_PROD_QA_CONFIRM env guard below is the run-time defense.
+
 import { createPostgresDatabase } from "../db/postgres.mjs";
 import { hashDeviceCredentialToken } from "../device-credentials.mjs";
+
+// Run-guard: prevent accidental execution against unintended databases.
+// To run this script, the operator must explicitly confirm tenant scope:
+//   SEED_PROD_QA_CONFIRM=tenant-demo node apps/api/src/scripts/seed-prod-qa.mjs
+if (process.env.SEED_PROD_QA_CONFIRM !== "tenant-demo") {
+  console.error(
+    "ERROR: refusing to run without explicit confirmation.\n" +
+    "Set SEED_PROD_QA_CONFIRM=tenant-demo if you intend to seed the demo tenant.\n" +
+    "This guard prevents accidental seed runs against unintended environments."
+  );
+  process.exit(1);
+}
 
 // Pre-computed scrypt hashes (password = "TestPass123!")
 // Source: apps/api/src/store.mjs DEMO_PW — same N=16384,r=8,p=1,64-byte-key params
