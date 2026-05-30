@@ -613,48 +613,34 @@ smoke_1_3_patch_submit() {
 # ─────────────────────────────────────────────────────────────────────────────
 
 smoke_1_3_integrity() {
-  hr; echo "  1.3b-integrity: PATCH save-draft on submitted item → auto-transitions to draft"
+  hr; echo "  1.3b-integrity: PATCH save-draft on submitted item → 422 edit-lock (AP-6, Phase 1.5)"
   if [[ -z "$CURRENT_ITEM_ID" ]]; then
-    skip_item "1.3b-integrity" "Save-draft on submitted item" "no item ID — 1.3 skipped or failed"
+    skip_item "1.3b-integrity" "Edit-lock: save-draft on submitted item" "no item ID — 1.3 skipped or failed"
     return
   fi
   if [[ "$DRY_RUN" == "true" ]]; then
-    skip_item "1.3b-integrity" "Save-draft on submitted item → state=draft" "dry-run"
+    skip_item "1.3b-integrity" "Edit-lock: save-draft on submitted item → 422" "dry-run"
     return
   fi
 
-  write_op "PATCH save-draft on submitted item (must auto-withdraw to draft, not silently overwrite payload)"
+  write_op "PATCH save-draft on submitted item (Phase 1.5 AP-6 edit-lock: must 422, item stays submitted)"
   curl_req PATCH "/vendors/${QA_VENDOR_ORG}/profile" "$VENDOR_TOKEN" \
     '{"display_name":"QA Smoke v1.0 — integrity edit","submit":false}'
 
-  if ! assert_http 200 "$RESP_STATUS"; then
-    fail_item "1.3b-integrity" "Save-draft on submitted item → 200" \
-      "Got $RESP_STATUS. Body: $RESP_BODY"
-    return
-  fi
-
-  local state
-  state="$(json_get "$RESP_BODY" "d['item']['state']")"
-  if [[ "$state" == "draft" ]]; then
-    pass_item "1.3b-integrity" "Save-draft on submitted item → state=draft (auto-withdraw confirmed)"
+  if assert_http 422 "$RESP_STATUS"; then
+    local lock_msg
+    lock_msg="$(json_get "$RESP_BODY" "d.get('error','')")"
+    if [[ "$lock_msg" == *"withdraw before editing"* ]]; then
+      pass_item "1.3b-integrity" "Edit-lock: PATCH on submitted item → 422 with edit-lock message (AP-6)"
+    else
+      fail_item "1.3b-integrity" "Edit-lock: PATCH on submitted item → 422 body" \
+        "Status was 422 but message wrong. Got: '$lock_msg'"
+    fi
   else
-    fail_item "1.3b-integrity" "Save-draft on submitted item → state" \
-      "Expected 'draft' (auto-withdraw), got '$state' — payload may have been silently overwritten while item was submitted"
+    fail_item "1.3b-integrity" "Edit-lock: PATCH on submitted item → 422" \
+      "Expected 422 (AP-6 edit-lock), got $RESP_STATUS. Body: $RESP_BODY"
   fi
-
-  # Re-submit to restore 'submitted' state for downstream claim/approve tests
-  write_op "Re-submitting to restore 'submitted' state for downstream tests (1.7a onwards)"
-  curl_req PATCH "/vendors/${QA_VENDOR_ORG}/profile" "$VENDOR_TOKEN" \
-    '{"display_name":"QA Smoke v1.0","submit":true}'
-  if ! assert_http 200 "$RESP_STATUS"; then
-    fail_item "1.3b-integrity" "Re-submit after integrity check" \
-      "Got $RESP_STATUS — downstream claim test (1.7a) will likely fail"
-    return
-  fi
-  local new_item_id
-  new_item_id="$(json_get "$RESP_BODY" "d['item']['id']")"
-  [[ -n "$new_item_id" ]] && CURRENT_ITEM_ID="$new_item_id"
-  info "1.3b-integrity: re-submitted OK; item ID for downstream tests: $CURRENT_ITEM_ID"
+  info "1.3b-integrity: item $CURRENT_ITEM_ID stays submitted (422 rejected edit) — downstream 1.7a proceeds"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
