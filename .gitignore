@@ -11,3 +11,30 @@ build/
 /storage/
 # Added by code-review-graph
 .code-review-graph/
+
+# AI tool configs and unrelated subprojects (added 2026-05-30)
+# Group 1 — AI tool config dirs
+.agents/
+.claude/
+.cursor/
+.gemini/
+.kiro/
+.qoder/
+.playwright-mcp/
+.vscode/
+
+# Group 2 — AI tool config files
+.cursorrules
+.windsurfrules
+.opencode.json
+.mcp.json
+AGENTS.md
+GEMINI.md
+QODER.md
+
+# Group 3 — Unrelated subprojects accidentally inside the repo
+code-review-graph/
+my-remotion-video/
+
+# Group 4 — Generated/cache files
+skills-lock.json
