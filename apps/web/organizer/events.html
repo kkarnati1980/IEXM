@@ -195,7 +195,7 @@
 
       async function loadOrgs() {
         try {
-          const data = await api("/organizations");
+          const data = await api("/orgs");
           allOrgs = data.organizations ?? data ?? [];
         } catch { allOrgs = []; }
       }

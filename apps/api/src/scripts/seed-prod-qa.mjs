@@ -169,13 +169,26 @@ try {
       [TENANT]
     );
 
-    // 10. Device assignment (device-01 → event-demo / stall-a1)
+    // 10. Device assignments for device-01
+    //     assign-01: historical assignment to event-demo (inactive — superseded by assign-02)
+    //     assign-02: active assignment to event-indiaexpo (ops_user scoped event)
+    //     The partial UNIQUE index device_assignments_one_active_per_device enforces
+    //     only one active row per device, so assign-01 must be inactive.
     await q(
       `INSERT INTO device_assignments (
          id, tenant_id, device_id, event_id, stall_id, active, assignment_checksum
        ) VALUES (
-         'assign-01', $1, 'device-01', 'event-demo', 'stall-a1', true,
+         'assign-01', $1, 'device-01', 'event-demo', 'stall-a1', false,
          '35c70991fa13d0f72cfb1d1d721e46f582c32f78f181f47ebad2dc1f0f779545'
+       ) ON CONFLICT (id) DO UPDATE SET active = false`,
+      [TENANT]
+    );
+    await q(
+      `INSERT INTO device_assignments (
+         id, tenant_id, device_id, event_id, stall_id, active, assignment_checksum
+       ) VALUES (
+         'assign-02', $1, 'device-01', 'event-indiaexpo', 'stall-ie-a1', true,
+         'faeb9d6e142ae380169367b9bcd1271b4a51fa73074b691790e686af1c9d9ddd'
        ) ON CONFLICT (id) DO NOTHING`,
       [TENANT]
     );
