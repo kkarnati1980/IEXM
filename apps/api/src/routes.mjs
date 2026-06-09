@@ -2301,6 +2301,67 @@ export function registerRoutes(router) {
     auditEventType: "sponsor.analytics.view"
   });
 
+  // GET /events/:eventId/heatmap — zone heat scores (aggregate, no PII)
+  router.addRoute({
+    id: "event-heatmap",
+    method: "GET",
+    path: "/events/:eventId/heatmap",
+    authRequired: true,
+    allowedRoles: ["sponsor_user", "organizer_admin"],
+    handler: async ({ repos, principal, params, query }) => {
+      const event = await repos.events.findById(principal.tenant_id, params.eventId);
+      assertEventScoped(principal, event.id);
+      const hours = query?.hours ? parseInt(query.hours, 10) : null;
+      const since = hours ? new Date(Date.now() - hours * 3600 * 1000) : null;
+      const allInteractions = await repos.interactions.listByEvent(principal.tenant_id, event.id);
+      const interactions = since
+        ? allInteractions.filter((i) => new Date(i.created_at) >= since)
+        : allInteractions;
+      const stalls = await repos.stalls.listByEvent(principal.tenant_id, event.id);
+      const stallMap = new Map(stalls.map((s) => [s.id, s]));
+      // Per-zone aggregation
+      const zoneMap = new Map();
+      for (const i of interactions) {
+        if (!i.stall_id) continue;
+        if (!zoneMap.has(i.stall_id))
+          zoneMap.set(i.stall_id, { interactions: 0, sponsor_consented: 0, sponsor_clicks: 0, peak_ts: null });
+        const z = zoneMap.get(i.stall_id);
+        z.interactions++;
+        if (["vendor_and_sponsor", "sponsor_only"].includes(i.consent_status)) z.sponsor_consented++;
+        z.sponsor_clicks += i.sponsor_click_count ?? 0;
+        if (!z.peak_ts || new Date(i.created_at) > new Date(z.peak_ts)) z.peak_ts = i.created_at;
+      }
+      const zones = [...zoneMap.entries()]
+        .map(([stall_id, z]) => {
+          const stall = stallMap.get(stall_id) ?? {};
+          const zone_score = z.interactions + z.sponsor_clicks * 3 + z.sponsor_consented * 2;
+          const ctr = z.interactions === 0 ? 0 : Number(((z.sponsor_clicks / z.interactions) * 100).toFixed(1));
+          const peak_hour = z.peak_ts
+            ? new Date(z.peak_ts).toISOString().slice(0, 13) + ":00:00Z"
+            : null;
+          return { stall_id, stall_name: stall.name ?? stall_id, stall_code: stall.code ?? null,
+            interactions: z.interactions, sponsor_consented: z.sponsor_consented,
+            sponsor_clicks: z.sponsor_clicks, ctr, zone_score, peak_hour };
+        })
+        .sort((a, b) => b.zone_score - a.zone_score);
+      // Hourly trend across all zones
+      const hourMap = new Map();
+      for (const i of interactions) {
+        const h = new Date(i.created_at).toISOString().slice(0, 13) + ":00:00Z";
+        if (!hourMap.has(h)) hourMap.set(h, { impressions: 0, clicks: 0, opted_in_leads: 0 });
+        const hv = hourMap.get(h);
+        hv.impressions++;
+        hv.clicks += i.sponsor_click_count ?? 0;
+        if (["vendor_and_sponsor", "sponsor_only"].includes(i.consent_status)) hv.opted_in_leads++;
+      }
+      const hourly_trend = [...hourMap.entries()]
+        .map(([hour, v]) => ({ hour, ...v }))
+        .sort((a, b) => a.hour.localeCompare(b.hour));
+      return { event_id: event.id, generated_at: new Date().toISOString(), zones, hourly_trend };
+    },
+    auditEventType: "event.heatmap.view"
+  });
+
   router.addRoute({
     id: "organizer-sponsor-report-snapshot-create",
     method: "POST",

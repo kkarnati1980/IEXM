@@ -283,6 +283,13 @@ export const ACCESS_CONTROL_MATRIX = Object.freeze({
     description: "View aggregate event analytics for sponsor view (no PII)",
     sensitivity: "internal"
   }),
+  "event-heatmap": entry({
+    permission: "event.heatmap.view",
+    roles: sponsorOrOrganizer,
+    scope: "event",
+    description: "View zone heat scores for an event (aggregate, no PII)",
+    sensitivity: "internal"
+  }),
   "organizer-sponsor-report-snapshot-create": entry({
     permission: "sponsor.snapshots.create",
     roles: organizer,
