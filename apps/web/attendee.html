@@ -578,7 +578,7 @@
 
       async function requestDSR(type) {
         try {
-          await api("/attendee/data-subject-requests", { method: "POST", body: { request_type: type, event_id: EVENT_ID } });
+          await api("/attendee/privacy/dsr", { method: "POST", body: { request_type: type, event_id: EVENT_ID } });
           showScreenAlert("privacy-alert", `${humanize(type)} request submitted. You will be notified when complete.`, "ok");
           await loadPrivacy();
         } catch(e) { showScreenAlert("privacy-alert", e.message, "error"); }

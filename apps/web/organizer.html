@@ -1188,7 +1188,7 @@
       async function loadFleet() {
         const eid = $id("event-id").value.trim();
         try {
-          const fleet = await api(`/organizer/events/${enc(eid)}/fleet`);
+          const fleet = await api(`/organizer/events/${enc(eid)}/device-fleet`);
           const devices = fleet.devices || fleet.items || [];
           let online=0, warning=0, critical=0, offline=0;
           const tbody = $id("fleet-rows"); tbody.innerHTML = "";
